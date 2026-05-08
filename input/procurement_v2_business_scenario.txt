@@ -1,0 +1,27 @@
+Generate procurement data for the 2025 calendar year only, from 2025-01-01 to 2025-12-31, for a US-based EV manufacturing procurement process.
+
+The business should include US-based plants and warehouses, supplier sourcing, RFQ, supplier quotation, awarded quotation, purchase order, PO schedules, supplier shipments, goods receipts, incoming quality inspection, inventory posting, current inventory balance, supplier invoices, and payment transactions.
+
+InventoryTransaction records each accepted StockIn posting into inventory after incoming inspection. It should include supplier, component, plant, warehouse, transaction date, quantity, unit price, inventory value, and references to the goods receipt line, purchase order line, and inspection result. TransactionType should be StockIn for this inbound procurement scenario.
+
+The process should include InventoryTransaction as the detailed inbound stock posting ledger and Inventory as the current calculated stock balance by Component, Plant, and Warehouse. Inventory should store OnHandQuantity, ReservedQuantity, AvailableQuantity, OnHandValue, AvailableValue, LastTransactionDate, LastUpdatedDate, and InventoryStatus.
+
+Inventory.OnHandQuantity is calculated from InventoryTransaction.TransactionQuantity grouped by ComponentID, PlantID, and WarehouseID. Inventory.OnHandValue is calculated from InventoryTransaction.InventoryValue grouped by ComponentID, PlantID, and WarehouseID. Inventory.AvailableQuantity equals OnHandQuantity minus ReservedQuantity. Inventory.AvailableValue is derived from AvailableQuantity and average unit cost.
+
+Use USD for all financial values.
+
+Include realistic behavior:
+- supplier-component eligibility
+- multiple supplier quotations per RFQ
+- awarded and rejected quotation lines
+- partial deliveries
+- delayed shipments
+- short receipts
+- damaged receipt quantities
+- quality rejections
+- inventory posting only for accepted quantity
+- invoices after goods receipts
+- partial/pending/paid payment behavior
+- lifecycle-based status diversity
+
+Do not generate data outside 2025.

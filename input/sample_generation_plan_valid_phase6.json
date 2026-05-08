@@ -1,0 +1,806 @@
+{
+  "module": "procurement",
+  "business_summary": "Semantic validation fixture for EV procurement planning against the sample metadata. This is not a final business plan.",
+  "domain_profile": {
+    "industry": "EV manufacturing",
+    "business_context": "Procurement planning for battery, electrical, mechanical, packaging, and maintenance materials across multiple plants.",
+    "vendor_categories": [
+      "Battery suppliers",
+      "Electronics suppliers",
+      "Metal fabricators",
+      "Industrial MRO suppliers"
+    ],
+    "material_categories": [
+      {
+        "category_name": "Battery Components",
+        "material_examples": [
+          "Lithium-Ion Cell",
+          "Battery Management PCB",
+          "Thermal Pad",
+          "Copper Busbar",
+          "Cell Spacer",
+          "Battery Enclosure"
+        ],
+        "specification_patterns": [
+          "21700",
+          "Prismatic",
+          "Grade A",
+          "2mm",
+          "HV",
+          "N52"
+        ]
+      }
+    ],
+    "warehouse_types": [
+      "Raw Material",
+      "Quality Hold",
+      "Rejected Material"
+    ],
+    "plant_locations": [
+      "Bengaluru",
+      "Pune",
+      "Chennai",
+      "Hyderabad",
+      "Ahmedabad",
+      "Noida",
+      "Mysuru",
+      "Coimbatore",
+      "Nagpur",
+      "Indore"
+    ],
+    "carrier_name_patterns": [
+      "regional industrial freight carrier",
+      "battery-safe certified logistics partner"
+    ],
+    "inspection_test_categories": [
+      "Dimensional inspection",
+      "Electrical continuity",
+      "Cell capacity sampling"
+    ]
+  },
+  "table_role_mapping": [
+    {
+      "table_name": "Vendor",
+      "table_role": "vendor_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "RawMaterial",
+      "table_role": "material_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "Plant",
+      "table_role": "plant_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "Warehouse",
+      "table_role": "warehouse_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "PurchaseRequisitionHeader",
+      "table_role": "purchase_requisition_header",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "PurchaseRequisitionLine",
+      "table_role": "purchase_requisition_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "table_role": "purchase_order_header",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "table_role": "purchase_order_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "ShipmentHeader",
+      "table_role": "shipment_header",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "table_role": "shipment_line",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "table_role": "goods_receipt_header",
+      "area": "Receiving",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "table_role": "goods_receipt_line",
+      "area": "Receiving",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "QualityInspectionHeader",
+      "table_role": "quality_inspection_header",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "QualityInspectionLine",
+      "table_role": "quality_inspection_line",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "table_role": "inventory_transaction",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "table_role": "inventory_balance",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Matches metadata TableRole and Area."
+    }
+  ],
+  "generation_order": [
+    "Vendor",
+    "RawMaterial",
+    "Plant",
+    "Warehouse",
+    "PurchaseRequisitionHeader",
+    "PurchaseRequisitionLine",
+    "PurchaseOrderHeader",
+    "PurchaseOrderLine",
+    "ShipmentHeader",
+    "ShipmentLine",
+    "GoodsReceiptHeader",
+    "GoodsReceiptLine",
+    "QualityInspectionHeader",
+    "QualityInspectionLine",
+    "InventoryTransaction",
+    "InventoryBalance"
+  ],
+  "row_count_plan": [
+    {
+      "table_name": "Vendor",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "RawMaterial",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "Plant",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "Warehouse",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "PurchaseRequisitionHeader",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "PurchaseRequisitionLine",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "ShipmentHeader",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "QualityInspectionHeader",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "QualityInspectionLine",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "target_rows": 10,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows."
+    }
+  ],
+  "column_generation_rules": [
+    {
+      "table_name": "Vendor",
+      "column_name": "VendorName",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "RawMaterial",
+      "column_name": "MaterialName",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "PlantName",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseName",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseRequisitionHeader",
+      "column_name": "RequisitionDate",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseRequisitionHeader",
+      "column_name": "Status",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseRequisitionLine",
+      "column_name": "PurchaseRequisitionID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseRequisitionLine",
+      "column_name": "RawMaterialID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseRequisitionLine",
+      "column_name": "Quantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "column_name": "VendorID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "column_name": "OrderDate",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "column_name": "Status",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "column_name": "TotalAmount",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "PurchaseOrderID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "RawMaterialID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "OrderedQuantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "ShipmentHeader",
+      "column_name": "PurchaseOrderID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "ShipmentHeader",
+      "column_name": "ShipmentDate",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "ShipmentHeader",
+      "column_name": "Status",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "column_name": "ShipmentID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "column_name": "PurchaseOrderLineID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "column_name": "ShippedQuantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "column_name": "ShipmentID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "column_name": "ReceiptDate",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "column_name": "Status",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "column_name": "GoodsReceiptID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "column_name": "ShipmentLineID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "column_name": "ReceivedQuantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "QualityInspectionHeader",
+      "column_name": "GoodsReceiptID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "QualityInspectionHeader",
+      "column_name": "InspectionDate",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "QualityInspectionHeader",
+      "column_name": "Status",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "QualityInspectionLine",
+      "column_name": "QualityInspectionID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "QualityInspectionLine",
+      "column_name": "AcceptedQuantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "QualityInspectionLine",
+      "column_name": "RejectedQuantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "column_name": "RawMaterialID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "column_name": "WarehouseID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "column_name": "Quantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "column_name": "RawMaterialID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "column_name": "PlantID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "column_name": "WarehouseID",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "column_name": "OnHandQuantity",
+      "generation_type": "faker_company",
+      "strategy": "Use metadata generation type with domain-aware values where applicable.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "optional_nulls_allowed",
+      "depends_on_columns": [],
+      "notes": "Schema validation fixture rule."
+    }
+  ],
+  "formula_rules": [],
+  "date_rules": [],
+  "quantity_rules": [],
+  "status_rules": [],
+  "validation_rules": [
+    {
+      "rule_id": "validate_vendor_pk",
+      "rule_type": "pk_check",
+      "table_name": "Vendor",
+      "column_name": "VendorID",
+      "condition": "VendorID is unique and non-null",
+      "severity": "error",
+      "description": "Primary key validation for Vendor."
+    }
+  ],
+  "assumptions": [
+    "This fixture validates references against sample metadata only."
+  ],
+  "warnings": [
+    "Not a final business plan; real plan will come from metadata, ERD, and scenario."
+  ]
+}

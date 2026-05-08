@@ -1,0 +1,251 @@
+{
+  "module": "procurement",
+  "business_summary": "Generate realistic procurement data for an EV manufacturing company procuring battery, motor, electronics, and metal fabrication components across Indian plants.",
+  "domain_profile": {
+    "industry": "EV manufacturing",
+    "business_context": "Multi-plant electric vehicle manufacturing procurement with quality inspection and inventory posting.",
+    "vendor_categories": [
+      "Battery systems suppliers",
+      "Precision metal fabricators",
+      "Electronics contract manufacturers",
+      "Industrial logistics providers"
+    ],
+    "material_categories": [
+      {
+        "category_name": "Battery Components",
+        "material_examples": [
+          "Lithium-Ion Cell",
+          "Battery Management PCB",
+          "Thermal Pad"
+        ],
+        "specification_patterns": [
+          "21700",
+          "Prismatic",
+          "Grade A",
+          "2mm"
+        ]
+      },
+      {
+        "category_name": "Powertrain Components",
+        "material_examples": [
+          "Motor Magnet NdFeB",
+          "Copper Busbar",
+          "Aluminium Housing"
+        ],
+        "specification_patterns": [
+          "12mm",
+          "HV",
+          "Reinforced",
+          "N52"
+        ]
+      }
+    ],
+    "warehouse_types": [
+      "Raw Material",
+      "Quality Hold",
+      "Rejected Material"
+    ],
+    "plant_locations": [
+      "Bengaluru",
+      "Pune",
+      "Chennai"
+    ],
+    "carrier_name_patterns": [
+      "regional industrial freight carrier",
+      "battery-safe certified logistics partner"
+    ],
+    "inspection_test_categories": [
+      "Dimensional inspection",
+      "Electrical continuity",
+      "Cell capacity sampling"
+    ]
+  },
+  "table_role_mapping": [
+    {
+      "table_name": "Vendor",
+      "table_role": "vendor_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Vendor is supplier master data."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "table_role": "purchase_order_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Line table contains ordered material quantities and prices."
+    }
+  ],
+  "generation_order": [
+    "Vendor",
+    "RawMaterial",
+    "Plant",
+    "Warehouse",
+    "PurchaseRequisitionHeader",
+    "PurchaseRequisitionLine",
+    "PurchaseOrderHeader",
+    "PurchaseOrderLine",
+    "ShipmentHeader",
+    "ShipmentLine",
+    "GoodsReceiptHeader",
+    "GoodsReceiptLine",
+    "QualityInspectionHeader",
+    "QualityInspectionLine",
+    "InventoryTransaction",
+    "InventoryBalance"
+  ],
+  "row_count_plan": [
+    {"table_name": "Vendor", "target_rows": 12, "source": "metadata", "reasoning": "Use metadata target rows."},
+    {"table_name": "RawMaterial", "target_rows": 35, "source": "metadata", "reasoning": "Material variety should support line generation."},
+    {"table_name": "Plant", "target_rows": 3, "source": "metadata", "reasoning": "Three manufacturing locations."},
+    {"table_name": "Warehouse", "target_rows": 9, "source": "metadata", "reasoning": "Warehouses by plant and function."},
+    {"table_name": "PurchaseRequisitionHeader", "target_rows": 20, "source": "metadata", "reasoning": "Header count from metadata."},
+    {"table_name": "PurchaseRequisitionLine", "target_rows": 50, "source": "derived_from_parent", "reasoning": "Multiple lines per requisition."},
+    {"table_name": "PurchaseOrderHeader", "target_rows": 18, "source": "metadata", "reasoning": "Orders generated from approved requisitions."},
+    {"table_name": "PurchaseOrderLine", "target_rows": 45, "source": "derived_from_parent", "reasoning": "Multiple lines per order."},
+    {"table_name": "ShipmentHeader", "target_rows": 16, "source": "metadata", "reasoning": "Most orders ship."},
+    {"table_name": "ShipmentLine", "target_rows": 40, "source": "derived_from_parent", "reasoning": "Shipments follow order lines."},
+    {"table_name": "GoodsReceiptHeader", "target_rows": 16, "source": "metadata", "reasoning": "Receipts follow shipments."},
+    {"table_name": "GoodsReceiptLine", "target_rows": 40, "source": "derived_from_parent", "reasoning": "Receipt lines follow shipment lines."},
+    {"table_name": "QualityInspectionHeader", "target_rows": 14, "source": "metadata", "reasoning": "Most receipts inspected."},
+    {"table_name": "QualityInspectionLine", "target_rows": 36, "source": "derived_from_parent", "reasoning": "Inspection lines follow receipt lines."},
+    {"table_name": "InventoryTransaction", "target_rows": 36, "source": "derived_from_parent", "reasoning": "Accepted inspection quantities post inventory."},
+    {"table_name": "InventoryBalance", "target_rows": 20, "source": "derived_from_parent", "reasoning": "Balances grouped by material, plant, and warehouse."}
+  ],
+  "column_generation_rules": [
+    {
+      "table_name": "Vendor",
+      "column_name": "VendorName",
+      "generation_type": "vendor_name",
+      "strategy": "Generate unique EV supplier names using industrial prefixes and supplier-category suffixes.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": "Do not append numeric suffixes."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "OrderedQuantity",
+      "generation_type": "integer_range",
+      "strategy": "Generate order quantities based on material category demand bands.",
+      "allowed_values": [],
+      "min_value": 10,
+      "max_value": 500,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": ["RawMaterialID"],
+      "notes": "Battery cells usually have larger quantities than housings."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "LineAmount",
+      "generation_type": "calculated",
+      "strategy": "Calculate from ordered quantity and unit price.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": ["OrderedQuantity", "UnitPrice"],
+      "notes": "Formula rule owns the calculation."
+    }
+  ],
+  "formula_rules": [
+    {
+      "rule_id": "formula_po_line_amount",
+      "rule_type": "row_level",
+      "target_table": "PurchaseOrderLine",
+      "target_column": "LineAmount",
+      "operation": "multiply",
+      "input_columns": ["OrderedQuantity", "UnitPrice"],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "OrderedQuantity * UnitPrice",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "none",
+      "tolerance_value": null,
+      "description": "Calculate purchase order line amount."
+    },
+    {
+      "rule_id": "formula_po_header_total",
+      "rule_type": "aggregate",
+      "target_table": "PurchaseOrderHeader",
+      "target_column": "TotalAmount",
+      "operation": "sum",
+      "input_columns": ["LineAmount"],
+      "source_table": "PurchaseOrderLine",
+      "source_column": "LineAmount",
+      "relationship_key": "PurchaseOrderID",
+      "group_by_columns": ["PurchaseOrderID"],
+      "formula": "SUM(PurchaseOrderLine.LineAmount)",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": "Header total should equal sum of order lines."
+    }
+  ],
+  "date_rules": [
+    {
+      "rule_id": "date_requisition_before_order",
+      "earlier_table": "PurchaseRequisitionHeader",
+      "earlier_column": "RequisitionDate",
+      "later_table": "PurchaseOrderHeader",
+      "later_column": "OrderDate",
+      "min_offset_days": 0,
+      "max_offset_days": 14,
+      "description": "Requisition date should be on or before order date."
+    }
+  ],
+  "quantity_rules": [
+    {
+      "rule_id": "qty_shipped_lte_ordered",
+      "left_table": "ShipmentLine",
+      "left_column": "ShippedQuantity",
+      "operator": "<=",
+      "right_table": "PurchaseOrderLine",
+      "right_column": "OrderedQuantity",
+      "description": "Shipped quantity cannot exceed ordered quantity."
+    }
+  ],
+  "status_rules": [
+    {
+      "rule_id": "status_purchase_order",
+      "table_name": "PurchaseOrderHeader",
+      "status_column": "Status",
+      "status_values": ["Draft", "Approved", "Partially Received", "Closed"],
+      "derivation_logic": "Derive order status from shipment and receipt completion.",
+      "description": "Statuses should follow procurement lifecycle progress."
+    }
+  ],
+  "validation_rules": [
+    {
+      "rule_id": "validate_po_header_total",
+      "rule_type": "formula_check",
+      "table_name": "PurchaseOrderHeader",
+      "column_name": "TotalAmount",
+      "condition": "TotalAmount equals sum of PurchaseOrderLine.LineAmount by PurchaseOrderID",
+      "severity": "error",
+      "description": "Header amount reconciliation."
+    },
+    {
+      "rule_id": "validate_order_date_sequence",
+      "rule_type": "date_order",
+      "table_name": null,
+      "column_name": null,
+      "condition": "RequisitionDate <= OrderDate <= ShipmentDate <= ReceiptDate",
+      "severity": "error",
+      "description": "Procurement lifecycle date ordering."
+    }
+  ],
+  "assumptions": [
+    "Metadata remains the source of truth for actual table and column names.",
+    "Accepted quality inspection quantity is the only quantity posted to inventory."
+  ],
+  "warnings": [
+    "Some generated records may represent partially complete procurement lifecycle states."
+  ]
+}

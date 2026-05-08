@@ -1,0 +1,2664 @@
+{
+  "module": "procurement",
+  "business_summary": "US-based EV manufacturing Procurement v2 plan for 2025 with supplier sourcing, RFQ, quotation, PO, receipt, quality, inventory, invoice, and payment lifecycle.",
+  "domain_profile": {
+    "industry": "EV manufacturing procurement",
+    "business_context": "US electric vehicle component sourcing and procurement for battery, electronics, drivetrain, thermal, and chassis manufacturing.",
+    "vendor_categories": [
+      "Battery component suppliers",
+      "Electronics suppliers",
+      "Metal fabrication suppliers",
+      "Thermal system suppliers"
+    ],
+    "material_categories": [
+      {
+        "category_name": "Battery Components",
+        "material_examples": [
+          "Lithium-Ion Cell 21700",
+          "Battery Module Housing",
+          "Copper Busbar",
+          "Thermal Pad"
+        ],
+        "specification_patterns": [
+          "21700",
+          "Grade A",
+          "50kg",
+          "12mm"
+        ]
+      },
+      {
+        "category_name": "Power Electronics",
+        "material_examples": [
+          "Inverter PCB",
+          "Connector Harness",
+          "Insulation Sleeve"
+        ],
+        "specification_patterns": [
+          "Automotive grade",
+          "300mm",
+          "IP67"
+        ]
+      }
+    ],
+    "warehouse_types": [
+      "Raw Material",
+      "Quality Hold",
+      "Rejected Material",
+      "Inbound"
+    ],
+    "plant_locations": [
+      "Detroit, Michigan",
+      "Austin, Texas",
+      "Fremont, California"
+    ],
+    "carrier_name_patterns": [
+      "EV freight carrier",
+      "US regional logistics"
+    ],
+    "inspection_test_categories": [
+      "Electrical Test",
+      "Dimensional Inspection",
+      "Visual Inspection",
+      "Functional Test"
+    ]
+  },
+  "table_role_mapping": [
+    {
+      "table_name": "SupplierMaster",
+      "table_role": "purchase_order_header",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "ComponentMaster",
+      "table_role": "component_master",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "Plant",
+      "table_role": "plant_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "Warehouse",
+      "table_role": "warehouse_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "SupplierComponent",
+      "table_role": "supplier_component",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "table_role": "purchase_requisition",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "PurchaseReqLine",
+      "table_role": "purchase_req_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "RFQHeader",
+      "table_role": "rfq_header",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "RFQLine",
+      "table_role": "rfq_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "SupplierQuotation",
+      "table_role": "supplier_quotation",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "SupplierQuotationLn",
+      "table_role": "supplier_quotation_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "PurchaseOrderHdr",
+      "table_role": "purchase_order_header",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "table_role": "purchase_order_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "POSchedule",
+      "table_role": "po_schedule",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "ShipmentHdr",
+      "table_role": "shipment_header",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "table_role": "shipment_line",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "table_role": "goods_receipt_header",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "table_role": "goods_receipt_line",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "IncomingInspection",
+      "table_role": "incoming_inspection",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "InspectionResult",
+      "table_role": "inspection_result",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "table_role": "inventory_transaction",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "table_role": "supplier_invoice",
+      "area": "Finance",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "PaymentTransaction",
+      "table_role": "payment_transaction",
+      "area": "Finance",
+      "confidence": "high",
+      "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "table_role": "inventory_balance",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Invalid v2 role."
+    }
+  ],
+  "generation_order": [
+    "PaymentTransaction",
+    "SupplierMaster",
+    "ComponentMaster",
+    "Plant",
+    "Warehouse",
+    "SupplierComponent",
+    "PurchaseRequisition",
+    "PurchaseReqLine",
+    "RFQHeader",
+    "RFQLine",
+    "SupplierQuotation",
+    "SupplierQuotationLn",
+    "PurchaseOrderHdr",
+    "PurchaseOrderLine",
+    "POSchedule",
+    "ShipmentHdr",
+    "ShipmentLine",
+    "GoodsReceiptHeader",
+    "GoodsReceiptLine",
+    "IncomingInspection",
+    "InspectionResult",
+    "InventoryTransaction",
+    "SupplierInvoice",
+    "InventoryBalance"
+  ],
+  "row_count_plan": [
+    {
+      "table_name": "SupplierMaster",
+      "target_rows": 80,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "ComponentMaster",
+      "target_rows": 300,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "Plant",
+      "target_rows": 3,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "Warehouse",
+      "target_rows": 9,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "SupplierComponent",
+      "target_rows": 450,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "target_rows": 2200,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "PurchaseReqLine",
+      "target_rows": 6600,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "RFQHeader",
+      "target_rows": 1900,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "RFQLine",
+      "target_rows": 6200,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "SupplierQuotation",
+      "target_rows": 3800,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "SupplierQuotationLn",
+      "target_rows": 10500,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "PurchaseOrderHdr",
+      "target_rows": 1800,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "target_rows": 5400,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "POSchedule",
+      "target_rows": 6500,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "ShipmentHdr",
+      "target_rows": 1700,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "target_rows": 5800,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "target_rows": 1700,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "target_rows": 5800,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "IncomingInspection",
+      "target_rows": 5800,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "InspectionResult",
+      "target_rows": 5800,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "target_rows": 5500,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "target_rows": 1700,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "PaymentTransaction",
+      "target_rows": 1700,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "target_rows": 100,
+      "source": "metadata",
+      "reasoning": "Invalid v2 table."
+    }
+  ],
+  "column_generation_rules": [
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "SupplierCode",
+      "generation_type": "category",
+      "strategy": "Generate SupplierCode using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [
+        "PlantID"
+      ],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "SupplierName",
+      "generation_type": "vendor_name",
+      "strategy": "Generate SupplierName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "SupplierCategory",
+      "generation_type": "category",
+      "strategy": "Generate SupplierCategory using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Battery",
+        "Electrical",
+        "Mechanical",
+        "Packaging",
+        "Maintenance",
+        "Logistics",
+        "Electronics"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "SupplierCity",
+      "generation_type": "category",
+      "strategy": "Generate SupplierCity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Detroit",
+        "Austin",
+        "Fremont",
+        "Phoenix",
+        "Nashville",
+        "Columbus",
+        "Reno",
+        "Greenville",
+        "Chicago",
+        "Atlanta"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "SupplierState",
+      "generation_type": "category",
+      "strategy": "Generate SupplierState using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Michigan",
+        "Texas",
+        "California",
+        "Arizona",
+        "Tennessee",
+        "Ohio",
+        "Nevada",
+        "South Carolina",
+        "Illinois",
+        "Georgia"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "SupplierCountry",
+      "generation_type": "category",
+      "strategy": "Always generate USA for Procurement v2 supplier, plant, and warehouse country columns.",
+      "allowed_values": [
+        "USA"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "SupplierZipCode",
+      "generation_type": "category",
+      "strategy": "Generate SupplierZipCode using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "PaymentTerms",
+      "generation_type": "category",
+      "strategy": "Generate PaymentTerms using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Net 30",
+        "Net 45",
+        "Net 60",
+        "Advance",
+        "2/10 Net 30"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "LeadTimeDays",
+      "generation_type": "integer_range",
+      "strategy": "Generate LeadTimeDays using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 3,
+      "max_value": 60,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "QualityRating",
+      "generation_type": "decimal_range",
+      "strategy": "Generate QualityRating using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 70,
+      "max_value": 100,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierMaster",
+      "column_name": "Status",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Active",
+        "Inactive",
+        "OnHold"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "ComponentCode",
+      "generation_type": "category",
+      "strategy": "Generate ComponentCode using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "ComponentName",
+      "generation_type": "material_name",
+      "strategy": "Generate ComponentName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "ComponentCategory",
+      "generation_type": "category",
+      "strategy": "Generate ComponentCategory using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Battery",
+        "Electrical",
+        "Mechanical",
+        "Packaging",
+        "Maintenance",
+        "Safety",
+        "Electronics"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "UOM",
+      "generation_type": "category",
+      "strategy": "Generate UOM using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Each",
+        "Box",
+        "Kg",
+        "Meter",
+        "Roll",
+        "Liter",
+        "Set"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "StandardCost",
+      "generation_type": "decimal_range",
+      "strategy": "Generate StandardCost using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 5000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "CurrencyCode",
+      "generation_type": "category",
+      "strategy": "Use EUR.",
+      "allowed_values": [
+        "EUR"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "SafetyCriticalFlag",
+      "generation_type": "category",
+      "strategy": "Generate SafetyCriticalFlag using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "0",
+        "1"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ComponentMaster",
+      "column_name": "Status",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Active",
+        "Inactive",
+        "Obsolete"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "PlantCode",
+      "generation_type": "category",
+      "strategy": "Generate PlantCode using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "PlantName",
+      "generation_type": "plant_name",
+      "strategy": "Generate PlantName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "PlantCity",
+      "generation_type": "category",
+      "strategy": "Generate PlantCity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Detroit",
+        "Austin",
+        "Fremont",
+        "Phoenix",
+        "Nashville",
+        "Columbus",
+        "Reno",
+        "Greenville"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "PlantState",
+      "generation_type": "category",
+      "strategy": "Generate PlantState using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Michigan",
+        "Texas",
+        "California",
+        "Arizona",
+        "Tennessee",
+        "Ohio",
+        "Nevada",
+        "South Carolina"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "PlantCountry",
+      "generation_type": "category",
+      "strategy": "Use Canada.",
+      "allowed_values": [
+        "Canada"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "PlantZipCode",
+      "generation_type": "category",
+      "strategy": "Generate PlantZipCode using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Plant",
+      "column_name": "Status",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Active",
+        "Inactive"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseCode",
+      "generation_type": "category",
+      "strategy": "Generate WarehouseCode using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseName",
+      "generation_type": "warehouse_name",
+      "strategy": "Generate WarehouseName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseType",
+      "generation_type": "category",
+      "strategy": "Generate WarehouseType using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Raw Material",
+        "Quality Hold",
+        "Rejected Material",
+        "Maintenance Spares",
+        "Inbound",
+        "Packaging",
+        "Finished Goods Staging"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseLocation",
+      "generation_type": "category",
+      "strategy": "Generate WarehouseLocation using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseCity",
+      "generation_type": "category",
+      "strategy": "Generate WarehouseCity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Detroit",
+        "Austin",
+        "Fremont",
+        "Phoenix",
+        "Nashville",
+        "Columbus",
+        "Reno",
+        "Greenville"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseState",
+      "generation_type": "category",
+      "strategy": "Generate WarehouseState using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Michigan",
+        "Texas",
+        "California",
+        "Arizona",
+        "Tennessee",
+        "Ohio",
+        "Nevada",
+        "South Carolina"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseCountry",
+      "generation_type": "category",
+      "strategy": "Always generate USA for Procurement v2 supplier, plant, and warehouse country columns.",
+      "allowed_values": [
+        "USA"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "WarehouseZipCode",
+      "generation_type": "category",
+      "strategy": "Generate WarehouseZipCode using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "Warehouse",
+      "column_name": "Status",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Active",
+        "Inactive",
+        "OnHold"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierComponent",
+      "column_name": "PreferredSupplierFlag",
+      "generation_type": "category",
+      "strategy": "Generate PreferredSupplierFlag using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "0",
+        "1"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierComponent",
+      "column_name": "MinOrderQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate MinOrderQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierComponent",
+      "column_name": "LeadTimeDays",
+      "generation_type": "integer_range",
+      "strategy": "Generate LeadTimeDays using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 3,
+      "max_value": 60,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierComponent",
+      "column_name": "ContractPrice",
+      "generation_type": "decimal_range",
+      "strategy": "Generate ContractPrice using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 5000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierComponent",
+      "column_name": "CurrencyCode",
+      "generation_type": "category",
+      "strategy": "Always generate CurrencyCode = USD for Procurement v2 financial values.",
+      "allowed_values": [
+        "USD"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierComponent",
+      "column_name": "Status",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Active",
+        "Inactive",
+        "Expired"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "column_name": "RequisitionDate",
+      "generation_type": "date_range",
+      "strategy": "Generate RequisitionDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "column_name": "RequiredDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate RequiredDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "column_name": "RequesterName",
+      "generation_type": "faker_person",
+      "strategy": "Generate RequesterName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "column_name": "Department",
+      "generation_type": "category",
+      "strategy": "Generate Department using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Production",
+        "Maintenance",
+        "Quality",
+        "Engineering",
+        "Warehouse",
+        "Procurement"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "column_name": "Priority",
+      "generation_type": "category",
+      "strategy": "Generate Priority using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Low",
+        "Medium",
+        "High",
+        "Urgent"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseRequisition",
+      "column_name": "Status",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Draft",
+        "Submitted",
+        "Approved",
+        "ConvertedToRFQ",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseReqLine",
+      "column_name": "RequestedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate RequestedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseReqLine",
+      "column_name": "RequiredDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate RequiredDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseReqLine",
+      "column_name": "LineStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Open",
+        "Approved",
+        "ConvertedToRFQ",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RFQHeader",
+      "column_name": "RFQDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate RFQDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RFQHeader",
+      "column_name": "RFQDueDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate RFQDueDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RFQHeader",
+      "column_name": "BuyerName",
+      "generation_type": "faker_person",
+      "strategy": "Generate BuyerName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RFQHeader",
+      "column_name": "RFQStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Created",
+        "Sent",
+        "Closed",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RFQLine",
+      "column_name": "RFQQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate RFQQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RFQLine",
+      "column_name": "RequiredDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate RequiredDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RFQLine",
+      "column_name": "LineStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Open",
+        "Quoted",
+        "Awarded",
+        "Closed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotation",
+      "column_name": "QuotationDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate QuotationDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotation",
+      "column_name": "ValidUntilDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate ValidUntilDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotation",
+      "column_name": "QuotationStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Submitted",
+        "UnderReview",
+        "Awarded",
+        "Rejected",
+        "Expired"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotation",
+      "column_name": "CurrencyCode",
+      "generation_type": "category",
+      "strategy": "Always generate CurrencyCode = USD for Procurement v2 financial values.",
+      "allowed_values": [
+        "USD"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotationLn",
+      "column_name": "QuotedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate QuotedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotationLn",
+      "column_name": "QuotedUnitPrice",
+      "generation_type": "decimal_range",
+      "strategy": "Generate QuotedUnitPrice using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 6000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotationLn",
+      "column_name": "LeadTimeDays",
+      "generation_type": "integer_range",
+      "strategy": "Generate LeadTimeDays using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 3,
+      "max_value": 75,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotationLn",
+      "column_name": "AwardedFlag",
+      "generation_type": "category",
+      "strategy": "Generate AwardedFlag using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "0",
+        "1"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierQuotationLn",
+      "column_name": "LineStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Quoted",
+        "Awarded",
+        "Rejected"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderHdr",
+      "column_name": "OrderDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate OrderDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderHdr",
+      "column_name": "ExpectedDeliveryDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate ExpectedDeliveryDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderHdr",
+      "column_name": "POStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Created",
+        "Approved",
+        "Sent",
+        "PartiallyReceived",
+        "Closed",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderHdr",
+      "column_name": "CurrencyCode",
+      "generation_type": "category",
+      "strategy": "Always generate CurrencyCode = USD for Procurement v2 financial values.",
+      "allowed_values": [
+        "USD"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "OrderedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate OrderedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "UnitPrice",
+      "generation_type": "decimal_range",
+      "strategy": "Generate UnitPrice using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 6000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "OpenQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate OpenQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "column_name": "LineStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Open",
+        "Scheduled",
+        "PartiallyShipped",
+        "PartiallyReceived",
+        "Closed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "POSchedule",
+      "column_name": "ScheduledDeliveryDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate ScheduledDeliveryDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "POSchedule",
+      "column_name": "ScheduledQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate ScheduledQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "POSchedule",
+      "column_name": "ScheduleStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Planned",
+        "Scheduled",
+        "PartiallyShipped",
+        "Shipped",
+        "Delayed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ShipmentHdr",
+      "column_name": "ShipmentDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate ShipmentDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ShipmentHdr",
+      "column_name": "CarrierName",
+      "generation_type": "category",
+      "strategy": "Generate CarrierName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ShipmentHdr",
+      "column_name": "TrackingNumber",
+      "generation_type": "category",
+      "strategy": "Generate TrackingNumber using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ShipmentHdr",
+      "column_name": "ShipmentStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Planned",
+        "Shipped",
+        "InTransit",
+        "Delivered",
+        "Delayed",
+        "PartiallyDelivered"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ShipmentLine",
+      "column_name": "ShippedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate ShippedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "column_name": "ReceiptDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate ReceiptDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "column_name": "ReceiptStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Received",
+        "Partial",
+        "ShortReceived",
+        "Damaged",
+        "Closed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "column_name": "ShippedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate ShippedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "column_name": "ReceivedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate ReceivedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "column_name": "DamagedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate DamagedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "IncomingInspection",
+      "column_name": "InspectionDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate InspectionDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "IncomingInspection",
+      "column_name": "InspectorName",
+      "generation_type": "faker_person",
+      "strategy": "Generate InspectorName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "IncomingInspection",
+      "column_name": "InspectionStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Pending",
+        "Passed",
+        "PartiallyRejected",
+        "Failed",
+        "Completed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InspectionResult",
+      "column_name": "TestName",
+      "generation_type": "category",
+      "strategy": "Generate TestName using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Visual Inspection",
+        "Dimensional Check",
+        "Electrical Test",
+        "Packaging Check",
+        "Documentation Review",
+        "Thermal Test"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InspectionResult",
+      "column_name": "InspectedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate InspectedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InspectionResult",
+      "column_name": "AcceptedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate AcceptedQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InspectionResult",
+      "column_name": "RejectionReason",
+      "generation_type": "category",
+      "strategy": "Generate RejectionReason using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "Not Applicable",
+        "Dimension Out of Tolerance",
+        "Surface Defect",
+        "Electrical Test Failure",
+        "Packaging Damage",
+        "Material Contamination",
+        "Wrong Specification",
+        "Thermal Stress Failure",
+        "Supplier Documentation Issue",
+        "Visual Defect",
+        "Functional Test Failure"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "nullable_when_not_applicable",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InspectionResult",
+      "column_name": "ResultStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Passed",
+        "PartiallyRejected",
+        "Failed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "column_name": "TransactionDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate TransactionDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "column_name": "TransactionType",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "StockIn",
+        "QualityRelease",
+        "Receipt",
+        "InventoryPosting"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "column_name": "TransactionQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "Generate TransactionQuantity using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "column_name": "ReferenceDocument",
+      "generation_type": "category",
+      "strategy": "Generate ReferenceDocument using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "column_name": "InvoiceDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate InvoiceDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "column_name": "DueDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate DueDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "column_name": "InvoiceStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Draft",
+        "Submitted",
+        "Approved",
+        "PartiallyPaid",
+        "Paid",
+        "Overdue"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "column_name": "TaxAmount",
+      "generation_type": "decimal_range",
+      "strategy": "Generate TaxAmount using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 5000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "column_name": "FreightAmount",
+      "generation_type": "decimal_range",
+      "strategy": "Generate FreightAmount using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 3000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "SupplierInvoice",
+      "column_name": "CurrencyCode",
+      "generation_type": "category",
+      "strategy": "Always generate CurrencyCode = USD for Procurement v2 financial values.",
+      "allowed_values": [
+        "USD"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PaymentTransaction",
+      "column_name": "PaymentDate",
+      "generation_type": "date_offset",
+      "strategy": "Generate PaymentDate using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PaymentTransaction",
+      "column_name": "PaymentAmount",
+      "generation_type": "decimal_range",
+      "strategy": "Generate PaymentAmount using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PaymentTransaction",
+      "column_name": "PaymentMethod",
+      "generation_type": "category",
+      "strategy": "Generate PaymentMethod using metadata constraints and Procurement v2 lifecycle context.",
+      "allowed_values": [
+        "ACH",
+        "Wire Transfer",
+        "Check",
+        "Credit Transfer"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PaymentTransaction",
+      "column_name": "PaymentStatus",
+      "generation_type": "status",
+      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "allowed_values": [
+        "Pending",
+        "Paid",
+        "PartiallyPaid",
+        "Failed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "PaymentTransaction",
+      "column_name": "CurrencyCode",
+      "generation_type": "category",
+      "strategy": "Always generate CurrencyCode = USD for Procurement v2 financial values.",
+      "allowed_values": [
+        "USD"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    }
+  ],
+  "formula_rules": [
+    {
+      "rule_id": "supplier_quote_line_amount",
+      "rule_type": "row_level",
+      "target_table": "SupplierQuotationLn",
+      "target_column": "MissingAmount",
+      "operation": "multiply",
+      "input_columns": [
+        "QuotedQuantity",
+        "QuotedUnitPrice"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "QuotedQuantity * QuotedUnitPrice",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": "Quotation line amount in USD."
+    },
+    {
+      "rule_id": "po_line_amount",
+      "rule_type": "row_level",
+      "target_table": "PurchaseOrderLine",
+      "target_column": "LineAmount",
+      "operation": "multiply",
+      "input_columns": [
+        "OrderedQuantity",
+        "UnitPrice"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "OrderedQuantity * UnitPrice",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": "PO line amount in USD."
+    },
+    {
+      "rule_id": "po_header_total",
+      "rule_type": "aggregate",
+      "target_table": "PurchaseOrderHdr",
+      "target_column": "TotalAmount",
+      "operation": "sum",
+      "input_columns": [],
+      "source_table": "PurchaseOrderLine",
+      "source_column": "LineAmount",
+      "relationship_key": "PurchaseOrderID",
+      "group_by_columns": [],
+      "formula": "SUM(PurchaseOrderLine.LineAmount) BY PurchaseOrderID",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": "PO header total in USD."
+    },
+    {
+      "rule_id": "goods_receipt_short_qty",
+      "rule_type": "row_level",
+      "target_table": "GoodsReceiptLine",
+      "target_column": "ShortQuantity",
+      "operation": "subtract",
+      "input_columns": [
+        "ShippedQuantity",
+        "ReceivedQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "ShippedQuantity - ReceivedQuantity",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.0001,
+      "description": "Short receipt quantity."
+    },
+    {
+      "rule_id": "inspection_rejected_qty",
+      "rule_type": "row_level",
+      "target_table": "InspectionResult",
+      "target_column": "RejectedQuantity",
+      "operation": "subtract",
+      "input_columns": [
+        "InspectedQuantity",
+        "AcceptedQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "InspectedQuantity - AcceptedQuantity",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.0001,
+      "description": "Rejected inspection quantity."
+    },
+    {
+      "rule_id": "inspection_rejection_rate",
+      "rule_type": "percentage",
+      "target_table": "InspectionResult",
+      "target_column": "RejectionRatePct",
+      "operation": "percentage",
+      "input_columns": [
+        "RejectedQuantity",
+        "InspectedQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "RejectedQuantity / InspectedQuantity * 100",
+      "denominator_column": "InspectedQuantity",
+      "denominator_guard": true,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": "Inspection rejection rate percent."
+    },
+    {
+      "rule_id": "supplier_invoice_total",
+      "rule_type": "row_level",
+      "target_table": "SupplierInvoice",
+      "target_column": "TotalInvoiceAmount",
+      "operation": "add",
+      "input_columns": [
+        "InvoiceAmount",
+        "TaxAmount",
+        "FreightAmount"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "InvoiceAmount + TaxAmount + FreightAmount",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": "Supplier invoice total in USD."
+    },
+    {
+      "rule_id": "invalid_inventory_balance_formula",
+      "rule_type": "aggregate",
+      "target_table": "InventoryBalance",
+      "target_column": "OnHandQuantity",
+      "operation": "sum",
+      "input_columns": [],
+      "source_table": "InventoryTransaction",
+      "source_column": "TransactionQuantity",
+      "relationship_key": null,
+      "group_by_columns": [
+        "ComponentID"
+      ],
+      "formula": "SUM(TransactionQuantity)",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.0001,
+      "description": "Invalid v2 InventoryBalance formula."
+    }
+  ],
+  "date_rules": [
+    {
+      "rule_id": "date_req_to_rfq",
+      "earlier_table": "PurchaseRequisition",
+      "earlier_column": "RequisitionDate",
+      "later_table": "RFQHeader",
+      "later_column": "MissingDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_rfq_to_quote",
+      "earlier_table": "RFQHeader",
+      "earlier_column": "RFQDate",
+      "later_table": "SupplierQuotation",
+      "later_column": "QuotationDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_quote_to_po",
+      "earlier_table": "SupplierQuotation",
+      "earlier_column": "QuotationDate",
+      "later_table": "PurchaseOrderHdr",
+      "later_column": "OrderDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_po_to_schedule",
+      "earlier_table": "PurchaseOrderHdr",
+      "earlier_column": "OrderDate",
+      "later_table": "POSchedule",
+      "later_column": "ScheduledDeliveryDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_schedule_to_ship",
+      "earlier_table": "POSchedule",
+      "earlier_column": "ScheduledDeliveryDate",
+      "later_table": "ShipmentHdr",
+      "later_column": "ShipmentDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_ship_to_receipt",
+      "earlier_table": "ShipmentHdr",
+      "earlier_column": "ShipmentDate",
+      "later_table": "GoodsReceiptHeader",
+      "later_column": "ReceiptDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_receipt_to_inspection",
+      "earlier_table": "GoodsReceiptHeader",
+      "earlier_column": "ReceiptDate",
+      "later_table": "IncomingInspection",
+      "later_column": "InspectionDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_inspection_to_inventory",
+      "earlier_table": "IncomingInspection",
+      "earlier_column": "InspectionDate",
+      "later_table": "InventoryTransaction",
+      "later_column": "TransactionDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_receipt_to_invoice",
+      "earlier_table": "GoodsReceiptHeader",
+      "earlier_column": "ReceiptDate",
+      "later_table": "SupplierInvoice",
+      "later_column": "InvoiceDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    },
+    {
+      "rule_id": "date_invoice_to_payment",
+      "earlier_table": "SupplierInvoice",
+      "earlier_column": "InvoiceDate",
+      "later_table": "PaymentTransaction",
+      "later_column": "PaymentDate",
+      "min_offset_days": 0,
+      "max_offset_days": 45,
+      "description": "Procurement v2 date lifecycle ordering."
+    }
+  ],
+  "quantity_rules": [
+    {
+      "rule_id": "qty_schedule_le_ordered",
+      "left_table": "SupplierMaster",
+      "left_column": "SupplierName",
+      "operator": "<=",
+      "right_table": "PurchaseOrderLine",
+      "right_column": "OrderedQuantity",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    },
+    {
+      "rule_id": "qty_shipped_le_scheduled",
+      "left_table": "ShipmentLine",
+      "left_column": "ShippedQuantity",
+      "operator": "<=",
+      "right_table": "POSchedule",
+      "right_column": "ScheduledQuantity",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    },
+    {
+      "rule_id": "qty_received_le_shipped",
+      "left_table": "GoodsReceiptLine",
+      "left_column": "ReceivedQuantity",
+      "operator": "<=",
+      "right_table": "ShipmentLine",
+      "right_column": "ShippedQuantity",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    },
+    {
+      "rule_id": "qty_damaged_le_received",
+      "left_table": "GoodsReceiptLine",
+      "left_column": "DamagedQuantity",
+      "operator": "<=",
+      "right_table": "GoodsReceiptLine",
+      "right_column": "ReceivedQuantity",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    },
+    {
+      "rule_id": "qty_accepted_le_inspected",
+      "left_table": "InspectionResult",
+      "left_column": "AcceptedQuantity",
+      "operator": "<=",
+      "right_table": "InspectionResult",
+      "right_column": "InspectedQuantity",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    },
+    {
+      "rule_id": "qty_rejected_le_inspected",
+      "left_table": "InspectionResult",
+      "left_column": "RejectedQuantity",
+      "operator": "<=",
+      "right_table": "InspectionResult",
+      "right_column": "InspectedQuantity",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    },
+    {
+      "rule_id": "qty_inventory_le_accepted",
+      "left_table": "InventoryTransaction",
+      "left_column": "TransactionQuantity",
+      "operator": "<=",
+      "right_table": "InspectionResult",
+      "right_column": "AcceptedQuantity",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    },
+    {
+      "rule_id": "qty_payment_le_invoice",
+      "left_table": "PaymentTransaction",
+      "left_column": "PaymentAmount",
+      "operator": "<=",
+      "right_table": "SupplierInvoice",
+      "right_column": "TotalInvoiceAmount",
+      "description": "Procurement v2 quantity lifecycle constraint."
+    }
+  ],
+  "status_rules": [
+    {
+      "rule_id": "status_PurchaseRequisition_Status",
+      "table_name": "PurchaseRequisition",
+      "status_column": "Status",
+      "status_values": [
+        "Draft",
+        "Submitted",
+        "Approved",
+        "ConvertedToRFQ",
+        "Cancelled"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_PurchaseReqLine_LineStatus",
+      "table_name": "PurchaseReqLine",
+      "status_column": "LineStatus",
+      "status_values": [
+        "Open",
+        "Approved",
+        "ConvertedToRFQ",
+        "Cancelled"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_RFQHeader_RFQStatus",
+      "table_name": "RFQHeader",
+      "status_column": "RFQStatus",
+      "status_values": [
+        "Created",
+        "Sent",
+        "Closed",
+        "Cancelled"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_RFQLine_LineStatus",
+      "table_name": "RFQLine",
+      "status_column": "LineStatus",
+      "status_values": [
+        "Open",
+        "Quoted",
+        "Awarded",
+        "Closed"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_SupplierQuotation_QuotationStatus",
+      "table_name": "SupplierQuotation",
+      "status_column": "QuotationStatus",
+      "status_values": [
+        "Submitted",
+        "UnderReview",
+        "Awarded",
+        "Rejected",
+        "Expired"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_SupplierQuotationLn_LineStatus",
+      "table_name": "SupplierQuotationLn",
+      "status_column": "LineStatus",
+      "status_values": [
+        "Quoted",
+        "Awarded",
+        "Rejected"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_PurchaseOrderHdr_POStatus",
+      "table_name": "PurchaseOrderHdr",
+      "status_column": "POStatus",
+      "status_values": [
+        "CompleteX"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_PurchaseOrderLine_LineStatus",
+      "table_name": "PurchaseOrderLine",
+      "status_column": "LineStatus",
+      "status_values": [
+        "Open",
+        "Scheduled",
+        "PartiallyShipped",
+        "PartiallyReceived",
+        "Closed"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_POSchedule_ScheduleStatus",
+      "table_name": "POSchedule",
+      "status_column": "ScheduleStatus",
+      "status_values": [
+        "Planned",
+        "Scheduled",
+        "PartiallyShipped",
+        "Shipped",
+        "Delayed"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_ShipmentHdr_ShipmentStatus",
+      "table_name": "ShipmentHdr",
+      "status_column": "ShipmentStatus",
+      "status_values": [
+        "Planned",
+        "Shipped",
+        "InTransit",
+        "Delivered",
+        "Delayed",
+        "PartiallyDelivered"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_GoodsReceiptHeader_ReceiptStatus",
+      "table_name": "GoodsReceiptHeader",
+      "status_column": "ReceiptStatus",
+      "status_values": [
+        "Received",
+        "Partial",
+        "ShortReceived",
+        "Damaged",
+        "Closed"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_IncomingInspection_InspectionStatus",
+      "table_name": "IncomingInspection",
+      "status_column": "InspectionStatus",
+      "status_values": [
+        "Pending",
+        "Passed",
+        "PartiallyRejected",
+        "Failed",
+        "Completed"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_InspectionResult_ResultStatus",
+      "table_name": "InspectionResult",
+      "status_column": "ResultStatus",
+      "status_values": [
+        "Passed",
+        "PartiallyRejected",
+        "Failed"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_InventoryTransaction_TransactionType",
+      "table_name": "InventoryTransaction",
+      "status_column": "TransactionType",
+      "status_values": [
+        "StockIn",
+        "QualityRelease",
+        "Receipt",
+        "InventoryPosting"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_SupplierInvoice_InvoiceStatus",
+      "table_name": "SupplierInvoice",
+      "status_column": "InvoiceStatus",
+      "status_values": [
+        "Draft",
+        "Submitted",
+        "Approved",
+        "PartiallyPaid",
+        "Paid",
+        "Overdue"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_PaymentTransaction_PaymentStatus",
+      "table_name": "PaymentTransaction",
+      "status_column": "PaymentStatus",
+      "status_values": [
+        "Pending",
+        "Paid",
+        "PartiallyPaid",
+        "Failed"
+      ],
+      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
+      "description": "Lifecycle-based Procurement v2 status realism."
+    }
+  ],
+  "validation_rules": [
+    {
+      "rule_id": "fk_supplier_component_supplier",
+      "rule_type": "fk_check",
+      "table_name": "SupplierComponent",
+      "column_name": "SupplierID",
+      "condition": "SupplierComponent.SupplierID exists in SupplierMaster.SupplierID",
+      "severity": "error",
+      "description": "Supplier eligibility FK."
+    },
+    {
+      "rule_id": "fk_supplier_component_component",
+      "rule_type": "fk_check",
+      "table_name": "SupplierComponent",
+      "column_name": "ComponentID",
+      "condition": "SupplierComponent.ComponentID exists in ComponentMaster.ComponentID",
+      "severity": "error",
+      "description": "Component eligibility FK."
+    },
+    {
+      "rule_id": "fk_rfq_line_requisition_line",
+      "rule_type": "fk_check",
+      "table_name": "RFQLine",
+      "column_name": "RequisitionLineID",
+      "condition": "RFQLine.RequisitionLineID exists in PurchaseReqLine.RequisitionLineID",
+      "severity": "error",
+      "description": "RFQ line source."
+    },
+    {
+      "rule_id": "fk_quotation_rfq_supplier",
+      "rule_type": "fk_check",
+      "table_name": "SupplierQuotation",
+      "column_name": "RFQID",
+      "condition": "SupplierQuotation.RFQID exists in RFQHeader.RFQID and SupplierID exists in SupplierMaster.SupplierID",
+      "severity": "error",
+      "description": "Supplier quotation source."
+    },
+    {
+      "rule_id": "fk_awarded_quotation_to_po",
+      "rule_type": "reconciliation",
+      "table_name": "PurchaseOrderHdr",
+      "column_name": "QuotationID",
+      "condition": "PurchaseOrderHdr.QuotationID links to an awarded SupplierQuotation.QuotationID",
+      "severity": "error",
+      "description": "Awarded quote to PO."
+    },
+    {
+      "rule_id": "qty_po_schedule",
+      "rule_type": "quantity_check",
+      "table_name": "POSchedule",
+      "column_name": "ScheduledQuantity",
+      "condition": "POSchedule.ScheduledQuantity <= PurchaseOrderLine.OrderedQuantity",
+      "severity": "error",
+      "description": "Schedule quantity check."
+    },
+    {
+      "rule_id": "qty_payment_invoice",
+      "rule_type": "quantity_check",
+      "table_name": "PaymentTransaction",
+      "column_name": "PaymentAmount",
+      "condition": "PaymentAmount <= SupplierInvoice.TotalInvoiceAmount",
+      "severity": "error",
+      "description": "Payment amount check."
+    },
+    {
+      "rule_id": "currency_usd_only",
+      "rule_type": "reconciliation",
+      "table_name": "SupplierInvoice",
+      "column_name": "CurrencyCode",
+      "condition": "CurrencyCode = USD for all financial tables",
+      "severity": "error",
+      "description": "USD-only Procurement v2 financials."
+    },
+    {
+      "rule_id": "country_usa_only",
+      "rule_type": "reconciliation",
+      "table_name": "Plant",
+      "column_name": "PlantCountry",
+      "condition": "Country = USA for Plant/Warehouse/Supplier",
+      "severity": "error",
+      "description": "US-only location planning."
+    },
+    {
+      "rule_id": "status_diversity_required",
+      "rule_type": "status_check",
+      "table_name": "PurchaseOrderHdr",
+      "column_name": "POStatus",
+      "condition": "Status diversity should be present where multiple statuses are allowed",
+      "severity": "warning",
+      "description": "Status realism check."
+    },
+    {
+      "rule_id": "bad_inventory_balance_validation",
+      "rule_type": "reconciliation",
+      "table_name": "InventoryTransaction",
+      "column_name": "TransactionQuantity",
+      "condition": "InventoryBalance should reconcile inventory",
+      "severity": "error",
+      "description": "Invalid v2 reference."
+    }
+  ],
+  "assumptions": [
+    "Procurement v2 excludes InventoryBalance.",
+    "All financial values use USD.",
+    "Locations are USA-only."
+  ],
+  "warnings": []
+}

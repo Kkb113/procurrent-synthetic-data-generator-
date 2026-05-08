@@ -1,0 +1,15 @@
+fastapi
+jinja2
+python-multipart
+pydantic
+pandas
+openpyxl
+faker
+numpy
+networkx
+sqlalchemy
+pyodbc
+python-dotenv
+openai
+uvicorn
+pytest

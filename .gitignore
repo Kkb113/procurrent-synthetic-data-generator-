@@ -1,0 +1,34 @@
+# Python caches and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Generated pipeline outputs and runtime artifacts
+output/
+uploads/
+tmp/
+temp/
+*.log
+
+# Generated data exports
+*.zip
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

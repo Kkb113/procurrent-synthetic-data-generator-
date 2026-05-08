@@ -1,0 +1,422 @@
+{
+  "module": "procurement",
+  "business_summary": "Phase 10 formula execution fixture for EV manufacturing. This is a schema/demo plan, not a final business plan.",
+  "domain_profile": {
+    "industry": "EV manufacturing",
+    "business_context": "Procurement flow with supplier delays, partial deliveries, short receipts, quality inspections, and inventory posting.",
+    "vendor_categories": [
+      "Battery",
+      "Metal",
+      "Electronics",
+      "Packaging",
+      "MRO"
+    ],
+    "material_categories": [
+      {
+        "category_name": "Battery Components",
+        "material_examples": [
+          "Lithium-Ion Cell",
+          "Battery PCB",
+          "Thermal Pad",
+          "Copper Busbar",
+          "Motor Magnet",
+          "Wiring Harness"
+        ],
+        "specification_patterns": [
+          "21700",
+          "Prismatic",
+          "Grade A",
+          "2mm",
+          "HV",
+          "12mm"
+        ]
+      }
+    ],
+    "warehouse_types": [
+      "Raw Material",
+      "Quality Hold",
+      "Rejected Material",
+      "Maintenance Spares"
+    ],
+    "plant_locations": [
+      "Bengaluru",
+      "Ahmedabad"
+    ],
+    "carrier_name_patterns": [
+      "regional industrial freight carrier",
+      "battery-safe certified logistics partner"
+    ],
+    "inspection_test_categories": [
+      "Dimensional Inspection",
+      "Electrical Continuity",
+      "Capacity Sampling"
+    ]
+  },
+  "table_role_mapping": [
+    {
+      "table_name": "Vendor",
+      "table_role": "vendor_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "RawMaterial",
+      "table_role": "material_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "Plant",
+      "table_role": "plant_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "Warehouse",
+      "table_role": "warehouse_dimension",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "PurchaseRequisitionHeader",
+      "table_role": "purchase_requisition_header",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "PurchaseRequisitionLine",
+      "table_role": "purchase_requisition_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "table_role": "purchase_order_header",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "table_role": "purchase_order_line",
+      "area": "Procurement",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "ShipmentHeader",
+      "table_role": "shipment_header",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "table_role": "shipment_line",
+      "area": "Logistics",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "table_role": "goods_receipt_header",
+      "area": "Receiving",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "table_role": "goods_receipt_line",
+      "area": "Receiving",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "QualityInspectionHeader",
+      "table_role": "quality_inspection_header",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "QualityInspectionLine",
+      "table_role": "quality_inspection_line",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "table_role": "inventory_transaction",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "table_role": "inventory_balance",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Matches Phase 9 metadata."
+    }
+  ],
+  "generation_order": [
+    "Vendor",
+    "RawMaterial",
+    "Plant",
+    "Warehouse",
+    "PurchaseRequisitionHeader",
+    "PurchaseRequisitionLine",
+    "PurchaseOrderHeader",
+    "PurchaseOrderLine",
+    "ShipmentHeader",
+    "ShipmentLine",
+    "GoodsReceiptHeader",
+    "GoodsReceiptLine",
+    "QualityInspectionHeader",
+    "QualityInspectionLine",
+    "InventoryTransaction",
+    "InventoryBalance"
+  ],
+  "row_count_plan": [
+    {
+      "table_name": "Vendor",
+      "target_rows": 20,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "RawMaterial",
+      "target_rows": 100,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "Plant",
+      "target_rows": 2,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "Warehouse",
+      "target_rows": 6,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "PurchaseRequisitionHeader",
+      "target_rows": 100,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "PurchaseRequisitionLine",
+      "target_rows": 250,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "PurchaseOrderHeader",
+      "target_rows": 80,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "PurchaseOrderLine",
+      "target_rows": 200,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "ShipmentHeader",
+      "target_rows": 70,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "ShipmentLine",
+      "target_rows": 180,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "GoodsReceiptHeader",
+      "target_rows": 70,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "GoodsReceiptLine",
+      "target_rows": 180,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "QualityInspectionHeader",
+      "target_rows": 180,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "QualityInspectionLine",
+      "target_rows": 180,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "InventoryTransaction",
+      "target_rows": 170,
+      "source": "metadata",
+      "reasoning": "Use metadata target rows."
+    },
+    {
+      "table_name": "InventoryBalance",
+      "target_rows": 20,
+      "source": "derived_from_parent",
+      "reasoning": "Inventory balance is naturally grouped from inventory transactions."
+    }
+  ],
+  "column_generation_rules": [],
+  "formula_rules": [
+    {
+      "rule_id": "PO_LINE_AMOUNT",
+      "rule_type": "row_level",
+      "target_table": "PurchaseOrderLine",
+      "target_column": "LineAmount",
+      "operation": "multiply",
+      "input_columns": [
+        "OrderedQuantity",
+        "UnitPrice"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "OrderedQuantity * UnitPrice",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": null,
+      "tolerance_value": null,
+      "description": "Calculate PO line amount."
+    },
+    {
+      "rule_id": "PO_HEADER_TOTAL",
+      "rule_type": "aggregate",
+      "target_table": "PurchaseOrderHeader",
+      "target_column": "TotalAmount",
+      "operation": "sum",
+      "input_columns": [],
+      "source_table": "PurchaseOrderLine",
+      "source_column": "LineAmount",
+      "relationship_key": "PurchaseOrderID",
+      "group_by_columns": [],
+      "formula": "SUM(PurchaseOrderLine.LineAmount) GROUP BY PurchaseOrderID",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": null,
+      "tolerance_value": null,
+      "description": "Roll line amounts up to PO header."
+    },
+    {
+      "rule_id": "GRN_SHORT_QTY",
+      "rule_type": "quantity_reconciliation",
+      "target_table": "GoodsReceiptLine",
+      "target_column": "ShortQuantity",
+      "operation": "subtract",
+      "input_columns": [
+        "ShippedQuantity",
+        "ReceivedQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "ShippedQuantity - ReceivedQuantity",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": null,
+      "tolerance_value": null,
+      "description": "Calculate short receipt quantity."
+    },
+    {
+      "rule_id": "INSPECTION_REJECTED_QTY",
+      "rule_type": "quantity_reconciliation",
+      "target_table": "QualityInspectionLine",
+      "target_column": "RejectedQuantity",
+      "operation": "subtract",
+      "input_columns": [
+        "InspectedQuantity",
+        "AcceptedQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "InspectedQuantity - AcceptedQuantity",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": null,
+      "tolerance_value": null,
+      "description": "Calculate rejected inspection quantity."
+    },
+    {
+      "rule_id": "REJECTION_RATE",
+      "rule_type": "percentage",
+      "target_table": "QualityInspectionLine",
+      "target_column": "RejectionRatePct",
+      "operation": "percentage",
+      "input_columns": [
+        "RejectedQuantity",
+        "InspectedQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "RejectedQuantity / InspectedQuantity * 100",
+      "denominator_column": "InspectedQuantity",
+      "denominator_guard": true,
+      "tolerance_type": null,
+      "tolerance_value": null,
+      "description": "Calculate safe rejection percentage."
+    },
+    {
+      "rule_id": "INVENTORY_BALANCE_ON_HAND",
+      "rule_type": "inventory_balance",
+      "target_table": "InventoryBalance",
+      "target_column": "OnHandQuantity",
+      "operation": "sum",
+      "input_columns": [],
+      "source_table": "InventoryTransaction",
+      "source_column": "TransactionQuantity",
+      "relationship_key": null,
+      "group_by_columns": [
+        "RawMaterialID",
+        "PlantID",
+        "WarehouseID"
+      ],
+      "formula": "SUM(InventoryTransaction.TransactionQuantity) GROUP BY RawMaterialID, PlantID, WarehouseID",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": null,
+      "tolerance_value": null,
+      "description": "Recalculate on-hand balance from inventory transactions."
+    }
+  ],
+  "date_rules": [],
+  "quantity_rules": [],
+  "status_rules": [],
+  "validation_rules": [],
+  "assumptions": [
+    "Phase 9 fixture focuses on lifecycle relationships and basic quantities."
+  ],
+  "warnings": [
+    "InventoryBalance may naturally produce a different row count than metadata TargetRows."
+  ]
+}
