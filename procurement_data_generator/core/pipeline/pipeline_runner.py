@@ -47,6 +47,11 @@ class ProcurementPipelineRunner:
         )
         self.module_plugin = module_plugin or ProcurementModulePlugin()
 
+    def run(self, **kwargs) -> PipelineRunReport:
+        """Backward-compatible convenience wrapper for run_pipeline."""
+
+        return self.run_pipeline(**kwargs)
+
     def run_pipeline(
         self,
         metadata_path: str,

@@ -27,6 +27,9 @@ Phase 1 module adapters are available through `procurement_data_generator/core/m
 They register Procurement and Production as module plugins without changing the existing
 Procurement runner or Production command-line workflow.
 
+Phase 2 adds a generic pipeline runner foundation in `procurement_data_generator/core/pipeline/generic_runner.py`.
+Existing Procurement and Production entry points remain supported; full Production execution through the generic runner is scheduled for a later phase.
+
 Procurement v2 is the active FastAPI/backend Procurement pipeline. Production v1 has a dedicated command-line pipeline orchestration script, while the existing Procurement runner remains focused on Procurement v2.
 
 ## 2. Procurement v2 Completed State
