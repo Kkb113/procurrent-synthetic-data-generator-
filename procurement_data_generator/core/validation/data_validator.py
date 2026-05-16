@@ -12,6 +12,12 @@ import pandas as pd
 from procurement_data_generator.core.contracts.data_quality_report import DataQualityReport, TableQualitySummary
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
+from procurement_data_generator.modules.procurement.quantity_precision import is_whole_quantity, requires_integer_quantity
+from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE
+from procurement_data_generator.modules.shared.operating_scope import (
+    get_expected_plant_count,
+    get_expected_warehouse_count,
+)
 
 
 ARTIFICIAL_NUMERIC_SUFFIX_PATTERN = re.compile(r"\s(?:[1-9]|[1-9][0-9])$")
@@ -27,8 +33,10 @@ class GeneratedDataValidator:
         dataframes: dict[str, pd.DataFrame],
         schema: SchemaContract,
         plan: LLMGenerationPlan | None = None,
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> DataQualityReport:
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
         report = DataQualityReport()
         target_rows_by_table = self._target_rows_by_table(schema, plan)
 
@@ -61,9 +69,23 @@ class GeneratedDataValidator:
             self._validate_name_quality(table, dataframe, report)
 
         self._validate_foreign_keys(dataframes, schema, report)
-        if model_version == "v2":
+        if self._schema_contains_procurement_v2_tables(schema):
             self._validate_v2_dataset_rules(dataframes, schema, report)
         return report
+
+    def _schema_contains_procurement_v2_tables(self, schema: SchemaContract) -> bool:
+        active_v2_table_names = {
+            "SupplierMaster",
+            "SupplierComponent",
+            "ComponentMaster",
+            "Plant",
+            "Warehouse",
+            "PurchaseRequisition",
+            "PurchaseReqLine",
+            "InventoryReceiptDetail",
+            "InventoryTransaction",
+        }
+        return any(table.table_name in active_v2_table_names for table in schema.ordered_tables)
 
     def _validate_row_count(self, table: TableContract, dataframe: pd.DataFrame, target_rows: int, report: DataQualityReport) -> None:
         report.record_check(len(dataframe) == target_rows)
@@ -71,7 +93,7 @@ class GeneratedDataValidator:
         if len(dataframe) != target_rows:
             level = "warning"
             message = f"{table.table_name} has {len(dataframe)} rows; target is {target_rows}."
-            fix = "Review row generation targets. Inventory and InventoryBalance may naturally differ because they are grouped snapshots."
+            fix = "Review row generation targets. Derived inventory snapshots may naturally differ because they are grouped outputs."
             report.add_issue(level, "ROW_COUNT", message, fix, table_name=table.table_name)
 
     def _validate_columns(self, table: TableContract, dataframe: pd.DataFrame, report: DataQualityReport) -> None:
@@ -314,6 +336,7 @@ class GeneratedDataValidator:
             "GoodsReceiptLine",
             "IncomingInspection",
             "InspectionResult",
+            "InventoryReceiptDetail",
             "InventoryTransaction",
             "Inventory",
             "SupplierInvoice",
@@ -335,7 +358,7 @@ class GeneratedDataValidator:
                     "error",
                     "V2_EXPECTED_TABLE",
                     f"Procurement v2 expected table {table_name} is missing.",
-                    "Provide all 24 Procurement v2 tables.",
+                    "Provide all 25 Procurement v2 tables.",
                     table_name=table_name,
                 )
         self._validate_v2_constant(dataframes, "SupplierMaster", "SupplierCountry", "USA", "V2_USA_SUPPLIER_COUNTRY", report)
@@ -343,8 +366,92 @@ class GeneratedDataValidator:
         self._validate_v2_constant(dataframes, "Warehouse", "WarehouseCountry", "USA", "V2_USA_WAREHOUSE_COUNTRY", report)
         for table_name in ("ComponentMaster", "SupplierComponent", "SupplierQuotation", "PurchaseOrderHdr", "SupplierInvoice", "PaymentTransaction"):
             self._validate_v2_constant(dataframes, table_name, "CurrencyCode", "USD", "V2_USD_CURRENCY", report)
+        self._validate_v2_operating_scope(dataframes, report)
         self._validate_v2_warehouse_master_location(dataframes, report)
+        self._validate_v2_quantity_precision(dataframes, report)
         self._validate_v2_status_diversity(dataframes, schema, report)
+
+    def _validate_v2_operating_scope(self, dataframes: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
+        plant = dataframes.get("Plant")
+        warehouse = dataframes.get("Warehouse")
+        if plant is None or warehouse is None or "PlantID" not in plant.columns or "WarehouseID" not in warehouse.columns:
+            return
+
+        expected_plant_count = get_expected_plant_count()
+        expected_warehouse_count = get_expected_warehouse_count()
+        plant_count_ok = len(plant) == expected_plant_count
+        warehouse_count_ok = len(warehouse) == expected_warehouse_count
+        report.record_check(plant_count_ok)
+        if not plant_count_ok:
+            report.add_issue(
+                "error",
+                "V2_OPERATING_SCOPE_PLANT_COUNT",
+                f"Procurement v2 must generate exactly {expected_plant_count} Plant row.",
+                "Use the shared operating scope plant count during Procurement v2 generation.",
+                table_name="Plant",
+                sample_failed_rows=self._sample_rows(plant),
+            )
+        report.record_check(warehouse_count_ok)
+        if not warehouse_count_ok:
+            report.add_issue(
+                "error",
+                "V2_OPERATING_SCOPE_WAREHOUSE_COUNT",
+                f"Procurement v2 must generate exactly {expected_warehouse_count} Warehouse row.",
+                "Use the shared operating scope warehouse count during Procurement v2 generation.",
+                table_name="Warehouse",
+                sample_failed_rows=self._sample_rows(warehouse),
+            )
+
+        plant_ids = plant["PlantID"].dropna().unique()
+        warehouse_ids = warehouse["WarehouseID"].dropna().unique()
+        if len(plant_ids) != 1 or len(warehouse_ids) != 1:
+            return
+        single_plant_id = plant_ids[0]
+        single_warehouse_id = warehouse_ids[0]
+
+        if "PlantID" in warehouse.columns:
+            mask = warehouse["PlantID"].eq(single_plant_id)
+            report.record_check(bool(mask.all()))
+            if not mask.all():
+                report.add_issue(
+                    "error",
+                    "V2_OPERATING_SCOPE_WAREHOUSE_PLANT",
+                    "Warehouse.PlantID must reference the single Procurement PlantID.",
+                    "Assign the single PlantID from Plant to the Warehouse row.",
+                    table_name="Warehouse",
+                    column_name="PlantID",
+                    sample_failed_rows=self._sample_rows(warehouse[~mask]),
+                )
+
+        for table_name, dataframe in dataframes.items():
+            if table_name == "InventoryBalance":
+                continue
+            if "PlantID" in dataframe.columns:
+                mask = dataframe["PlantID"].eq(single_plant_id)
+                report.record_check(bool(mask.all()))
+                if not mask.all():
+                    report.add_issue(
+                        "error",
+                        "V2_OPERATING_SCOPE_PLANT_REFERENCE",
+                        f"{table_name}.PlantID must use the single Procurement PlantID.",
+                        "Carry the single PlantID through all Procurement v2 location references.",
+                        table_name=table_name,
+                        column_name="PlantID",
+                        sample_failed_rows=self._sample_rows(dataframe[~mask]),
+                    )
+            if "WarehouseID" in dataframe.columns:
+                mask = dataframe["WarehouseID"].eq(single_warehouse_id)
+                report.record_check(bool(mask.all()))
+                if not mask.all():
+                    report.add_issue(
+                        "error",
+                        "V2_OPERATING_SCOPE_WAREHOUSE_REFERENCE",
+                        f"{table_name}.WarehouseID must use the single Procurement WarehouseID.",
+                        "Carry the single WarehouseID through all Procurement v2 location references.",
+                        table_name=table_name,
+                        column_name="WarehouseID",
+                        sample_failed_rows=self._sample_rows(dataframe[~mask]),
+                    )
 
     def _validate_v2_constant(
         self,
@@ -401,6 +508,47 @@ class GeneratedDataValidator:
                 sample_failed_rows=self._sample_rows(merged[~mask]),
             )
 
+    def _validate_v2_quantity_precision(self, dataframes: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
+        component = dataframes.get("ComponentMaster")
+        if component is None or not {"ComponentID", "UOM"}.issubset(component.columns):
+            return
+        component_precision = component[["ComponentID", "UOM"]].copy()
+        component_precision["__requires_integer_quantity"] = component_precision["UOM"].map(requires_integer_quantity)
+        specs = {
+            "PurchaseReqLine": ["RequestedQuantity"],
+            "RFQLine": ["RFQQuantity"],
+            "SupplierQuotationLn": ["QuotedQuantity"],
+            "PurchaseOrderLine": ["OrderedQuantity"],
+            "ShipmentLine": ["ShippedQuantity"],
+            "GoodsReceiptLine": ["ShippedQuantity", "ReceivedQuantity", "DamagedQuantity", "ShortQuantity"],
+            "InventoryReceiptDetail": ["OrderedQuantity", "ShippedQuantity", "ReceivedQuantity", "InspectedQuantity", "AcceptedQuantity", "RejectedQuantity"],
+            "InventoryTransaction": ["TransactionQuantity"],
+            "Inventory": ["OnHandQuantity", "AvailableQuantity"],
+        }
+        for table_name, quantity_columns in specs.items():
+            dataframe = dataframes.get(table_name)
+            if dataframe is None or "ComponentID" not in dataframe.columns:
+                continue
+            merged = dataframe.merge(component_precision, on="ComponentID", how="left")
+            integer_required = merged["__requires_integer_quantity"].map(lambda value: bool(value) if pd.notna(value) else False)
+            for column_name in quantity_columns:
+                if column_name not in merged.columns:
+                    continue
+                quantity = pd.to_numeric(merged[column_name], errors="coerce")
+                mask = (~integer_required) | quantity.map(is_whole_quantity)
+                passed = bool(mask.all())
+                report.record_check(passed)
+                if not passed:
+                    report.add_issue(
+                        "error",
+                        "V2_INTEGER_QUANTITY_PRECISION",
+                        f"{table_name}.{column_name} must be a whole number for countable component UOMs.",
+                        "Generate integer quantities for countable component UOMs.",
+                        table_name=table_name,
+                        column_name=column_name,
+                        sample_failed_rows=self._sample_rows(merged[~mask]),
+                    )
+
     def _validate_v2_status_diversity(self, dataframes: dict[str, pd.DataFrame], schema: SchemaContract, report: DataQualityReport) -> None:
         key_status_columns = {
             ("PurchaseRequisition", "Status"),
@@ -421,7 +569,19 @@ class GeneratedDataValidator:
             ("SupplierInvoice", "InvoiceStatus"),
             ("PaymentTransaction", "PaymentStatus"),
         }
+        full_received_single_status_columns = {
+            ("PurchaseOrderHdr", "POStatus"),
+            ("PurchaseOrderLine", "LineStatus"),
+            ("POSchedule", "ScheduleStatus"),
+            ("ShipmentHdr", "ShipmentStatus"),
+            ("GoodsReceiptHeader", "ReceiptStatus"),
+            ("IncomingInspection", "InspectionStatus"),
+            ("InspectionResult", "ResultStatus"),
+            ("InventoryTransaction", "TransactionType"),
+        }
         for table_name, column_name in key_status_columns:
+            if (table_name, column_name) in full_received_single_status_columns:
+                continue
             dataframe = dataframes.get(table_name)
             table = schema.tables.get(table_name)
             if dataframe is None or table is None or column_name not in dataframe.columns:

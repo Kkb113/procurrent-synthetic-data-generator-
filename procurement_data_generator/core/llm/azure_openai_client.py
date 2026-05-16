@@ -74,9 +74,20 @@ class AzureOpenAIClient(LLMClientBase):
         self._client = openai_client
 
     def generate_plan(self, prompt: str) -> LLMResponse:
+        return self.generate_json(
+            prompt,
+            system_message=(
+                "You are a procurement data planning assistant. Return only valid JSON "
+                "matching the LLMGenerationPlan schema. Do not include markdown or generated rows."
+            ),
+        )
+
+    def generate_json(self, prompt: str, system_message: str) -> LLMResponse:
+        """Generate a JSON object response using Azure OpenAI."""
+
         response = LLMResponse(provider=self.provider, deployment=self.config.deployment, status="failed")
         if not prompt.strip():
-            response.error_message = "Planning prompt is empty."
+            response.error_message = "Prompt is empty."
             response.complete()
             return response
 
@@ -95,13 +106,7 @@ class AzureOpenAIClient(LLMClientBase):
                 completion = client.chat.completions.create(
                     model=self.config.deployment,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a procurement data planning assistant. Return only valid JSON "
-                                "matching the LLMGenerationPlan schema. Do not include markdown or generated rows."
-                            ),
-                        },
+                        {"role": "system", "content": system_message},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0,

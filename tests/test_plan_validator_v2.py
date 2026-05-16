@@ -38,6 +38,7 @@ V2_TABLES = {
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -52,12 +53,13 @@ def test_valid_v2_plan_passes_semantic_validation() -> None:
     assert len(result.report.errors) == 0
 
 
-def test_valid_v2_plan_has_24_roles() -> None:
+def test_valid_v2_plan_has_25_roles() -> None:
     plan = _valid_plan()
 
     assert {mapping.table_name for mapping in plan.table_role_mapping} == V2_TABLES
-    assert len({mapping.table_role for mapping in plan.table_role_mapping}) == 24
+    assert len({mapping.table_role for mapping in plan.table_role_mapping}) == 25
     assert any(mapping.table_role == "inventory" for mapping in plan.table_role_mapping)
+    assert any(mapping.table_role == "inventory_receipt_detail" for mapping in plan.table_role_mapping)
 
 
 def test_inventory_balance_in_generation_order_fails() -> None:
@@ -217,6 +219,52 @@ def test_v2_plan_includes_refined_inventory_transaction_columns_and_stockin() ->
     assert transaction_type["allowed_values"] == ["StockIn"]
     assert _status_rule(data, "InventoryTransaction", "TransactionType")["status_values"] == ["StockIn"]
     assert _formula_rule(data, "InventoryTransaction", "InventoryValue")["input_columns"] == ["TransactionQuantity", "UnitPrice"]
+
+
+def test_v2_plan_includes_inventory_receipt_detail_contract() -> None:
+    data = _valid_plan_data()
+
+    assert "InventoryReceiptDetail" in data["generation_order"]
+    assert data["generation_order"].index("InspectionResult") < data["generation_order"].index("InventoryReceiptDetail")
+    assert data["generation_order"].index("InventoryReceiptDetail") < data["generation_order"].index("InventoryTransaction")
+    for column_name in [
+        "InventoryReceiptDetailID",
+        "InspectionResultID",
+        "GoodsReceiptLineID",
+        "PurchaseOrderLineID",
+        "PurchaseOrderID",
+        "SupplierID",
+        "ComponentID",
+        "PlantID",
+        "WarehouseID",
+        "POOrderDate",
+        "ExpectedDeliveryDate",
+        "ActualDeliveryDate",
+        "StockPostedDate",
+        "OrderedQuantity",
+        "ShippedQuantity",
+        "ReceivedQuantity",
+        "InspectedQuantity",
+        "AcceptedQuantity",
+        "RejectedQuantity",
+        "OrderedUnitPrice",
+        "DeliveredUnitPrice",
+        "PriceDifference",
+        "PriceDifferencePct",
+        "OrderedValue",
+        "DeliveredValue",
+        "AcceptedStockValue",
+        "OrderYear",
+        "DeliveryYear",
+        "CrossYearDeliveryFlag",
+        "DeliveryDelayDays",
+        "DeliveryStatus",
+        "PriceVarianceStatus",
+        "InventoryReceiptStatus",
+    ]:
+        assert _column_rule(data, "InventoryReceiptDetail", column_name)
+    assert _status_rule(data, "InventoryReceiptDetail", "InventoryReceiptStatus")["status_values"] == ["Received"]
+    assert not any(rule["target_table"] == "InventoryReceiptDetail" for rule in data["formula_rules"])
 
 
 def test_v2_plan_includes_inventory_value_rules() -> None:

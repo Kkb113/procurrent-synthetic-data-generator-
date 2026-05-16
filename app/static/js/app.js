@@ -49,7 +49,7 @@ function renderResults(payload) {
   renderStages(payload.stage_summary || []);
 
   document.getElementById("result-status").textContent = payload.status || "-";
-  document.getElementById("result-model-version").textContent = payload.model_version || "v1";
+  document.getElementById("result-model-version").textContent = payload.model_version || "v2";
   document.getElementById("result-tables").textContent = payload.tables_generated ?? "-";
   document.getElementById("result-rows").textContent = payload.total_rows_generated ?? "-";
   document.getElementById("result-quality").textContent = payload.data_quality_status || "-";

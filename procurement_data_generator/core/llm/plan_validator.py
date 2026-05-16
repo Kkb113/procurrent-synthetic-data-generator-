@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import Counter, deque
 from dataclasses import dataclass
 from typing import Iterable
@@ -14,7 +15,11 @@ from procurement_data_generator.core.contracts.llm_plan_contract import (
 )
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
-from procurement_data_generator.modules.procurement.role_catalog import get_procurement_role_catalog
+from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE, get_procurement_role_catalog
+from procurement_data_generator.modules.production.role_catalog import (
+    PRODUCTION_V1_EXPECTED_TABLES,
+    get_production_role_catalog,
+)
 
 
 NUMERIC_TYPES = ("int", "bigint", "smallint", "tinyint", "decimal", "numeric", "float", "money", "real")
@@ -45,6 +50,7 @@ V2_EXPECTED_TABLES = (
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -64,6 +70,9 @@ V2_KEY_STATUS_COLUMNS = (
     ("GoodsReceiptHeader", "ReceiptStatus"),
     ("IncomingInspection", "InspectionStatus"),
     ("InspectionResult", "ResultStatus"),
+    ("InventoryReceiptDetail", "DeliveryStatus"),
+    ("InventoryReceiptDetail", "PriceVarianceStatus"),
+    ("InventoryReceiptDetail", "InventoryReceiptStatus"),
     ("InventoryTransaction", "TransactionType"),
     ("Inventory", "InventoryStatus"),
     ("SupplierInvoice", "InvoiceStatus"),
@@ -78,6 +87,58 @@ V2_KEY_FORMULAS = (
     ("InspectionResult", "RejectionRatePct"),
     ("SupplierInvoice", "TotalInvoiceAmount"),
 )
+PRODUCTION_V1_OUT_OF_SCOPE_TERMS = (
+    "OEE",
+    "Downtime",
+    "Maintenance",
+    "LaborTracking",
+    "Warranty",
+    "Sales",
+    "Customer",
+    "Shipment",
+)
+PRODUCTION_V1_FORMULA_THEMES = {
+    "RequiredQuantity = PlannedQuantity * ComponentQuantity": ("requiredquantity", "plannedquantity", "componentquantity"),
+    "ScrapAdjustedQuantity = RequiredQuantity * (1 + ScrapFactorPct / 100)": (
+        "scrapadjustedquantity",
+        "requiredquantity",
+        "scrapfactorpct",
+    ),
+    "IssueValue = IssuedQuantity * UnitCost": ("issuevalue", "issuedquantity", "unitcost"),
+    "PassedQuantity + FailedQuantity = TestedQuantity": ("passedquantity", "failedquantity", "testedquantity"),
+    "ReceiptValue = GoodQuantity * UnitCost": ("receiptvalue", "goodquantity", "unitcost"),
+    "FinishedGoodsInventory.OnHandQuantity rolls up from FinishedGoodsReceipt.GoodQuantity": (
+        "finishedgoodsinventory",
+        "onhandquantity",
+        "finishedgoodsreceipt",
+        "goodquantity",
+    ),
+    "TotalProductionCost = MaterialCost + LaborCost + OverheadCost + ScrapCost": (
+        "totalproductioncost",
+        "materialcost",
+        "laborcost",
+        "overheadcost",
+        "scrapcost",
+    ),
+    "UnitProductionCost = TotalProductionCost / GoodQuantity": (
+        "unitproductioncost",
+        "totalproductioncost",
+        "goodquantity",
+    ),
+}
+PRODUCTION_V1_INTEGRATION_THEMES = {
+    "Production consumes Procurement Inventory": ("procurement", "inventory"),
+    "MaterialIssueLine references InventoryTransaction": ("materialissueline", "inventorytransaction"),
+    "MaterialIssueLine references InventoryReceiptDetail": ("materialissueline", "inventoryreceiptdetail"),
+    "ProductionGenealogy traces procurement receipt lineage": (
+        "productiongenealogy",
+        "materialissueline",
+        "inventoryreceiptdetail",
+        "inventorytransaction",
+        "componentmaster",
+        "suppliermaster",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -112,18 +173,20 @@ def validate_generation_plan(
     plan: LLMGenerationPlan,
     schema: SchemaContract,
     relationships: list[RelationshipContract],
-    model_version: str = "v1",
+    model_version: str = "v2",
 ) -> PlanValidationResult:
     """Validate an LLMGenerationPlan against metadata, roles, and ERD relationships."""
 
+    if model_version == "v1":
+        raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
     report = ValidationReport(
         total_tables_detected=len(schema.tables),
         total_columns_detected=sum(len(table.columns) for table in schema.tables.values()),
     )
     fk_relationships = get_fk_relationships_from_schema(schema)
 
-    _validate_module(plan, report)
-    role_catalog = get_procurement_role_catalog(model_version)
+    _validate_module(plan, report, _expected_module(model_version))
+    role_catalog = _role_catalog_for_model(model_version)
 
     _validate_table_role_mapping(plan, schema, report, role_catalog)
     _validate_generation_order(plan, schema, fk_relationships, report)
@@ -139,6 +202,8 @@ def validate_generation_plan(
     _validate_domain_profile(plan, schema, report)
     if model_version == "v2":
         _validate_v2_plan(plan, schema, report)
+    if model_version == "production_v1":
+        _validate_production_v1_plan(plan, schema, report)
 
     return PlanValidationResult(
         report=report,
@@ -284,11 +349,21 @@ def has_relationship_between(
     return False
 
 
-def _validate_module(plan: LLMGenerationPlan, report: ValidationReport) -> None:
-    if plan.module != "procurement":
+def _expected_module(model_version: str) -> str:
+    return "production" if model_version == "production_v1" else "procurement"
+
+
+def _role_catalog_for_model(model_version: str) -> dict:
+    if model_version == "production_v1":
+        return get_production_role_catalog(model_version)
+    return get_procurement_role_catalog(model_version)
+
+
+def _validate_module(plan: LLMGenerationPlan, report: ValidationReport, expected_module: str) -> None:
+    if plan.module != expected_module:
         report.add_error(
-            message="Plan module must be procurement.",
-            suggested_fix="Set module to procurement.",
+            message=f"Plan module must be {expected_module}.",
+            suggested_fix=f"Set module to {expected_module}.",
         )
 
 
@@ -333,8 +408,8 @@ def _validate_table_role_mapping(
         if mapping.table_role not in role_catalog:
             report.add_error(
                 table_name=mapping.table_name,
-                message=f"Unsupported procurement table role in plan: {mapping.table_role}.",
-                suggested_fix="Use a role from the procurement role catalog.",
+                message=f"Unsupported table role in plan: {mapping.table_role}.",
+                suggested_fix="Use a role from the active model role catalog.",
             )
 
     missing_tables = [table_name for table_name in schema.tables if table_name not in set(mapping_tables)]
@@ -971,13 +1046,13 @@ def _validate_v2_expected_tables(schema: SchemaContract, report: ValidationRepor
         report.add_error(
             table_name=table_name,
             message=f"Procurement v2 metadata is missing expected table {table_name}.",
-            suggested_fix="Use the 24-table Procurement v2 metadata model.",
+            suggested_fix="Use the 25-table Procurement v2 metadata model.",
         )
     for table_name in extras:
         report.add_error(
             table_name=table_name,
             message=f"Procurement v2 metadata includes unsupported table {table_name}.",
-            suggested_fix="Use exactly the 24 Procurement v2 tables.",
+            suggested_fix="Use exactly the 25 Procurement v2 tables.",
         )
 
 
@@ -989,7 +1064,7 @@ def _validate_v2_generation_order(plan: LLMGenerationPlan, report: ValidationRep
         report.add_error(
             table_name=table_name,
             message=f"Procurement v2 generation_order is missing {table_name}.",
-            suggested_fix="Include all 24 v2 tables exactly once in generation_order.",
+            suggested_fix="Include all 25 v2 tables exactly once in generation_order.",
         )
 
 
@@ -1146,6 +1221,130 @@ def _validate_v2_validation_rule_themes(plan: LLMGenerationPlan, report: Validat
             )
 
 
+def _validate_production_v1_plan(plan: LLMGenerationPlan, schema: SchemaContract, report: ValidationReport) -> None:
+    _validate_production_v1_expected_tables(schema, report)
+    _validate_production_v1_generation_order(plan, report)
+    _validate_production_v1_out_of_scope_tables(plan, report)
+    _validate_production_v1_date_scope(plan, report)
+    _validate_production_v1_role_mapping(plan, report)
+    _validate_production_v1_formula_themes(plan, report)
+    _validate_production_v1_integration_themes(plan, report)
+    _validate_production_v1_uom_precision_themes(plan, report)
+
+
+def _validate_production_v1_expected_tables(schema: SchemaContract, report: ValidationReport) -> None:
+    table_names = set(schema.tables)
+    missing = [table_name for table_name in PRODUCTION_V1_EXPECTED_TABLES if table_name not in table_names]
+    extras = sorted(table_names - set(PRODUCTION_V1_EXPECTED_TABLES))
+    for table_name in missing:
+        report.add_error(
+            table_name=table_name,
+            message=f"Production v1 metadata is missing expected table {table_name}.",
+            suggested_fix="Use the 21-table Production Execution module within MES context v1 metadata model.",
+        )
+    for table_name in extras:
+        report.add_error(
+            table_name=table_name,
+            message=f"Production v1 metadata includes unsupported table {table_name}.",
+            suggested_fix="Use exactly the 21 Production Execution module within MES context v1 tables.",
+        )
+
+
+def _validate_production_v1_generation_order(plan: LLMGenerationPlan, report: ValidationReport) -> None:
+    if tuple(plan.generation_order) == PRODUCTION_V1_EXPECTED_TABLES:
+        return
+    missing = [table_name for table_name in PRODUCTION_V1_EXPECTED_TABLES if table_name not in plan.generation_order]
+    for table_name in missing:
+        report.add_error(
+            table_name=table_name,
+            message=f"Production v1 generation_order is missing {table_name}.",
+            suggested_fix="Include all 21 Production Execution module within MES context v1 tables exactly once in corrected lifecycle order.",
+        )
+    if set(plan.generation_order) == set(PRODUCTION_V1_EXPECTED_TABLES) and len(plan.generation_order) == len(PRODUCTION_V1_EXPECTED_TABLES):
+        report.add_error(
+            message="Production v1 generation_order must follow the corrected lifecycle order.",
+            suggested_fix="Use ProductMaster through ProductionCostSummary in the Production Execution module within MES context v1 metadata ProcessOrder.",
+        )
+
+
+def _validate_production_v1_out_of_scope_tables(plan: LLMGenerationPlan, report: ValidationReport) -> None:
+    values = list(plan.generation_order)
+    values.extend(mapping.table_name for mapping in plan.table_role_mapping)
+    values.extend(mapping.table_role for mapping in plan.table_role_mapping)
+    for value in values:
+        normalized = value.lower().replace("_", "")
+        for term in PRODUCTION_V1_OUT_OF_SCOPE_TERMS:
+            if term.lower().replace("_", "") in normalized:
+                report.add_error(
+                    table_name=value,
+                    message=f"Production v1 plan includes out-of-scope MES concept: {term}.",
+                    suggested_fix="Remove OEE, downtime, maintenance, labor, warranty, sales, customer, and shipment tables from Production v1.",
+                )
+
+
+def _validate_production_v1_date_scope(plan: LLMGenerationPlan, report: ValidationReport) -> None:
+    plan_text = _plan_text(plan)
+    if "2026" in plan_text or "2024" in plan_text:
+        report.add_error(
+            message="Production v1 plan references dates outside the 2025-only scope.",
+            suggested_fix="Keep Production v1 date guidance between 2025-01-01 and 2025-12-31.",
+        )
+    if "2025" not in plan_text:
+        report.add_error(
+            message="Production v1 plan does not clearly state the 2025-only date scope.",
+            suggested_fix="Add 2025-only date guidance to date_rules, validation_rules, or assumptions.",
+        )
+
+
+def _validate_production_v1_role_mapping(plan: LLMGenerationPlan, report: ValidationReport) -> None:
+    mapped_tables = {mapping.table_name for mapping in plan.table_role_mapping}
+    for table_name in PRODUCTION_V1_EXPECTED_TABLES:
+        if table_name not in mapped_tables:
+            report.add_error(
+                table_name=table_name,
+                message=f"Production v1 table_role_mapping is missing {table_name}.",
+                suggested_fix="Map every expected Production Execution module within MES context v1 table to its role.",
+            )
+
+
+def _validate_production_v1_formula_themes(plan: LLMGenerationPlan, report: ValidationReport) -> None:
+    plan_text = _plan_text(plan)
+    normalized = _normalize_theme_text(plan_text)
+    for label, tokens in PRODUCTION_V1_FORMULA_THEMES.items():
+        if not all(token in normalized for token in tokens):
+            report.add_error(
+                message=f"Production v1 plan is missing formula guidance: {label}.",
+                suggested_fix="Add a formula_rule or validation_rule documenting this Production Execution calculation.",
+            )
+
+
+def _validate_production_v1_integration_themes(plan: LLMGenerationPlan, report: ValidationReport) -> None:
+    normalized = _normalize_theme_text(_plan_text(plan))
+    for label, tokens in PRODUCTION_V1_INTEGRATION_THEMES.items():
+        if not all(token in normalized for token in tokens):
+            report.add_error(
+                message=f"Production v1 plan is missing integration guidance: {label}.",
+                suggested_fix="Add Procurement inventory and genealogy integration guidance to the plan.",
+            )
+
+
+def _validate_production_v1_uom_precision_themes(plan: LLMGenerationPlan, report: ValidationReport) -> None:
+    normalized = _normalize_theme_text(_plan_text(plan))
+    if not all(token in normalized for token in ["countable", "integer", "bulk", "decimal"]):
+        report.add_error(
+            message="Production v1 plan is missing UOM precision guidance for countable and bulk materials.",
+            suggested_fix="State that countable UOMs use integers and bulk/measurable UOMs may use decimals.",
+        )
+
+
+def _plan_text(plan: LLMGenerationPlan) -> str:
+    return json.dumps(plan.model_dump(mode="json"), sort_keys=True).lower()
+
+
+def _normalize_theme_text(value: str) -> str:
+    return "".join(character for character in value.lower() if character.isalnum())
+
+
 def _is_money_column_name(column_name: str) -> bool:
     normalized = column_name.lower()
     return any(token in normalized for token in ["amount", "price", "cost", "freight", "tax"])
@@ -1280,3 +1479,4 @@ def _format_issue(
     lines.append(f"   Message: {message}")
     lines.append(f"   Suggested fix: {suggested_fix}")
     return lines
+

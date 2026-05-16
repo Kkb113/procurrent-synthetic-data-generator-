@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument("--metadata", required=True, help="Path to metadata XLSX file.")
     parser.add_argument("--erd", required=True, help="Path to Mermaid ERD file.")
     parser.add_argument("--plan", required=True, help="Path to LLM generation plan JSON file.")
-    parser.add_argument("--model-version", default="v1", choices=["v1", "v2"], help="Procurement model version for role and semantic validation.")
+    parser.add_argument("--model-version", default="v2", choices=["v2"], help="Procurement model version for role and semantic validation. Procurement v2 is the only active Procurement model.")
     args = parser.parse_args()
 
     metadata_result = load_metadata_schema(args.metadata)

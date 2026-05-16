@@ -9,6 +9,11 @@ from procurement_data_generator.core.contracts.schema_contract import SchemaCont
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
 
 
+LOGICAL_ERD_RELATIONSHIPS_WITHOUT_DIRECT_FK = {
+    ("InventoryReceiptDetail", "InventoryTransaction"),
+}
+
+
 @dataclass(frozen=True)
 class MetadataFkRelationship:
     """A parent-child relationship inferred from a metadata FK column."""
@@ -203,6 +208,8 @@ def _validate_erd_fk_coverage(
         if pair in warned_pairs:
             continue
         if relationship.parent_table not in known_tables or relationship.child_table not in known_tables:
+            continue
+        if pair in LOGICAL_ERD_RELATIONSHIPS_WITHOUT_DIRECT_FK:
             continue
         if pair not in metadata_pairs:
             report.add_warning(

@@ -7,7 +7,7 @@ from procurement_data_generator.core.erd.mermaid_parser import parse_mermaid_erd
 
 def test_valid_erd_matches_metadata_fk_relationships() -> None:
     schema = _schema_with_fk()
-    relationships = parse_mermaid_erd_text("Vendor ||--o{ PurchaseOrderHeader : supplies")
+    relationships = parse_mermaid_erd_text("SupplierMaster ||--o{ PurchaseOrderHdr : supplies")
 
     result = validate_erd_relationships(schema, relationships)
 
@@ -20,7 +20,7 @@ def test_valid_erd_matches_metadata_fk_relationships() -> None:
 
 def test_erd_unknown_table_is_error() -> None:
     schema = _schema_with_fk()
-    relationships = parse_mermaid_erd_text("UnknownSupplier ||--o{ PurchaseOrderHeader : supplies")
+    relationships = parse_mermaid_erd_text("UnknownSupplier ||--o{ PurchaseOrderHdr : supplies")
 
     result = validate_erd_relationships(schema, relationships)
 
@@ -37,7 +37,7 @@ def test_metadata_fk_missing_from_erd_is_warning() -> None:
 
     assert result.report.is_valid
     assert any(
-        issue.message == "Metadata FK relationship Vendor -> PurchaseOrderHeader is missing from ERD."
+        issue.message == "Metadata FK relationship SupplierMaster -> PurchaseOrderHdr is missing from ERD."
         for issue in result.report.warnings
     )
 
@@ -46,8 +46,8 @@ def test_erd_relationship_without_matching_fk_is_warning() -> None:
     schema = _schema_with_fk()
     relationships = parse_mermaid_erd_text(
         """
-        Vendor ||--o{ PurchaseOrderHeader : supplies
-        Vendor ||--o{ Warehouse : incorrect
+        SupplierMaster ||--o{ PurchaseOrderHdr : supplies
+        SupplierMaster ||--o{ Warehouse : incorrect
         """
     )
 
@@ -55,7 +55,7 @@ def test_erd_relationship_without_matching_fk_is_warning() -> None:
 
     assert result.report.is_valid
     assert any(
-        issue.message == "ERD relationship has no matching metadata FK: Vendor -> Warehouse."
+        issue.message == "ERD relationship has no matching metadata FK: SupplierMaster -> Warehouse."
         for issue in result.report.warnings
     )
 
@@ -64,8 +64,8 @@ def test_duplicate_erd_relationship_is_warning() -> None:
     schema = _schema_with_fk()
     relationships = parse_mermaid_erd_text(
         """
-        Vendor ||--o{ PurchaseOrderHeader : supplies
-        Vendor ||--o{ PurchaseOrderHeader : supplies_again
+        SupplierMaster ||--o{ PurchaseOrderHdr : supplies
+        SupplierMaster ||--o{ PurchaseOrderHdr : supplies_again
         """
     )
 
@@ -73,35 +73,35 @@ def test_duplicate_erd_relationship_is_warning() -> None:
 
     assert result.report.is_valid
     assert any(
-        issue.message == "Duplicate ERD relationship detected: Vendor -> PurchaseOrderHeader."
+        issue.message == "Duplicate ERD relationship detected: SupplierMaster -> PurchaseOrderHdr."
         for issue in result.report.warnings
     )
 
 
 def test_direction_mismatch_warns_for_missing_metadata_relationship_and_no_matching_fk() -> None:
     schema = _schema_with_fk()
-    relationships = parse_mermaid_erd_text("PurchaseOrderHeader ||--o{ Vendor : wrong_direction")
+    relationships = parse_mermaid_erd_text("PurchaseOrderHdr ||--o{ SupplierMaster : wrong_direction")
 
     result = validate_erd_relationships(schema, relationships)
 
     assert result.report.is_valid
     messages = [issue.message for issue in result.report.warnings]
-    assert "Metadata FK relationship Vendor -> PurchaseOrderHeader is missing from ERD." in messages
-    assert "ERD relationship has no matching metadata FK: PurchaseOrderHeader -> Vendor." in messages
+    assert "Metadata FK relationship SupplierMaster -> PurchaseOrderHdr is missing from ERD." in messages
+    assert "ERD relationship has no matching metadata FK: PurchaseOrderHdr -> SupplierMaster." in messages
 
 
 def _schema_with_fk() -> SchemaContract:
     return SchemaContract(
         tables={
-            "Vendor": TableContract(
-                table_name="Vendor",
+            "SupplierMaster": TableContract(
+                table_name="SupplierMaster",
                 process_order=1,
                 area="Master",
-                table_role="vendor_dimension",
+                table_role="supplier_master",
                 target_rows=10,
                 columns=[
                     ColumnContract(
-                        column_name="VendorID",
+                        column_name="SupplierID",
                         data_type="int",
                         key_type="PK",
                         nullable="No",
@@ -109,8 +109,8 @@ def _schema_with_fk() -> SchemaContract:
                     ),
                 ],
             ),
-            "PurchaseOrderHeader": TableContract(
-                table_name="PurchaseOrderHeader",
+            "PurchaseOrderHdr": TableContract(
+                table_name="PurchaseOrderHdr",
                 process_order=2,
                 area="Procurement",
                 table_role="purchase_order_header",
@@ -124,11 +124,11 @@ def _schema_with_fk() -> SchemaContract:
                         generation_type="sequence_id",
                     ),
                     ColumnContract(
-                        column_name="VendorID",
+                        column_name="SupplierID",
                         data_type="int",
                         key_type="FK",
-                        related_table="Vendor",
-                        related_column="VendorID",
+                        related_table="SupplierMaster",
+                        related_column="SupplierID",
                         nullable="No",
                         generation_type="foreign_key",
                     ),

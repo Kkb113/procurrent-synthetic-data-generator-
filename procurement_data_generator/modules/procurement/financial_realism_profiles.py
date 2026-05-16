@@ -1,9 +1,11 @@
-"""Procurement v2 financial realism profiles for EV component sourcing."""
+"""Procurement v2 financial realism profiles sourced from the default industry profile."""
 
 from __future__ import annotations
 
 import random
-from typing import TypedDict
+from typing import TypedDict, cast
+
+from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_default_industry_profile
 
 
 class FinancialProfile(TypedDict):
@@ -15,95 +17,17 @@ class FinancialProfile(TypedDict):
     high_value_probability: float
 
 
+_DEFAULT_PROCUREMENT_PROFILE = get_default_industry_profile().procurement
+
 CATEGORY_FINANCIAL_PROFILES: dict[str, FinancialProfile] = {
-    "Battery Components": {
-        "unit_price_min": 100.0,
-        "unit_price_max": 2500.0,
-        "quantity_min": 20.0,
-        "quantity_max": 300.0,
-        "line_amount_soft_max": 500000.0,
-        "high_value_probability": 0.025,
-    },
-    "Electrical Components": {
-        "unit_price_min": 25.0,
-        "unit_price_max": 1200.0,
-        "quantity_min": 20.0,
-        "quantity_max": 500.0,
-        "line_amount_soft_max": 350000.0,
-        "high_value_probability": 0.012,
-    },
-    "Powertrain Components": {
-        "unit_price_min": 200.0,
-        "unit_price_max": 3000.0,
-        "quantity_min": 5.0,
-        "quantity_max": 150.0,
-        "line_amount_soft_max": 500000.0,
-        "high_value_probability": 0.02,
-    },
-    "Thermal Management": {
-        "unit_price_min": 20.0,
-        "unit_price_max": 800.0,
-        "quantity_min": 20.0,
-        "quantity_max": 500.0,
-        "line_amount_soft_max": 280000.0,
-        "high_value_probability": 0.006,
-    },
-    "Mechanical Components": {
-        "unit_price_min": 5.0,
-        "unit_price_max": 500.0,
-        "quantity_min": 50.0,
-        "quantity_max": 1000.0,
-        "line_amount_soft_max": 180000.0,
-        "high_value_probability": 0.002,
-    },
-    "Charging Components": {
-        "unit_price_min": 50.0,
-        "unit_price_max": 1500.0,
-        "quantity_min": 10.0,
-        "quantity_max": 300.0,
-        "line_amount_soft_max": 375000.0,
-        "high_value_probability": 0.012,
-    },
-    "Safety Components": {
-        "unit_price_min": 5.0,
-        "unit_price_max": 300.0,
-        "quantity_min": 50.0,
-        "quantity_max": 1000.0,
-        "line_amount_soft_max": 160000.0,
-        "high_value_probability": 0.002,
-    },
-    "Packaging Materials": {
-        "unit_price_min": 0.5,
-        "unit_price_max": 100.0,
-        "quantity_min": 100.0,
-        "quantity_max": 5000.0,
-        "line_amount_soft_max": 90000.0,
-        "high_value_probability": 0.0,
-    },
-    "Maintenance Spares": {
-        "unit_price_min": 10.0,
-        "unit_price_max": 750.0,
-        "quantity_min": 5.0,
-        "quantity_max": 200.0,
-        "line_amount_soft_max": 120000.0,
-        "high_value_probability": 0.002,
-    },
+    category: cast(FinancialProfile, dict(profile))
+    for category, profile in _DEFAULT_PROCUREMENT_PROFILE.component_financial_profiles.items()
 }
 
-_CATEGORY_ALIASES = {
-    "battery": "Battery Components",
-    "electrical": "Electrical Components",
-    "electronics": "Electrical Components",
-    "mechanical": "Mechanical Components",
-    "packaging": "Packaging Materials",
-    "maintenance": "Maintenance Spares",
-    "safety": "Safety Components",
-    "powertrain": "Powertrain Components",
-    "thermal": "Thermal Management",
-    "charging": "Charging Components",
-}
+_CATEGORY_ALIASES = dict(_DEFAULT_PROCUREMENT_PROFILE.component_category_aliases)
 
-DEFAULT_FINANCIAL_PROFILE: FinancialProfile = CATEGORY_FINANCIAL_PROFILES["Mechanical Components"]
+_DEFAULT_PROFILE_NAME = _CATEGORY_ALIASES.get("mechanical", next(iter(CATEGORY_FINANCIAL_PROFILES)))
+DEFAULT_FINANCIAL_PROFILE: FinancialProfile = CATEGORY_FINANCIAL_PROFILES[_DEFAULT_PROFILE_NAME]
 
 
 def get_financial_profile(component_category: object) -> FinancialProfile:

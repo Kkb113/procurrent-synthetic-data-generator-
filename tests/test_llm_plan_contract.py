@@ -143,17 +143,17 @@ def _valid_plan() -> dict[str, object]:
             },
             "table_role_mapping": [
                 {
-                    "table_name": "Vendor",
-                    "table_role": "vendor_dimension",
+                    "table_name": "SupplierMaster",
+                    "table_role": "supplier_master",
                     "area": "Master",
                     "confidence": "high",
-                    "reasoning": "Vendor master table.",
+                    "reasoning": "Supplier master table.",
                 }
             ],
-            "generation_order": ["Vendor"],
+            "generation_order": ["SupplierMaster"],
             "row_count_plan": [
                 {
-                    "table_name": "Vendor",
+                    "table_name": "SupplierMaster",
                     "target_rows": 10,
                     "source": "metadata",
                     "reasoning": "Use metadata row count.",
@@ -161,8 +161,8 @@ def _valid_plan() -> dict[str, object]:
             ],
             "column_generation_rules": [
                 {
-                    "table_name": "Vendor",
-                    "column_name": "VendorName",
+                    "table_name": "SupplierMaster",
+                    "column_name": "SupplierName",
                     "generation_type": "vendor_name",
                     "strategy": "Generate realistic supplier names.",
                     "allowed_values": [],
@@ -196,9 +196,9 @@ def _valid_plan() -> dict[str, object]:
             "date_rules": [
                 {
                     "rule_id": "date_req_before_order",
-                    "earlier_table": "PurchaseRequisitionHeader",
+                    "earlier_table": "PurchaseRequisition",
                     "earlier_column": "RequisitionDate",
-                    "later_table": "PurchaseOrderHeader",
+                    "later_table": "PurchaseOrderHdr",
                     "later_column": "OrderDate",
                     "min_offset_days": 0,
                     "max_offset_days": 14,
@@ -219,9 +219,9 @@ def _valid_plan() -> dict[str, object]:
             "status_rules": [
                 {
                     "rule_id": "status_po",
-                    "table_name": "PurchaseOrderHeader",
-                    "status_column": "Status",
-                    "status_values": ["Draft", "Approved", "Closed"],
+                    "table_name": "PurchaseOrderHdr",
+                    "status_column": "POStatus",
+                    "status_values": ["Received"],
                     "derivation_logic": "Derive from order lifecycle.",
                     "description": "Lifecycle status.",
                 }
@@ -230,9 +230,9 @@ def _valid_plan() -> dict[str, object]:
                 {
                     "rule_id": "validate_pk",
                     "rule_type": "pk_check",
-                    "table_name": "Vendor",
-                    "column_name": "VendorID",
-                    "condition": "VendorID is unique and non-null",
+                    "table_name": "SupplierMaster",
+                    "column_name": "SupplierID",
+                    "condition": "SupplierID is unique and non-null",
                     "severity": "error",
                     "description": "PK validation.",
                 }

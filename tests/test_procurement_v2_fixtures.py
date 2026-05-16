@@ -8,6 +8,10 @@ from procurement_data_generator.core.erd.erd_validator import validate_erd_relat
 from procurement_data_generator.core.erd.mermaid_parser import parse_mermaid_erd_file
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 from procurement_data_generator.modules.procurement.role_validator import validate_procurement_roles
+from procurement_data_generator.modules.shared.operating_scope import (
+    get_expected_plant_count,
+    get_expected_warehouse_count,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +40,7 @@ EXPECTED_TABLES = {
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -68,15 +73,15 @@ def test_procurement_v2_metadata_validation_has_zero_errors() -> None:
     assert result.report.errors == []
 
 
-def test_procurement_v2_role_validation_passes_with_24_roles() -> None:
+def test_procurement_v2_role_validation_passes_with_25_roles() -> None:
     result = load_metadata_schema(METADATA)
     assert result.schema is not None
 
     role_result = validate_procurement_roles(result.schema, model_version="v2")
 
     assert role_result.report.is_valid
-    assert role_result.summary.expected_roles == 24
-    assert role_result.summary.detected_roles == 24
+    assert role_result.summary.expected_roles == 25
+    assert role_result.summary.detected_roles == 25
     assert role_result.summary.unsupported_roles == 0
     assert role_result.summary.duplicate_roles == 0
 
@@ -89,11 +94,73 @@ def test_inventory_balance_is_not_present() -> None:
     assert all(table.table_role != "inventory_balance" for table in result.schema.tables.values())
 
 
-def test_all_expected_24_tables_are_present() -> None:
+def test_all_expected_25_tables_are_present() -> None:
     result = load_metadata_schema(METADATA)
     assert result.schema is not None
 
     assert set(result.schema.tables) == EXPECTED_TABLES
+
+
+def test_procurement_v2_metadata_uses_single_plant_and_warehouse_scope() -> None:
+    result = load_metadata_schema(METADATA)
+    assert result.schema is not None
+
+    assert result.schema.tables["Plant"].target_rows == get_expected_plant_count()
+    assert result.schema.tables["Warehouse"].target_rows == get_expected_warehouse_count()
+
+
+def test_inventory_receipt_detail_table_is_present_with_required_columns() -> None:
+    result = load_metadata_schema(METADATA)
+    assert result.schema is not None
+
+    detail = result.schema.tables["InventoryReceiptDetail"]
+    columns = {column.column_name for column in detail.columns}
+
+    assert detail.area == "Inventory"
+    assert detail.table_role == "inventory_receipt_detail"
+    assert {
+        "InventoryReceiptDetailID",
+        "InspectionResultID",
+        "GoodsReceiptLineID",
+        "PurchaseOrderLineID",
+        "PurchaseOrderID",
+        "SupplierID",
+        "ComponentID",
+        "PlantID",
+        "WarehouseID",
+        "POOrderDate",
+        "ExpectedDeliveryDate",
+        "ActualDeliveryDate",
+        "StockPostedDate",
+        "OrderedQuantity",
+        "ShippedQuantity",
+        "ReceivedQuantity",
+        "InspectedQuantity",
+        "AcceptedQuantity",
+        "RejectedQuantity",
+        "OrderedUnitPrice",
+        "DeliveredUnitPrice",
+        "PriceDifference",
+        "PriceDifferencePct",
+        "OrderedValue",
+        "DeliveredValue",
+        "AcceptedStockValue",
+        "OrderYear",
+        "DeliveryYear",
+        "CrossYearDeliveryFlag",
+        "DeliveryDelayDays",
+        "DeliveryStatus",
+        "PriceVarianceStatus",
+        "InventoryReceiptStatus",
+    }.issubset(columns)
+    assert _column(detail, "InspectionResultID").related_table == "InspectionResult"
+    assert _column(detail, "GoodsReceiptLineID").related_table == "GoodsReceiptLine"
+    assert _column(detail, "PurchaseOrderLineID").related_table == "PurchaseOrderLine"
+    assert _column(detail, "PurchaseOrderID").related_table == "PurchaseOrderHdr"
+    assert _column(detail, "SupplierID").related_table == "SupplierMaster"
+    assert _column(detail, "DeliveryStatus").allowed_values == ["OnTime", "Delayed", "Early"]
+    assert _column(detail, "PriceVarianceStatus").allowed_values == ["NoChange", "PriceIncrease", "PriceDecrease"]
+    assert _column(detail, "InventoryReceiptStatus").allowed_values == ["Received"]
 
 
 def test_inventory_table_is_present_with_required_columns() -> None:
@@ -233,7 +300,15 @@ def test_status_columns_have_multiple_allowed_values_where_appropriate() -> None
     ]
 
     assert status_columns
-    assert all(len(column.allowed_values) > 1 or column.column_name == "TransactionType" for column in status_columns)
+    phase_2a_single_status_columns = {
+        "POStatus",
+        "LineStatus",
+        "TransactionType",
+        "InventoryReceiptStatus",
+    }
+    assert all(len(column.allowed_values) > 1 or column.column_name in phase_2a_single_status_columns for column in status_columns)
+    assert _column(result.schema.tables["PurchaseOrderHdr"], "POStatus").allowed_values == ["Received"]
+    assert _column(result.schema.tables["PurchaseOrderLine"], "LineStatus").allowed_values == ["Received"]
     assert _column(result.schema.tables["InventoryTransaction"], "TransactionType").allowed_values == ["StockIn"]
 
 
@@ -245,9 +320,10 @@ def test_erd_validation_passes_without_errors() -> None:
     erd_result = validate_erd_relationships(result.schema, relationships)
 
     assert erd_result.report.errors == []
+    assert erd_result.report.warnings == []
     assert erd_result.report.is_valid
-    assert erd_result.summary.metadata_fk_relationships_checked == 52
-    assert erd_result.summary.matched_relationships == 52
+    assert erd_result.summary.metadata_fk_relationships_checked == 60
+    assert erd_result.summary.matched_relationships == 60
 
 
 def test_erd_includes_inventory_relationships_and_excludes_inventory_balance() -> None:
@@ -259,6 +335,8 @@ def test_erd_includes_inventory_relationships_and_excludes_inventory_balance() -
     assert "SupplierMaster ||--o{ InventoryTransaction : supplied_inventory" in erd_text
     assert "GoodsReceiptLine ||--o{ InventoryTransaction : received_inventory_line" in erd_text
     assert "PurchaseOrderLine ||--o{ InventoryTransaction : inventory_po_line" in erd_text
+    assert "InspectionResult ||--o{ InventoryReceiptDetail : creates" in erd_text
+    assert "InventoryReceiptDetail ||--o{ InventoryTransaction : posts_stock" in erd_text
     assert "InventoryBalance" not in erd_text
 
 
@@ -266,6 +344,8 @@ def test_business_scenario_mentions_inventory_balance_concept_without_inventory_
     scenario = SCENARIO.read_text(encoding="utf-8")
 
     assert "InventoryTransaction as the detailed inbound stock posting ledger" in scenario
+    assert "InventoryReceiptDetail is a receipt-level traceability table" in scenario
+    assert "CrossYearDeliveryFlag" in scenario
     assert "accepted StockIn posting" in scenario
     assert "unit price, inventory value" in scenario
     assert "Inventory as the current calculated stock balance" in scenario
@@ -279,9 +359,9 @@ def test_business_scenario_mentions_inventory_balance_concept_without_inventory_
 def test_procurement_v2_metadata_shape_and_target_rows() -> None:
     metadata_df = pd.read_excel(METADATA, sheet_name="Metadata", engine="openpyxl", dtype=object)
 
-    assert len(metadata_df) == 205
-    assert metadata_df["TableName"].nunique() == 24
-    assert metadata_df.drop_duplicates("TableName")["TargetRows"].sum() == 84242
+    assert len(metadata_df) == 238
+    assert metadata_df["TableName"].nunique() == 25
+    assert metadata_df.drop_duplicates("TableName")["TargetRows"].sum() == 89732
 
 
 def _column(table, column_name: str):

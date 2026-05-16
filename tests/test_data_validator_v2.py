@@ -31,6 +31,7 @@ V2_TABLES = {
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -58,6 +59,16 @@ def test_v2_inventory_balance_present_fails() -> None:
 def test_v2_inventory_table_missing_fails() -> None:
     data = _clean_v2_data()
     data.pop("Inventory")
+
+    report = _validate(data)
+
+    assert _has_issue(report, "TABLE_EXISTENCE")
+    assert _has_issue(report, "V2_EXPECTED_TABLE")
+
+
+def test_v2_inventory_receipt_detail_missing_fails() -> None:
+    data = _clean_v2_data()
+    data.pop("InventoryReceiptDetail")
 
     report = _validate(data)
 
@@ -216,6 +227,39 @@ def test_v2_data_quality_engine_fails_when_stock_in_exceeds_ordered_quantity() -
     assert _has_issue(report, "INVENTORY_TRANSACTION_CUMULATIVE_EXCEEDS_ORDERED")
 
 
+def test_v2_countable_component_decimal_quantity_fails_data_validation() -> None:
+    data = _clean_v2_data()
+    component_id = data["PurchaseOrderLine"].loc[0, "ComponentID"]
+    data["ComponentMaster"].loc[data["ComponentMaster"]["ComponentID"] == component_id, "UOM"] = "EA"
+    data["PurchaseOrderLine"].loc[0, "OrderedQuantity"] = float(data["PurchaseOrderLine"].loc[0, "OrderedQuantity"]) + 0.5
+
+    report = _validate(data)
+
+    assert _has_issue(report, "V2_INTEGER_QUANTITY_PRECISION")
+
+
+def test_v2_data_validation_enforces_single_plant_and_warehouse() -> None:
+    data = _single_scope_v2_data()
+    data["Plant"] = pd.concat([data["Plant"], data["Plant"].iloc[[0]].assign(PlantID=999999)], ignore_index=True)
+    data["Warehouse"] = pd.concat([data["Warehouse"], data["Warehouse"].iloc[[0]].assign(WarehouseID=999999)], ignore_index=True)
+
+    report = _validate(data)
+
+    assert _has_issue(report, "V2_OPERATING_SCOPE_PLANT_COUNT")
+    assert _has_issue(report, "V2_OPERATING_SCOPE_WAREHOUSE_COUNT")
+
+
+def test_v2_data_validation_enforces_single_location_references() -> None:
+    data = _single_scope_v2_data()
+    data["InventoryReceiptDetail"].loc[0, "PlantID"] = 999999
+    data["InventoryTransaction"].loc[0, "WarehouseID"] = 999999
+
+    report = _validate(data)
+
+    assert _has_issue(report, "V2_OPERATING_SCOPE_PLANT_REFERENCE")
+    assert _has_issue(report, "V2_OPERATING_SCOPE_WAREHOUSE_REFERENCE")
+
+
 def _validate(dataframes: dict[str, pd.DataFrame]):
     schema_result = load_metadata_schema(PROJECT_ROOT / "input" / "procurement_v2_metadata.xlsx")
     assert schema_result.schema is not None
@@ -243,6 +287,21 @@ def _clean_v2_data() -> dict[str, pd.DataFrame]:
     payments = data["PaymentTransaction"].copy()
     payments["PaymentAmount"] = payments["PaymentAmount"].clip(upper=999999.0)
     data["PaymentTransaction"] = payments
+    return data
+
+
+def _single_scope_v2_data() -> dict[str, pd.DataFrame]:
+    data = _clean_v2_data()
+    plant_id = data["Plant"].loc[0, "PlantID"]
+    warehouse_id = data["Warehouse"].loc[0, "WarehouseID"]
+    data["Plant"] = data["Plant"].iloc[[0]].copy()
+    data["Warehouse"] = data["Warehouse"].iloc[[0]].copy()
+    data["Warehouse"]["PlantID"] = plant_id
+    for dataframe in data.values():
+        if "PlantID" in dataframe.columns:
+            dataframe["PlantID"] = plant_id
+        if "WarehouseID" in dataframe.columns:
+            dataframe["WarehouseID"] = warehouse_id
     return data
 
 

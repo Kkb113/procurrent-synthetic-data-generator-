@@ -1,6 +1,10 @@
 Generate procurement data for the 2025 calendar year only, from 2025-01-01 to 2025-12-31, for a US-based EV manufacturing procurement process.
 
-The business should include US-based plants and warehouses, supplier sourcing, RFQ, supplier quotation, awarded quotation, purchase order, PO schedules, supplier shipments, goods receipts, incoming quality inspection, inventory posting, current inventory balance, supplier invoices, and payment transactions.
+The business uses one US-based plant and one warehouse for the simplified demo operating scope, plus supplier sourcing, RFQ, supplier quotation, awarded quotation, purchase order, PO schedules, supplier shipments, goods receipts, incoming quality inspection, inventory receipt traceability, inventory posting, current inventory balance, supplier invoices, and payment transactions.
+
+InventoryReceiptDetail is a receipt-level traceability table between InspectionResult and InventoryTransaction. It records supplier, component, PO, PO line, plant, warehouse, order date, expected delivery date, actual delivery date, stock posted date, ordered/shipped/received/inspected/accepted/rejected quantities, ordered and delivered unit prices, price variance, ordered/delivered/accepted stock values, order and delivery years, CrossYearDeliveryFlag, delivery delay days, delivery status, price variance status, and inventory receipt status.
+
+Procurement v2 is currently scoped to calendar-year 2025 only. InventoryReceiptDetail date fields should remain within 2025-01-01 and 2025-12-31, and CrossYearDeliveryFlag is included for traceability but remains 0 for the current 2025-only scope.
 
 InventoryTransaction records each accepted StockIn posting into inventory after incoming inspection. It should include supplier, component, plant, warehouse, transaction date, quantity, unit price, inventory value, and references to the goods receipt line, purchase order line, and inspection result. TransactionType should be StockIn for this inbound procurement scenario.
 

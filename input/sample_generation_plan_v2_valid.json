@@ -1,6 +1,6 @@
 {
   "module": "procurement",
-  "business_summary": "Generate Procurement v2 EV manufacturing procurement data with 24 tables, including InventoryTransaction as the stock movement ledger and Inventory as the calculated current stock balance.",
+  "business_summary": "Generate Procurement v2 EV manufacturing procurement data with 25 tables, including InventoryReceiptDetail as the receipt-level traceability table, InventoryTransaction as the stock movement ledger and Inventory as the calculated current stock balance.",
   "domain_profile": {
     "industry": "EV manufacturing procurement",
     "business_context": "US electric vehicle component sourcing and procurement for battery, electronics, drivetrain, thermal, and chassis manufacturing.",
@@ -204,6 +204,13 @@
       "reasoning": "Matches Procurement v2 metadata role and lifecycle position."
     },
     {
+      "table_name": "InventoryReceiptDetail",
+      "table_role": "inventory_receipt_detail",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Receipt-level traceability table between InspectionResult and InventoryTransaction."
+    },
+    {
       "table_name": "InventoryTransaction",
       "table_role": "inventory_transaction",
       "area": "Inventory",
@@ -253,6 +260,7 @@
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -273,15 +281,15 @@
     },
     {
       "table_name": "Plant",
-      "target_rows": 3,
+      "target_rows": 1,
       "source": "metadata",
-      "reasoning": "Use metadata TargetRows for the v2 fixture."
+      "reasoning": "Use the shared one-plant operating scope for the v2 fixture."
     },
     {
       "table_name": "Warehouse",
-      "target_rows": 9,
+      "target_rows": 1,
       "source": "metadata",
-      "reasoning": "Use metadata TargetRows for the v2 fixture."
+      "reasoning": "Use the shared one-warehouse operating scope for the v2 fixture."
     },
     {
       "table_name": "SupplierComponent",
@@ -378,6 +386,12 @@
       "target_rows": 5800,
       "source": "metadata",
       "reasoning": "Use metadata TargetRows for the v2 fixture."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "target_rows": 5500,
+      "source": "metadata",
+      "reasoning": "Use metadata TargetRows for the v2 receipt traceability fixture."
     },
     {
       "table_name": "InventoryTransaction",
@@ -1404,20 +1418,15 @@
       "table_name": "PurchaseOrderHdr",
       "column_name": "POStatus",
       "generation_type": "status",
-      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "strategy": "Generate POStatus as Received for the full-received Procurement v2 lifecycle.",
       "allowed_values": [
-        "Created",
-        "Approved",
-        "Sent",
-        "PartiallyReceived",
-        "Closed",
-        "Cancelled"
+        "Received"
       ],
       "min_value": null,
       "max_value": null,
       "nullable_strategy": "never_null",
       "depends_on_columns": [],
-      "notes": null
+      "notes": "Phase 2A full-received lifecycle uses one completed status value."
     },
     {
       "table_name": "PurchaseOrderHdr",
@@ -1473,19 +1482,15 @@
       "table_name": "PurchaseOrderLine",
       "column_name": "LineStatus",
       "generation_type": "status",
-      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "strategy": "Generate LineStatus as Received for the full-received Procurement v2 lifecycle.",
       "allowed_values": [
-        "Open",
-        "Scheduled",
-        "PartiallyShipped",
-        "PartiallyReceived",
-        "Closed"
+        "Received"
       ],
       "min_value": null,
       "max_value": null,
       "nullable_strategy": "never_null",
       "depends_on_columns": [],
-      "notes": null
+      "notes": "Phase 2A full-received lifecycle uses one completed status value."
     },
     {
       "table_name": "POSchedule",
@@ -1515,19 +1520,15 @@
       "table_name": "POSchedule",
       "column_name": "ScheduleStatus",
       "generation_type": "status",
-      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "strategy": "Generate ScheduleStatus as Shipped for the full-received Procurement v2 lifecycle.",
       "allowed_values": [
-        "Planned",
-        "Scheduled",
-        "PartiallyShipped",
-        "Shipped",
-        "Delayed"
+        "Shipped"
       ],
       "min_value": null,
       "max_value": null,
       "nullable_strategy": "never_null",
       "depends_on_columns": [],
-      "notes": null
+      "notes": "Phase 2A full-received lifecycle uses one completed status value."
     },
     {
       "table_name": "ShipmentHdr",
@@ -1569,20 +1570,15 @@
       "table_name": "ShipmentHdr",
       "column_name": "ShipmentStatus",
       "generation_type": "status",
-      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "strategy": "Generate ShipmentStatus as Delivered for the full-received Procurement v2 lifecycle.",
       "allowed_values": [
-        "Planned",
-        "Shipped",
-        "InTransit",
-        "Delivered",
-        "Delayed",
-        "PartiallyDelivered"
+        "Delivered"
       ],
       "min_value": null,
       "max_value": null,
       "nullable_strategy": "never_null",
       "depends_on_columns": [],
-      "notes": null
+      "notes": "Phase 2A full-received lifecycle uses one completed status value."
     },
     {
       "table_name": "ShipmentLine",
@@ -1612,19 +1608,15 @@
       "table_name": "GoodsReceiptHeader",
       "column_name": "ReceiptStatus",
       "generation_type": "status",
-      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "strategy": "Generate ReceiptStatus as Received for the full-received Procurement v2 lifecycle.",
       "allowed_values": [
-        "Received",
-        "Partial",
-        "ShortReceived",
-        "Damaged",
-        "Closed"
+        "Received"
       ],
       "min_value": null,
       "max_value": null,
       "nullable_strategy": "never_null",
       "depends_on_columns": [],
-      "notes": null
+      "notes": "Phase 2A full-received lifecycle uses one completed status value."
     },
     {
       "table_name": "GoodsReceiptLine",
@@ -1690,19 +1682,15 @@
       "table_name": "IncomingInspection",
       "column_name": "InspectionStatus",
       "generation_type": "status",
-      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "strategy": "Generate InspectionStatus as Passed for the full-received Procurement v2 lifecycle.",
       "allowed_values": [
-        "Pending",
-        "Passed",
-        "PartiallyRejected",
-        "Failed",
-        "Completed"
+        "Passed"
       ],
       "min_value": null,
       "max_value": null,
       "nullable_strategy": "never_null",
       "depends_on_columns": [],
-      "notes": null
+      "notes": "Phase 2A full-received lifecycle uses one completed status value."
     },
     {
       "table_name": "InspectionResult",
@@ -1775,17 +1763,390 @@
       "table_name": "InspectionResult",
       "column_name": "ResultStatus",
       "generation_type": "status",
-      "strategy": "Derive status from lifecycle facts; do not assign one constant value across all rows.",
+      "strategy": "Generate ResultStatus as Passed for the full-received Procurement v2 lifecycle.",
       "allowed_values": [
-        "Passed",
-        "PartiallyRejected",
-        "Failed"
+        "Passed"
       ],
       "min_value": null,
       "max_value": null,
       "nullable_strategy": "never_null",
       "depends_on_columns": [],
-      "notes": null
+      "notes": "Phase 2A full-received lifecycle uses one completed status value."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "InventoryReceiptDetailID",
+      "generation_type": "sequence_id",
+      "strategy": "InventoryReceiptDetailID primary key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "InspectionResultID",
+      "generation_type": "foreign_key",
+      "strategy": "InspectionResultID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "GoodsReceiptLineID",
+      "generation_type": "foreign_key",
+      "strategy": "GoodsReceiptLineID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PurchaseOrderLineID",
+      "generation_type": "foreign_key",
+      "strategy": "PurchaseOrderLineID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PurchaseOrderID",
+      "generation_type": "foreign_key",
+      "strategy": "PurchaseOrderID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "SupplierID",
+      "generation_type": "foreign_key",
+      "strategy": "SupplierID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "ComponentID",
+      "generation_type": "foreign_key",
+      "strategy": "ComponentID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PlantID",
+      "generation_type": "foreign_key",
+      "strategy": "PlantID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "WarehouseID",
+      "generation_type": "foreign_key",
+      "strategy": "WarehouseID foreign key",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "POOrderDate",
+      "generation_type": "calculated",
+      "strategy": "POOrderDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "ExpectedDeliveryDate",
+      "generation_type": "calculated",
+      "strategy": "ExpectedDeliveryDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "ActualDeliveryDate",
+      "generation_type": "calculated",
+      "strategy": "ActualDeliveryDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "StockPostedDate",
+      "generation_type": "date_offset",
+      "strategy": "StockPostedDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "OrderedQuantity",
+      "generation_type": "calculated",
+      "strategy": "PurchaseOrderLine.OrderedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "ShippedQuantity",
+      "generation_type": "calculated",
+      "strategy": "ShipmentLine.ShippedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "ReceivedQuantity",
+      "generation_type": "calculated",
+      "strategy": "GoodsReceiptLine.ReceivedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "InspectedQuantity",
+      "generation_type": "calculated",
+      "strategy": "InspectionResult.InspectedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "AcceptedQuantity",
+      "generation_type": "calculated",
+      "strategy": "InspectionResult.AcceptedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "RejectedQuantity",
+      "generation_type": "calculated",
+      "strategy": "InspectionResult.RejectedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "OrderedUnitPrice",
+      "generation_type": "calculated",
+      "strategy": "PurchaseOrderLine.UnitPrice",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 6000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "DeliveredUnitPrice",
+      "generation_type": "decimal_range",
+      "strategy": "Delivered unit price at receipt/invoice time",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 6000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PriceDifference",
+      "generation_type": "calculated",
+      "strategy": "DeliveredUnitPrice - OrderedUnitPrice",
+      "allowed_values": [],
+      "min_value": -6000,
+      "max_value": 6000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PriceDifferencePct",
+      "generation_type": "calculated",
+      "strategy": "CASE WHEN OrderedUnitPrice = 0 THEN 0 ELSE ROUND((PriceDifference / OrderedUnitPrice) * 100, 2) END",
+      "allowed_values": [],
+      "min_value": -100,
+      "max_value": 100,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "OrderedValue",
+      "generation_type": "calculated",
+      "strategy": "OrderedQuantity * OrderedUnitPrice",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "DeliveredValue",
+      "generation_type": "calculated",
+      "strategy": "ReceivedQuantity * DeliveredUnitPrice",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "AcceptedStockValue",
+      "generation_type": "calculated",
+      "strategy": "AcceptedQuantity * DeliveredUnitPrice",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100000000,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "OrderYear",
+      "generation_type": "calculated",
+      "strategy": "YEAR(POOrderDate)",
+      "allowed_values": [],
+      "min_value": 2025,
+      "max_value": 2025,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "DeliveryYear",
+      "generation_type": "calculated",
+      "strategy": "YEAR(ActualDeliveryDate)",
+      "allowed_values": [],
+      "min_value": 2025,
+      "max_value": 2025,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "CrossYearDeliveryFlag",
+      "generation_type": "category",
+      "strategy": "0 for current 2025-only scope",
+      "allowed_values": [
+        "0"
+      ],
+      "min_value": 0,
+      "max_value": 0,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "DeliveryDelayDays",
+      "generation_type": "calculated",
+      "strategy": "ActualDeliveryDate - ExpectedDeliveryDate",
+      "allowed_values": [],
+      "min_value": -365,
+      "max_value": 365,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "DeliveryStatus",
+      "generation_type": "status",
+      "strategy": "DeliveryStatus",
+      "allowed_values": [
+        "OnTime",
+        "Delayed",
+        "Early"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PriceVarianceStatus",
+      "generation_type": "status",
+      "strategy": "PriceVarianceStatus",
+      "allowed_values": [
+        "NoChange",
+        "PriceIncrease",
+        "PriceDecrease"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
+    },
+    {
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "InventoryReceiptStatus",
+      "generation_type": "status",
+      "strategy": "InventoryReceiptStatus",
+      "allowed_values": [
+        "Received"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "depends_on_columns": [],
+      "notes": "Phase 1 schema/planning contract only; Python generation will populate this in a later phase."
     },
     {
       "table_name": "InventoryTransaction",
@@ -2655,98 +3016,70 @@
       "table_name": "PurchaseOrderHdr",
       "status_column": "POStatus",
       "status_values": [
-        "Created",
-        "Approved",
-        "Sent",
-        "PartiallyReceived",
-        "Closed",
-        "Cancelled"
+        "Received"
       ],
-      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
-      "description": "Lifecycle-based Procurement v2 status realism."
+      "derivation_logic": "Always Received for the Phase 2A full-received Procurement v2 lifecycle.",
+      "description": "Full-received Procurement v2 status planning rule."
     },
     {
       "rule_id": "status_PurchaseOrderLine_LineStatus",
       "table_name": "PurchaseOrderLine",
       "status_column": "LineStatus",
       "status_values": [
-        "Open",
-        "Scheduled",
-        "PartiallyShipped",
-        "PartiallyReceived",
-        "Closed"
+        "Received"
       ],
-      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
-      "description": "Lifecycle-based Procurement v2 status realism."
+      "derivation_logic": "Always Received for the Phase 2A full-received Procurement v2 lifecycle.",
+      "description": "Full-received Procurement v2 status planning rule."
     },
     {
       "rule_id": "status_POSchedule_ScheduleStatus",
       "table_name": "POSchedule",
       "status_column": "ScheduleStatus",
       "status_values": [
-        "Planned",
-        "Scheduled",
-        "PartiallyShipped",
-        "Shipped",
-        "Delayed"
+        "Shipped"
       ],
-      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
-      "description": "Lifecycle-based Procurement v2 status realism."
+      "derivation_logic": "Always Shipped for the Phase 2A full-received Procurement v2 lifecycle.",
+      "description": "Full-received Procurement v2 status planning rule."
     },
     {
       "rule_id": "status_ShipmentHdr_ShipmentStatus",
       "table_name": "ShipmentHdr",
       "status_column": "ShipmentStatus",
       "status_values": [
-        "Planned",
-        "Shipped",
-        "InTransit",
-        "Delivered",
-        "Delayed",
-        "PartiallyDelivered"
+        "Delivered"
       ],
-      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
-      "description": "Lifecycle-based Procurement v2 status realism."
+      "derivation_logic": "Always Delivered for the Phase 2A full-received Procurement v2 lifecycle.",
+      "description": "Full-received Procurement v2 status planning rule."
     },
     {
       "rule_id": "status_GoodsReceiptHeader_ReceiptStatus",
       "table_name": "GoodsReceiptHeader",
       "status_column": "ReceiptStatus",
       "status_values": [
-        "Received",
-        "Partial",
-        "ShortReceived",
-        "Damaged",
-        "Closed"
+        "Received"
       ],
-      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
-      "description": "Lifecycle-based Procurement v2 status realism."
+      "derivation_logic": "Always Received for the Phase 2A full-received Procurement v2 lifecycle.",
+      "description": "Full-received Procurement v2 status planning rule."
     },
     {
       "rule_id": "status_IncomingInspection_InspectionStatus",
       "table_name": "IncomingInspection",
       "status_column": "InspectionStatus",
       "status_values": [
-        "Pending",
-        "Passed",
-        "PartiallyRejected",
-        "Failed",
-        "Completed"
+        "Passed"
       ],
-      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
-      "description": "Lifecycle-based Procurement v2 status realism."
+      "derivation_logic": "Always Passed for the Phase 2A full-received Procurement v2 lifecycle.",
+      "description": "Full-received Procurement v2 status planning rule."
     },
     {
       "rule_id": "status_InspectionResult_ResultStatus",
       "table_name": "InspectionResult",
       "status_column": "ResultStatus",
       "status_values": [
-        "Passed",
-        "PartiallyRejected",
-        "Failed"
+        "Passed"
       ],
-      "derivation_logic": "Derive status from lifecycle facts and vary status values where multiple values are allowed.",
-      "description": "Lifecycle-based Procurement v2 status realism."
+      "derivation_logic": "Always Passed for the Phase 2A full-received Procurement v2 lifecycle.",
+      "description": "Full-received Procurement v2 status planning rule."
     },
     {
       "rule_id": "status_InventoryTransaction_TransactionType",
@@ -2810,6 +3143,40 @@
       ],
       "derivation_logic": "Derive stock posting status from accepted inspection and inventory posting lifecycle.",
       "description": "Lifecycle-based Procurement v2 status realism."
+    },
+    {
+      "rule_id": "status_InventoryReceiptDetail_DeliveryStatus",
+      "table_name": "InventoryReceiptDetail",
+      "status_column": "DeliveryStatus",
+      "status_values": [
+        "OnTime",
+        "Delayed",
+        "Early"
+      ],
+      "derivation_logic": "OnTime when ActualDeliveryDate equals ExpectedDeliveryDate; Delayed when later; Early when earlier.",
+      "description": "InventoryReceiptDetail lifecycle status planning rule."
+    },
+    {
+      "rule_id": "status_InventoryReceiptDetail_PriceVarianceStatus",
+      "table_name": "InventoryReceiptDetail",
+      "status_column": "PriceVarianceStatus",
+      "status_values": [
+        "NoChange",
+        "PriceIncrease",
+        "PriceDecrease"
+      ],
+      "derivation_logic": "NoChange when DeliveredUnitPrice equals OrderedUnitPrice; PriceIncrease when higher; PriceDecrease when lower.",
+      "description": "InventoryReceiptDetail lifecycle status planning rule."
+    },
+    {
+      "rule_id": "status_InventoryReceiptDetail_InventoryReceiptStatus",
+      "table_name": "InventoryReceiptDetail",
+      "status_column": "InventoryReceiptStatus",
+      "status_values": [
+        "Received"
+      ],
+      "derivation_logic": "Received for receipt-level traceability rows in the current 2025-only procurement flow.",
+      "description": "InventoryReceiptDetail lifecycle status planning rule."
     }
   ],
   "validation_rules": [
@@ -3028,6 +3395,51 @@
       "condition": "Inventory.AvailableValue must be derived from AvailableQuantity and average unit cost.",
       "severity": "error",
       "description": "Inventory.AvailableValue must be derived from AvailableQuantity and average unit cost."
+    },
+    {
+      "rule_id": "V2_INVENTORY_RECEIPT_DETAIL_EXISTS",
+      "rule_type": "not_null",
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "InventoryReceiptDetailID",
+      "condition": "InventoryReceiptDetailID must be present on InventoryReceiptDetail between InspectionResult and InventoryTransaction.",
+      "severity": "error",
+      "description": "InventoryReceiptDetail must exist between InspectionResult and InventoryTransaction."
+    },
+    {
+      "rule_id": "V2_INVENTORY_RECEIPT_DETAIL_CROSS_YEAR_ZERO",
+      "rule_type": "formula_check",
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "CrossYearDeliveryFlag",
+      "condition": "CrossYearDeliveryFlag must be 0 for the current 2025-only generation scope.",
+      "severity": "error",
+      "description": "CrossYearDeliveryFlag must be 0 for the current 2025-only generation scope."
+    },
+    {
+      "rule_id": "V2_INVENTORY_RECEIPT_DETAIL_PRICE_DIFFERENCE",
+      "rule_type": "formula_check",
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PriceDifference",
+      "condition": "PriceDifference must equal DeliveredUnitPrice - OrderedUnitPrice.",
+      "severity": "error",
+      "description": "PriceDifference must equal DeliveredUnitPrice - OrderedUnitPrice."
+    },
+    {
+      "rule_id": "V2_INVENTORY_RECEIPT_DETAIL_PRICE_DIFFERENCE_PCT",
+      "rule_type": "formula_check",
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "PriceDifferencePct",
+      "condition": "PriceDifferencePct must equal PriceDifference / OrderedUnitPrice * 100 with denominator guard.",
+      "severity": "error",
+      "description": "PriceDifferencePct must equal PriceDifference / OrderedUnitPrice * 100 with denominator guard."
+    },
+    {
+      "rule_id": "V2_INVENTORY_RECEIPT_DETAIL_ACCEPTED_STOCK_VALUE",
+      "rule_type": "formula_check",
+      "table_name": "InventoryReceiptDetail",
+      "column_name": "AcceptedStockValue",
+      "condition": "AcceptedStockValue must equal AcceptedQuantity * DeliveredUnitPrice.",
+      "severity": "error",
+      "description": "AcceptedStockValue must equal AcceptedQuantity * DeliveredUnitPrice."
     }
   ],
   "assumptions": [
@@ -3036,7 +3448,9 @@
     "Locations are USA-only.",
     "Inventory is a calculated current stock balance table derived from InventoryTransaction groups.",
     "InventoryTransaction should be StockIn for inbound procurement receipts.",
-    "Inventory summarizes both quantity and value from InventoryTransaction groups."
+    "Inventory summarizes both quantity and value from InventoryTransaction groups.",
+    "InventoryReceiptDetail is the receipt-level traceability table between InspectionResult and InventoryTransaction.",
+    "CrossYearDeliveryFlag remains 0 because Procurement v2 generation is scoped to calendar-year 2025."
   ],
   "warnings": []
 }

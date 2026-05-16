@@ -78,7 +78,7 @@ class PipelineRunReport:
     stages: list[PipelineStageReport] = field(default_factory=list)
     tables_generated: int = 0
     total_rows_generated: int = 0
-    model_version: str = "v1"
+    model_version: str = "v2"
     expected_tables: list[str] = field(default_factory=list)
     final_data_tables: list[str] = field(default_factory=list)
     data_quality_status: str = "not_run"

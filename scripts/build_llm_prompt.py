@@ -30,7 +30,7 @@ def main() -> int:
     parser.add_argument("--erd", required=True, help="Path to Mermaid ERD file.")
     parser.add_argument("--scenario", required=True, help="Path to business scenario text file.")
     parser.add_argument("--output", required=True, help="Path where the prompt should be saved.")
-    parser.add_argument("--model-version", default="v1", choices=["v1", "v2"], help="Procurement model version for role validation and prompt guidance.")
+    parser.add_argument("--model-version", default="v2", choices=["v2"], help="Procurement model version for role validation and prompt guidance. Procurement v2 is the only active Procurement model.")
     args = parser.parse_args()
 
     metadata_result = load_metadata_schema(args.metadata)

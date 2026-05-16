@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import pandas as pd
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from procurement_data_generator.modules.shared.operating_scope import (
+    get_expected_plant_count,
+    get_expected_warehouse_count,
+)
+
 INPUT_DIR = PROJECT_ROOT / "input"
 
 HEADERS = [
@@ -79,7 +87,7 @@ TABLES = [
         "process": "Plant Master",
         "area": "Master",
         "role": "plant_dimension",
-        "rows": 3,
+        "rows": get_expected_plant_count(),
         "columns": [
             ("PlantID", "int", "PK", None, None, "No", "", "", "", "Plant primary key", "sequence_id", ""),
             ("PlantCode", "varchar(30)", "", None, None, "No", "", "", "", "Plant code", "category", ""),
@@ -97,7 +105,7 @@ TABLES = [
         "process": "Warehouse Master",
         "area": "Master",
         "role": "warehouse_dimension",
-        "rows": 9,
+        "rows": get_expected_warehouse_count(),
         "columns": [
             ("WarehouseID", "int", "PK", None, None, "No", "", "", "", "Warehouse primary key", "sequence_id", ""),
             ("PlantID", "int", "FK", "Plant", "PlantID", "No", "", "", "", "Plant FK", "foreign_key", ""),
@@ -224,13 +232,13 @@ def _all_tables() -> list[dict]:
             ]),
             _table("PurchaseOrderHdr", 40, "Purchase Order", "Procurement", "purchase_order_header", 1800, [
                 _pk("PurchaseOrderID"), _fk("SupplierID", "SupplierMaster", "SupplierID"), _fk("PlantID", "Plant", "PlantID"), _fk("QuotationID", "SupplierQuotation", "QuotationID"),
-                _date("OrderDate", "date_offset"), _date("ExpectedDeliveryDate", "date_offset"), _status("POStatus", "Created,Approved,Sent,PartiallyReceived,Closed,Cancelled"),
+                _date("OrderDate", "date_offset"), _date("ExpectedDeliveryDate", "date_offset"), _status("POStatus", "Received"),
                 _calc("TotalAmount", "SUM(PurchaseOrderLine.LineAmount)"), _usd(),
             ]),
             _table("PurchaseOrderLine", 41, "Purchase Order Line", "Procurement", "purchase_order_line", 5400, [
                 _pk("PurchaseOrderLineID"), _fk("PurchaseOrderID", "PurchaseOrderHdr", "PurchaseOrderID"), _fk("QuotationLineID", "SupplierQuotationLn", "QuotationLineID"), _fk("ComponentID", "ComponentMaster", "ComponentID"),
                 _decimal_named("OrderedQuantity", 1, 1000), _decimal_named("UnitPrice", 1, 6000), _calc("LineAmount", "OrderedQuantity * UnitPrice"), _decimal_named("OpenQuantity", 0, 1000),
-                _status("LineStatus", "Open,Scheduled,PartiallyShipped,PartiallyReceived,Closed"),
+                _status("LineStatus", "Received"),
             ]),
             _table("POSchedule", 50, "PO Schedule", "Procurement", "po_schedule", 6500, [
                 _pk("POScheduleID"), _fk("PurchaseOrderLineID", "PurchaseOrderLine", "PurchaseOrderLineID"), _date("ScheduledDeliveryDate", "date_offset"),
@@ -262,6 +270,41 @@ def _all_tables() -> list[dict]:
                 ("RejectionRatePct", "decimal(5,2)", "", None, None, "Yes", "", "", "", "Rejection percentage", "calculated", "RejectedQuantity / InspectedQuantity * 100"),
                 ("RejectionReason", "varchar(150)", "", None, None, "Yes", "Not Applicable,Dimension Out of Tolerance,Surface Defect,Electrical Test Failure,Packaging Damage,Material Contamination,Wrong Specification,Thermal Stress Failure,Supplier Documentation Issue,Visual Defect,Functional Test Failure", "", "", "Rejection reason", "category", ""),
                 _status("ResultStatus", "Passed,PartiallyRejected,Failed"),
+            ]),
+            _table("InventoryReceiptDetail", 85, "Inventory Receipt Detail", "Inventory", "inventory_receipt_detail", 5500, [
+                _pk("InventoryReceiptDetailID"),
+                _fk("InspectionResultID", "InspectionResult", "InspectionResultID"),
+                _fk("GoodsReceiptLineID", "GoodsReceiptLine", "GoodsReceiptLineID"),
+                _fk("PurchaseOrderLineID", "PurchaseOrderLine", "PurchaseOrderLineID"),
+                _fk("PurchaseOrderID", "PurchaseOrderHdr", "PurchaseOrderID"),
+                _fk("SupplierID", "SupplierMaster", "SupplierID"),
+                _fk("ComponentID", "ComponentMaster", "ComponentID"),
+                _fk("PlantID", "Plant", "PlantID"),
+                _fk("WarehouseID", "Warehouse", "WarehouseID"),
+                _date("POOrderDate", "calculated", "2025-01-01", "2025-12-31"),
+                _date("ExpectedDeliveryDate", "calculated", "2025-01-01", "2025-12-31"),
+                _date("ActualDeliveryDate", "calculated", "2025-01-01", "2025-12-31"),
+                _date("StockPostedDate", "date_offset", "2025-01-01", "2025-12-31"),
+                ("OrderedQuantity", "decimal(18,2)", "", None, None, "No", "", 0, 1000000, "Ordered quantity from PurchaseOrderLine.OrderedQuantity", "calculated", "PurchaseOrderLine.OrderedQuantity"),
+                ("ShippedQuantity", "decimal(18,2)", "", None, None, "No", "", 0, 1000000, "Shipped quantity from ShipmentLine.ShippedQuantity", "calculated", "ShipmentLine.ShippedQuantity"),
+                ("ReceivedQuantity", "decimal(18,2)", "", None, None, "No", "", 0, 1000000, "Received quantity from GoodsReceiptLine.ReceivedQuantity", "calculated", "GoodsReceiptLine.ReceivedQuantity"),
+                ("InspectedQuantity", "decimal(18,2)", "", None, None, "No", "", 0, 1000000, "Inspected quantity from InspectionResult.InspectedQuantity", "calculated", "InspectionResult.InspectedQuantity"),
+                ("AcceptedQuantity", "decimal(18,2)", "", None, None, "No", "", 0, 1000000, "Accepted quantity from InspectionResult.AcceptedQuantity", "calculated", "InspectionResult.AcceptedQuantity"),
+                ("RejectedQuantity", "decimal(18,2)", "", None, None, "No", "", 0, 1000000, "Rejected quantity from InspectionResult.RejectedQuantity", "calculated", "InspectionResult.RejectedQuantity"),
+                ("OrderedUnitPrice", "decimal(18,2)", "", None, None, "No", "", 0, 6000, "Ordered unit price from PurchaseOrderLine.UnitPrice", "calculated", "PurchaseOrderLine.UnitPrice"),
+                ("DeliveredUnitPrice", "decimal(18,2)", "", None, None, "No", "", 0, 6000, "Delivered unit price at receipt/invoice time", "decimal_range", ""),
+                _calc_range("PriceDifference", "DeliveredUnitPrice - OrderedUnitPrice", -6000, 6000),
+                ("PriceDifferencePct", "decimal(9,4)", "", None, None, "No", "", -100, 100, "Price variance percentage based on stored PriceDifference", "calculated", "CASE WHEN OrderedUnitPrice = 0 THEN 0 ELSE ROUND((PriceDifference / OrderedUnitPrice) * 100, 2) END"),
+                _calc_range("OrderedValue", "OrderedQuantity * OrderedUnitPrice", 0, 100000000),
+                _calc_range("DeliveredValue", "ReceivedQuantity * DeliveredUnitPrice", 0, 100000000),
+                _calc_range("AcceptedStockValue", "AcceptedQuantity * DeliveredUnitPrice", 0, 100000000),
+                ("OrderYear", "int", "", None, None, "No", "", 2025, 2025, "YEAR(POOrderDate)", "calculated", "YEAR(POOrderDate)"),
+                ("DeliveryYear", "int", "", None, None, "No", "", 2025, 2025, "YEAR(ActualDeliveryDate)", "calculated", "YEAR(ActualDeliveryDate)"),
+                ("CrossYearDeliveryFlag", "bit", "", None, None, "No", "0", 0, 0, "0 for current 2025-only scope", "category", ""),
+                ("DeliveryDelayDays", "int", "", None, None, "No", "", -365, 365, "ActualDeliveryDate - ExpectedDeliveryDate", "calculated", "ActualDeliveryDate - ExpectedDeliveryDate"),
+                _status("DeliveryStatus", "OnTime,Delayed,Early"),
+                _status("PriceVarianceStatus", "NoChange,PriceIncrease,PriceDecrease"),
+                _status("InventoryReceiptStatus", "Received"),
             ]),
             _table("InventoryTransaction", 90, "Inventory Transaction", "Inventory", "inventory_transaction", 5500, [
                 _pk("InventoryTransactionID"),
@@ -406,6 +449,15 @@ def _write_erd() -> None:
     GoodsReceiptLine ||--o{ IncomingInspection : inspected_by
     IncomingInspection ||--o{ InspectionResult : contains
     InspectionResult ||--o{ InventoryTransaction : posts_inventory
+    InspectionResult ||--o{ InventoryReceiptDetail : creates
+    GoodsReceiptLine ||--o{ InventoryReceiptDetail : received_as
+    PurchaseOrderLine ||--o{ InventoryReceiptDetail : traced_from
+    PurchaseOrderHdr ||--o{ InventoryReceiptDetail : belongs_to
+    SupplierMaster ||--o{ InventoryReceiptDetail : supplied_by
+    ComponentMaster ||--o{ InventoryReceiptDetail : component
+    Plant ||--o{ InventoryReceiptDetail : received_at
+    Warehouse ||--o{ InventoryReceiptDetail : stored_at
+    InventoryReceiptDetail ||--o{ InventoryTransaction : posts_stock
     SupplierMaster ||--o{ InventoryTransaction : supplied_inventory
     GoodsReceiptLine ||--o{ InventoryTransaction : received_inventory_line
     PurchaseOrderLine ||--o{ InventoryTransaction : inventory_po_line
@@ -427,7 +479,11 @@ def _write_erd() -> None:
 def _write_scenario() -> None:
     scenario = """Generate procurement data for the 2025 calendar year only, from 2025-01-01 to 2025-12-31, for a US-based EV manufacturing procurement process.
 
-The business should include US-based plants and warehouses, supplier sourcing, RFQ, supplier quotation, awarded quotation, purchase order, PO schedules, supplier shipments, goods receipts, incoming quality inspection, inventory posting, current inventory balance, supplier invoices, and payment transactions.
+The business uses one US-based plant and one warehouse for the simplified demo operating scope, plus supplier sourcing, RFQ, supplier quotation, awarded quotation, purchase order, PO schedules, supplier shipments, goods receipts, incoming quality inspection, inventory receipt traceability, inventory posting, current inventory balance, supplier invoices, and payment transactions.
+
+InventoryReceiptDetail is a receipt-level traceability table between InspectionResult and InventoryTransaction. It records supplier, component, PO, PO line, plant, warehouse, order date, expected delivery date, actual delivery date, stock posted date, ordered/shipped/received/inspected/accepted/rejected quantities, ordered and delivered unit prices, price variance, ordered/delivered/accepted stock values, order and delivery years, CrossYearDeliveryFlag, delivery delay days, delivery status, price variance status, and inventory receipt status.
+
+Procurement v2 is currently scoped to calendar-year 2025 only. InventoryReceiptDetail date fields should remain within 2025-01-01 and 2025-12-31, and CrossYearDeliveryFlag is included for traceability but remains 0 for the current 2025-only scope.
 
 InventoryTransaction records each accepted StockIn posting into inventory after incoming inspection. It should include supplier, component, plant, warehouse, transaction date, quantity, unit price, inventory value, and references to the goods receipt line, purchase order line, and inspection result. TransactionType should be StockIn for this inbound procurement scenario.
 

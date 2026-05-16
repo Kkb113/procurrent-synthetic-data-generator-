@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument("--input-folder", required=True, help="Folder containing generated CSV files.")
     parser.add_argument("--output-folder", required=True, help="Folder to write updated CSV files.")
     parser.add_argument("--strict", action="store_true", help="Stop after the first failed formula rule.")
-    parser.add_argument("--model-version", default="v1", choices=["v1", "v2"], help="Procurement model version.")
+    parser.add_argument("--model-version", default="v2", choices=["v2"], help="Procurement model version. Procurement v2 is the only active Procurement model.")
     args = parser.parse_args()
 
     metadata_result = load_metadata_schema(args.metadata)
@@ -44,8 +44,8 @@ def main() -> int:
         print("Missing CSV files: " + ", ".join(missing))
         print("Run Phase 9 generation first:")
         print(
-            "python scripts/generate_transaction_data.py --metadata input/sample_procurement_metadata_phase9.xlsx "
-            "--plan input/sample_generation_plan_phase9.json --erd input/procurement_erd_phase9.mmd "
+            "python scripts/generate_transaction_data.py --metadata input/procurement_v2_metadata.xlsx "
+            "--plan input/sample_generation_plan_v2_valid.json --erd input/procurement_v2_erd.mmd "
             "--output output/transaction_data --seed 42"
         )
         return 1

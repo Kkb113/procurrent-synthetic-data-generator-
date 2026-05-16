@@ -30,7 +30,7 @@ def main() -> int:
     parser.add_argument("--raw-llm-output", help="Optional extra path to copy the raw Azure OpenAI response.")
     parser.add_argument("--generated-plan-output", help="Optional extra path to copy the generated plan JSON.")
     parser.add_argument("--if-table-exists", default="replace", choices=["replace", "append", "fail"], help="SQL table handling mode.")
-    parser.add_argument("--model-version", default="v1", choices=["v1", "v2"], help="Procurement model version for role validation and prompt generation.")
+    parser.add_argument("--model-version", default="v2", choices=["v2"], help="Procurement model version for role validation and prompt generation. Procurement v2 is the only active Procurement model.")
     args = parser.parse_args()
 
     report = ProcurementPipelineRunner().run_pipeline(

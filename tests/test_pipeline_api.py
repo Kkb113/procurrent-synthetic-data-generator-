@@ -18,7 +18,7 @@ def _files(include_metadata=True, include_erd=True, include_plan=True):
     if include_metadata:
         files["metadata_file"] = ("metadata.xlsx", b"xlsx-bytes", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     if include_erd:
-        files["erd_file"] = ("procurement_erd.mmd", b"erDiagram\nVendor ||--o{ PurchaseOrderHeader : supplies", "text/plain")
+        files["erd_file"] = ("procurement_erd.mmd", b"erDiagram\nSupplierMaster ||--o{ PurchaseOrderHdr : supplies", "text/plain")
     if include_plan:
         files["plan_file"] = ("plan.json", b'{"module": "procurement"}', "application/json")
     return files
@@ -37,18 +37,19 @@ def _form(**overrides):
     return data
 
 
-def _fake_report() -> PipelineRunReport:
+def _fake_report(model_version: str = "v2") -> PipelineRunReport:
     report = PipelineRunReport(
         run_id="run_mock",
         started_at=utc_now_iso(),
         input_files={},
         output_folder="output/web_runs/web_run_mock/pipeline_output/run_mock",
+        model_version=model_version,
     )
     stage = PipelineStageReport("metadata_validation")
     stage.start()
     stage.finish("passed", "ok")
     report.add_stage(stage)
-    report.tables_generated = 16
+    report.tables_generated = 25
     report.total_rows_generated = 1917
     report.complete("passed_with_warnings")
     return report
@@ -60,7 +61,7 @@ class FakeRunner:
 
     def run_pipeline(self, **kwargs):
         self.calls.append(kwargs)
-        return _fake_report()
+        return _fake_report(kwargs.get("model_version", "v2"))
 
 
 def test_run_fails_if_metadata_missing() -> None:
@@ -118,7 +119,7 @@ def test_run_calls_pipeline_service_with_correct_arguments(monkeypatch) -> None:
                 "status": "passed",
                 "message": "Pipeline completed.",
                 "stage_summary": [],
-                "tables_generated": 16,
+                "tables_generated": 25,
                 "total_rows_generated": 1917,
                 "data_quality_status": "passed",
                 "sql_load_status": "skipped",
@@ -136,7 +137,7 @@ def test_run_calls_pipeline_service_with_correct_arguments(monkeypatch) -> None:
     assert payload["stage_summary"] == []
     assert captured["request"].load_sql is True
     assert captured["request"].if_table_exists == "append"
-    assert captured["request"].model_version == "v1"
+    assert captured["request"].model_version == "v2"
 
 
 def test_successful_pipeline_response_includes_downloads(tmp_path: Path, monkeypatch) -> None:
@@ -149,7 +150,7 @@ def test_successful_pipeline_response_includes_downloads(tmp_path: Path, monkeyp
     assert response.status_code == 200
     payload = response.json()
     assert payload["run_id"].startswith("web_run_")
-    assert payload["model_version"] == "v1"
+    assert payload["model_version"] == "v2"
     assert payload["status"] == "passed_with_warnings"
     assert payload["stage_summary"]
     assert "audit_md" in payload["downloads"]

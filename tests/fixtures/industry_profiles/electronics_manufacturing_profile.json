@@ -1,0 +1,75 @@
+{
+  "industry_id": "electronics_manufacturing",
+  "industry_name": "Electronics Manufacturing",
+  "industry_description": "Catalog hints for electronics procurement and production execution.",
+  "supported_domains": ["procurement", "production"],
+  "procurement": {
+    "supplier_name_patterns": ["Electronics Component Supply", "PCB Fabrication Partner", "Semiconductor Distributor"],
+    "component_categories": ["PCBs", "Semiconductors", "Passive Components", "Connectors", "Enclosures", "Cables", "Packaging Materials"],
+    "component_name_patterns": ["Printed Circuit Board", "Microcontroller", "Capacitor", "Connector", "Enclosure"],
+    "component_category_codes": ["Electrical", "Electronics", "Mechanical", "Packaging", "Maintenance"],
+    "component_material_examples": {
+      "PCBs": ["Printed Circuit Board", "Control PCB", "Sensor PCB"],
+      "Semiconductors": ["Microcontroller", "Memory IC", "Power IC"],
+      "Passive Components": ["Capacitor", "Resistor", "Inductor"],
+      "Connectors": ["Board Connector", "Cable Connector", "Terminal Header"]
+    },
+    "component_specification_patterns": {
+      "PCBs": ["FR4", "RoHS", "4 Layer"],
+      "Semiconductors": ["32-bit", "Industrial Grade", "Tape Reel"],
+      "Passive Components": ["Lead Free", "1 Percent", "SMD"],
+      "Connectors": ["2.54mm", "Shielded", "Gold Plated"]
+    },
+    "component_uom_preferences": {
+      "PCBs": ["EA", "Panel"],
+      "Semiconductors": ["EA", "Pack"],
+      "Passive Components": ["EA", "Pack"],
+      "Connectors": ["EA", "Set"]
+    },
+    "component_cost_profiles": {
+      "PCBs": [5.0, 500.0],
+      "Semiconductors": [1.0, 800.0]
+    },
+    "supplier_component_relationship_rules": ["Electronic parts should use approved component manufacturers."]
+  },
+  "production": {
+    "product_categories": ["Control Board Assembly", "Sensor Module", "Power Supply Unit", "Communication Module"],
+    "product_name_patterns": ["Control Board Assembly", "Sensor Module", "Power Supply Unit", "Communication Module"],
+    "work_center_names": ["SMT Line", "Through-Hole Assembly", "Soldering Station", "Firmware Flashing Station", "Functional Test Bench", "Final Assembly", "Packaging Line"],
+    "routing_operation_names": ["SMT Placement", "Reflow Soldering", "Manual Assembly", "Firmware Flashing", "Functional Testing", "Final Inspection", "Packaging Release"],
+    "product_catalog": [
+      {"name": "Control Board Assembly", "category": "Control Board", "product_type": "FinishedGood", "uom": "EA", "base_cost": 180, "base_hours": 2.5},
+      {"name": "Sensor Module", "category": "Sensor", "product_type": "FinishedGood", "uom": "EA", "base_cost": 95, "base_hours": 1.8},
+      {"name": "Power Supply Unit", "category": "Power Supply", "product_type": "FinishedGood", "uom": "EA", "base_cost": 140, "base_hours": 2.2},
+      {"name": "Communication Module", "category": "Communication", "product_type": "FinishedGood", "uom": "EA", "base_cost": 160, "base_hours": 2.3}
+    ],
+    "work_center_catalog": [
+      {"name": "SMT Line", "line_name": "SMT"},
+      {"name": "Through-Hole Assembly", "line_name": "Assembly"},
+      {"name": "Soldering Station", "line_name": "Soldering"},
+      {"name": "Firmware Flashing Station", "line_name": "Firmware"},
+      {"name": "Functional Test Bench", "line_name": "Testing"},
+      {"name": "Final Assembly", "line_name": "Final Assembly"},
+      {"name": "Packaging Line", "line_name": "Packaging"}
+    ],
+    "fallback_components": [
+      {"ComponentID": 1, "ComponentName": "Printed Circuit Board", "UOM": "EA"},
+      {"ComponentID": 2, "ComponentName": "Microcontroller", "UOM": "EA"},
+      {"ComponentID": 3, "ComponentName": "Connector", "UOM": "EA"}
+    ],
+    "fallback_plants": [{"PlantID": 1, "PlantName": "Main Electronics Manufacturing Plant"}],
+    "fallback_warehouses": [{"WarehouseID": 1, "PlantID": 1, "WarehouseName": "Main Electronics Material Warehouse"}],
+    "bom_patterns": ["Electronics assemblies consume PCBs, semiconductors, passive components, connectors, and packaging."],
+    "scrap_yield_profiles": {"SMT Placement": [0.0, 2.0], "Functional Testing": [0.0, 2.0]},
+    "quality_defect_codes": ["SolderBridge", "OpenCircuit", "FirmwareLoadFailure", "FunctionalTestFailure", "ConnectorDamage"],
+    "rework_reason_codes": ["Re-solder", "Re-flash Firmware", "Replace Component", "Re-test"],
+    "cost_profiles": {"LaborRatePerHour": [25.0, 80.0], "OverheadPct": [8.0, 24.0]}
+  },
+  "shared": {
+    "countable_uoms": ["EA", "Each", "Unit", "Piece", "PCS", "Pack", "Set"],
+    "measurable_uoms": ["KG", "Gram", "Liter", "Meter", "Roll"],
+    "default_currency": "USD",
+    "date_scope_notes": ["Generated scenarios remain in calendar year 2025."],
+    "realism_notes": ["Electronics profile is catalog content only; Python generates rows."]
+  }
+}

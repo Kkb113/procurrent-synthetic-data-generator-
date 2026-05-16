@@ -1,0 +1,1907 @@
+{
+  "module": "manufacturing",
+  "business_summary": "Generate 2025 Production Execution module within MES context production_v1 data connected to Procurement v2 inventory using one Plant, one Warehouse, and Shift A only.",
+  "domain_profile": {
+    "industry": "EV manufacturing production execution",
+    "business_context": "Production consumes Procurement component inventory from the single Procurement Plant/Warehouse and creates finished goods inventory.",
+    "vendor_categories": [],
+    "material_categories": [
+      {
+        "category_name": "EV finished goods",
+        "material_examples": [
+          "Battery Pack",
+          "Drive Unit",
+          "Thermal Module"
+        ],
+        "specification_patterns": [
+          "EA",
+          "Unit",
+          "Set"
+        ]
+      }
+    ],
+    "warehouse_types": [
+      "Raw Material",
+      "Finished Goods Staging"
+    ],
+    "plant_locations": [
+      "Detroit, Michigan"
+    ],
+    "carrier_name_patterns": [],
+    "inspection_test_categories": [
+      "InProcess",
+      "Final"
+    ]
+  },
+  "table_role_mapping": [
+    {
+      "table_name": "ProductMaster",
+      "table_role": "product_master",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "BOMHeader",
+      "table_role": "bom_header",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "BOMLine",
+      "table_role": "bom_line",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "WorkCenter",
+      "table_role": "work_center",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "RoutingHeader",
+      "table_role": "routing_header",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "RoutingOperation",
+      "table_role": "routing_operation",
+      "area": "Master",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionShift",
+      "table_role": "production_shift",
+      "area": "MES",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "table_role": "production_order_header",
+      "area": "Production",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "table_role": "production_order_line",
+      "area": "Production",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionMaterialRequirement",
+      "table_role": "production_material_requirement",
+      "area": "Production",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "MaterialIssueHeader",
+      "table_role": "material_issue_header",
+      "area": "Production",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "MaterialIssueLine",
+      "table_role": "material_issue_line",
+      "area": "Production",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionBatch",
+      "table_role": "production_batch",
+      "area": "Production",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "OperationExecution",
+      "table_role": "operation_execution",
+      "area": "MES",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionQualityInspection",
+      "table_role": "production_quality_inspection",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionQualityResult",
+      "table_role": "production_quality_result",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ScrapReworkEvent",
+      "table_role": "scrap_rework_event",
+      "area": "Quality",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "FinishedGoodsReceipt",
+      "table_role": "finished_goods_receipt",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "FinishedGoodsInventory",
+      "table_role": "finished_goods_inventory",
+      "area": "Inventory",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionGenealogy",
+      "table_role": "production_genealogy",
+      "area": "MES",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    },
+    {
+      "table_name": "ProductionCostSummary",
+      "table_role": "production_cost_summary",
+      "area": "Finance",
+      "confidence": "high",
+      "reasoning": "Production/MES v1 fixture design."
+    }
+  ],
+  "generation_order": [
+    "ProductionMaterialRequirement",
+    "ProductionOrderHdr",
+    "ProductionOrderLine",
+    "ProductMaster",
+    "BOMHeader",
+    "BOMLine",
+    "WorkCenter",
+    "RoutingHeader",
+    "RoutingOperation",
+    "ProductionShift",
+    "MaterialIssueHeader",
+    "MaterialIssueLine",
+    "ProductionBatch",
+    "OperationExecution",
+    "ProductionQualityInspection",
+    "ProductionQualityResult",
+    "ScrapReworkEvent",
+    "FinishedGoodsReceipt",
+    "FinishedGoodsInventory",
+    "ProductionGenealogy"
+  ],
+  "row_count_plan": [
+    {
+      "table_name": "ProductMaster",
+      "target_rows": 30,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "BOMHeader",
+      "target_rows": 40,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "BOMLine",
+      "target_rows": 250,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "WorkCenter",
+      "target_rows": 20,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "RoutingHeader",
+      "target_rows": 40,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "RoutingOperation",
+      "target_rows": 180,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionShift",
+      "target_rows": 500,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "target_rows": 800,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "target_rows": 1000,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionMaterialRequirement",
+      "target_rows": 4000,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "MaterialIssueHeader",
+      "target_rows": 800,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "MaterialIssueLine",
+      "target_rows": 4000,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionBatch",
+      "target_rows": 1000,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "target_rows": 4000,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionQualityInspection",
+      "target_rows": 1500,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionQualityResult",
+      "target_rows": 1500,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ScrapReworkEvent",
+      "target_rows": 300,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "FinishedGoodsReceipt",
+      "target_rows": 1000,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "FinishedGoodsInventory",
+      "target_rows": 120,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionGenealogy",
+      "target_rows": 4000,
+      "source": "metadata",
+      "reasoning": null
+    },
+    {
+      "table_name": "ProductionCostSummary",
+      "target_rows": 1000,
+      "source": "metadata",
+      "reasoning": null
+    }
+  ],
+  "column_generation_rules": [
+    {
+      "table_name": "ProductMaster",
+      "column_name": "ProductCode",
+      "generation_type": "category",
+      "strategy": "ProductCode",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductMaster",
+      "column_name": "ProductName",
+      "generation_type": "category",
+      "strategy": "ProductName",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductMaster",
+      "column_name": "ProductCategory",
+      "generation_type": "category",
+      "strategy": "ProductCategory",
+      "allowed_values": [
+        "Battery Pack",
+        "Drive Unit",
+        "Power Electronics",
+        "Thermal Module",
+        "Chassis Assembly"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductMaster",
+      "column_name": "ProductType",
+      "generation_type": "category",
+      "strategy": "ProductType",
+      "allowed_values": [
+        "FinishedGood",
+        "SemiFinished"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductMaster",
+      "column_name": "UOM",
+      "generation_type": "category",
+      "strategy": "UOM",
+      "allowed_values": [
+        "EA",
+        "Unit",
+        "Set"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductMaster",
+      "column_name": "StandardCost",
+      "generation_type": "decimal_range",
+      "strategy": "StandardCost",
+      "allowed_values": [],
+      "min_value": 1000,
+      "max_value": 80000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductMaster",
+      "column_name": "StandardBuildTimeHours",
+      "generation_type": "decimal_range",
+      "strategy": "StandardBuildTimeHours",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 80,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductMaster",
+      "column_name": "ProductStatus",
+      "generation_type": "status",
+      "strategy": "ProductStatus",
+      "allowed_values": [
+        "Active",
+        "Inactive"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMHeader",
+      "column_name": "BOMVersion",
+      "generation_type": "category",
+      "strategy": "BOMVersion",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMHeader",
+      "column_name": "EffectiveFromDate",
+      "generation_type": "date_range",
+      "strategy": "EffectiveFromDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMHeader",
+      "column_name": "EffectiveToDate",
+      "generation_type": "date_range",
+      "strategy": "EffectiveToDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMHeader",
+      "column_name": "BOMStatus",
+      "generation_type": "status",
+      "strategy": "BOMStatus",
+      "allowed_values": [
+        "Active",
+        "Inactive"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMLine",
+      "column_name": "ComponentQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ComponentQuantity",
+      "allowed_values": [],
+      "min_value": 0.01,
+      "max_value": 500,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMLine",
+      "column_name": "UOM",
+      "generation_type": "category",
+      "strategy": "UOM",
+      "allowed_values": [
+        "Each",
+        "Box",
+        "Kg",
+        "Meter",
+        "Roll",
+        "Liter",
+        "Set"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMLine",
+      "column_name": "ScrapFactorPct",
+      "generation_type": "decimal_range",
+      "strategy": "ScrapFactorPct",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 5,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMLine",
+      "column_name": "IsCriticalComponent",
+      "generation_type": "category",
+      "strategy": "IsCriticalComponent",
+      "allowed_values": [
+        "0",
+        "1"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "BOMLine",
+      "column_name": "BOMLineStatus",
+      "generation_type": "status",
+      "strategy": "BOMLineStatus",
+      "allowed_values": [
+        "Active",
+        "Inactive"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "WorkCenter",
+      "column_name": "WorkCenterCode",
+      "generation_type": "category",
+      "strategy": "WorkCenterCode",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "WorkCenter",
+      "column_name": "WorkCenterName",
+      "generation_type": "category",
+      "strategy": "WorkCenterName",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "WorkCenter",
+      "column_name": "LineName",
+      "generation_type": "category",
+      "strategy": "LineName",
+      "allowed_values": [
+        "Battery Line A",
+        "Drive Unit Line",
+        "Thermal Line",
+        "Final Assembly"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "WorkCenter",
+      "column_name": "CapacityPerShift",
+      "generation_type": "decimal_range",
+      "strategy": "CapacityPerShift",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "WorkCenter",
+      "column_name": "CapacityUOM",
+      "generation_type": "category",
+      "strategy": "CapacityUOM",
+      "allowed_values": [
+        "EA",
+        "Unit",
+        "Set"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "WorkCenter",
+      "column_name": "WorkCenterStatus",
+      "generation_type": "status",
+      "strategy": "WorkCenterStatus",
+      "allowed_values": [
+        "Active",
+        "Inactive",
+        "Maintenance"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingHeader",
+      "column_name": "RoutingVersion",
+      "generation_type": "category",
+      "strategy": "RoutingVersion",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingHeader",
+      "column_name": "RoutingStatus",
+      "generation_type": "status",
+      "strategy": "RoutingStatus",
+      "allowed_values": [
+        "Active",
+        "Inactive"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingOperation",
+      "column_name": "OperationSequence",
+      "generation_type": "integer_range",
+      "strategy": "OperationSequence",
+      "allowed_values": [],
+      "min_value": 10,
+      "max_value": 999,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingOperation",
+      "column_name": "OperationName",
+      "generation_type": "category",
+      "strategy": "OperationName",
+      "allowed_values": [
+        "Kitting",
+        "Assembly",
+        "Torque Check",
+        "Calibration",
+        "End Of Line Test",
+        "Packout"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingOperation",
+      "column_name": "SetupTimeMinutes",
+      "generation_type": "decimal_range",
+      "strategy": "SetupTimeMinutes",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 240,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingOperation",
+      "column_name": "RunTimeMinutesPerUnit",
+      "generation_type": "decimal_range",
+      "strategy": "RunTimeMinutesPerUnit",
+      "allowed_values": [],
+      "min_value": 0.1,
+      "max_value": 120,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingOperation",
+      "column_name": "StandardYieldPct",
+      "generation_type": "decimal_range",
+      "strategy": "StandardYieldPct",
+      "allowed_values": [],
+      "min_value": 90,
+      "max_value": 100,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "RoutingOperation",
+      "column_name": "OperationStatus",
+      "generation_type": "status",
+      "strategy": "OperationStatus",
+      "allowed_values": [
+        "Active",
+        "Inactive"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionShift",
+      "column_name": "ShiftDate",
+      "generation_type": "date_range",
+      "strategy": "ShiftDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionShift",
+      "column_name": "ShiftCode",
+      "generation_type": "category",
+      "strategy": "ShiftCode",
+      "allowed_values": [
+        "A"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionShift",
+      "column_name": "ShiftStartTime",
+      "generation_type": "category",
+      "strategy": "ShiftStartTime",
+      "allowed_values": [
+        "08:00"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionShift",
+      "column_name": "ShiftEndTime",
+      "generation_type": "category",
+      "strategy": "ShiftEndTime",
+      "allowed_values": [
+        "16:00"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionShift",
+      "column_name": "PlannedHours",
+      "generation_type": "decimal_range",
+      "strategy": "PlannedHours",
+      "allowed_values": [],
+      "min_value": 4,
+      "max_value": 12,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "column_name": "OrderDate",
+      "generation_type": "date_range",
+      "strategy": "OrderDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "column_name": "PlannedStartDate",
+      "generation_type": "date_offset",
+      "strategy": "PlannedStartDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "column_name": "PlannedEndDate",
+      "generation_type": "date_offset",
+      "strategy": "PlannedEndDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "column_name": "ActualStartDate",
+      "generation_type": "date_offset",
+      "strategy": "ActualStartDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "column_name": "ActualEndDate",
+      "generation_type": "date_offset",
+      "strategy": "ActualEndDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "column_name": "ProductionOrderStatus",
+      "generation_type": "status",
+      "strategy": "ProductionOrderStatus",
+      "allowed_values": [
+        "Planned",
+        "Released",
+        "InProduction",
+        "Completed",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderHdr",
+      "column_name": "Priority",
+      "generation_type": "category",
+      "strategy": "Priority",
+      "allowed_values": [
+        "Low",
+        "Normal",
+        "High",
+        "Urgent"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "column_name": "PlannedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "PlannedQuantity",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "column_name": "ReleasedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ReleasedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "column_name": "CompletedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "CompletedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "column_name": "GoodQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "GoodQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "column_name": "ScrapQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ScrapQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 30,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "column_name": "UOM",
+      "generation_type": "category",
+      "strategy": "UOM",
+      "allowed_values": [
+        "EA",
+        "Unit",
+        "Set"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionOrderLine",
+      "column_name": "LineStatus",
+      "generation_type": "status",
+      "strategy": "LineStatus",
+      "allowed_values": [
+        "Planned",
+        "Released",
+        "InProduction",
+        "Completed",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionMaterialRequirement",
+      "column_name": "IssuedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "IssuedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionMaterialRequirement",
+      "column_name": "RequirementStatus",
+      "generation_type": "status",
+      "strategy": "RequirementStatus",
+      "allowed_values": [
+        "Required",
+        "Issued",
+        "Consumed",
+        "Short"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "MaterialIssueHeader",
+      "column_name": "IssueDate",
+      "generation_type": "date_offset",
+      "strategy": "IssueDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "MaterialIssueHeader",
+      "column_name": "IssueStatus",
+      "generation_type": "status",
+      "strategy": "IssueStatus",
+      "allowed_values": [
+        "Planned",
+        "Issued",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "MaterialIssueLine",
+      "column_name": "IssuedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "IssuedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "MaterialIssueLine",
+      "column_name": "UOM",
+      "generation_type": "category",
+      "strategy": "UOM",
+      "allowed_values": [
+        "Each",
+        "Box",
+        "Kg",
+        "Meter",
+        "Roll",
+        "Liter",
+        "Set"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "MaterialIssueLine",
+      "column_name": "UnitCost",
+      "generation_type": "decimal_range",
+      "strategy": "UnitCost",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 6000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "MaterialIssueLine",
+      "column_name": "IssueStatus",
+      "generation_type": "status",
+      "strategy": "IssueStatus",
+      "allowed_values": [
+        "Issued",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionBatch",
+      "column_name": "BatchNumber",
+      "generation_type": "category",
+      "strategy": "BatchNumber",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionBatch",
+      "column_name": "PlannedBatchQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "PlannedBatchQuantity",
+      "allowed_values": [],
+      "min_value": 1,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionBatch",
+      "column_name": "ActualStartDate",
+      "generation_type": "date_offset",
+      "strategy": "ActualStartDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionBatch",
+      "column_name": "ActualEndDate",
+      "generation_type": "date_offset",
+      "strategy": "ActualEndDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionBatch",
+      "column_name": "BatchStatus",
+      "generation_type": "status",
+      "strategy": "BatchStatus",
+      "allowed_values": [
+        "Planned",
+        "InProgress",
+        "Completed",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "column_name": "OperationSequence",
+      "generation_type": "integer_range",
+      "strategy": "OperationSequence",
+      "allowed_values": [],
+      "min_value": 10,
+      "max_value": 999,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "column_name": "ActualStartDateTime",
+      "generation_type": "category",
+      "strategy": "ActualStartDateTime",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "column_name": "ActualEndDateTime",
+      "generation_type": "category",
+      "strategy": "ActualEndDateTime",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "column_name": "InputQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "InputQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "column_name": "ScrapQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ScrapQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 30,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "column_name": "ReworkQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ReworkQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 20,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "OperationExecution",
+      "column_name": "OperationStatus",
+      "generation_type": "status",
+      "strategy": "OperationStatus",
+      "allowed_values": [
+        "Planned",
+        "InProgress",
+        "Completed",
+        "Skipped"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityInspection",
+      "column_name": "InspectionDate",
+      "generation_type": "date_offset",
+      "strategy": "InspectionDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityInspection",
+      "column_name": "InspectionType",
+      "generation_type": "category",
+      "strategy": "InspectionType",
+      "allowed_values": [
+        "InProcess",
+        "Final"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityInspection",
+      "column_name": "SampleQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "SampleQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityInspection",
+      "column_name": "InspectorName",
+      "generation_type": "faker_person",
+      "strategy": "Inspector name",
+      "allowed_values": [],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityInspection",
+      "column_name": "InspectionStatus",
+      "generation_type": "status",
+      "strategy": "InspectionStatus",
+      "allowed_values": [
+        "Passed",
+        "PartiallyPassed",
+        "Failed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityResult",
+      "column_name": "TestedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "TestedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityResult",
+      "column_name": "PassedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "PassedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityResult",
+      "column_name": "DefectCode",
+      "generation_type": "category",
+      "strategy": "NoDefect for passed rows; profile defect code for failed rows",
+      "allowed_values": [
+        "NoDefect",
+        "TorqueDeviation",
+        "ElectricalContinuityFailure",
+        "ThermalLeak",
+        "CalibrationFailure",
+        "CosmeticDamage",
+        "ConnectorFitmentIssue"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityResult",
+      "column_name": "DefectSeverity",
+      "generation_type": "category",
+      "strategy": "DefectSeverity",
+      "allowed_values": [
+        "None",
+        "Low",
+        "Medium",
+        "High",
+        "Critical"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionQualityResult",
+      "column_name": "ResultStatus",
+      "generation_type": "status",
+      "strategy": "ResultStatus",
+      "allowed_values": [
+        "Passed",
+        "PartiallyFailed",
+        "Failed"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ScrapReworkEvent",
+      "column_name": "EventType",
+      "generation_type": "category",
+      "strategy": "EventType",
+      "allowed_values": [
+        "Scrap",
+        "Rework"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ScrapReworkEvent",
+      "column_name": "Quantity",
+      "generation_type": "decimal_range",
+      "strategy": "Quantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ScrapReworkEvent",
+      "column_name": "ReasonCode",
+      "generation_type": "category",
+      "strategy": "ReasonCode",
+      "allowed_values": [
+        "None",
+        "Setup Loss",
+        "Process Defect",
+        "Material Defect",
+        "Rework Hold"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ScrapReworkEvent",
+      "column_name": "CostImpact",
+      "generation_type": "decimal_range",
+      "strategy": "CostImpact",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ScrapReworkEvent",
+      "column_name": "EventDate",
+      "generation_type": "date_offset",
+      "strategy": "EventDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "FinishedGoodsReceipt",
+      "column_name": "ReceiptDate",
+      "generation_type": "date_offset",
+      "strategy": "ReceiptDate",
+      "allowed_values": [],
+      "min_value": "2025-01-01",
+      "max_value": "2025-12-31",
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "FinishedGoodsReceipt",
+      "column_name": "GoodQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "GoodQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "FinishedGoodsReceipt",
+      "column_name": "ScrapQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ScrapQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 30,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "FinishedGoodsReceipt",
+      "column_name": "UnitCost",
+      "generation_type": "decimal_range",
+      "strategy": "UnitCost",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "FinishedGoodsReceipt",
+      "column_name": "ReceiptStatus",
+      "generation_type": "status",
+      "strategy": "ReceiptStatus",
+      "allowed_values": [
+        "Received",
+        "Cancelled"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "FinishedGoodsInventory",
+      "column_name": "ReservedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ReservedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 100000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "FinishedGoodsInventory",
+      "column_name": "InventoryStatus",
+      "generation_type": "status",
+      "strategy": "InventoryStatus",
+      "allowed_values": [
+        "Available",
+        "LowStock",
+        "Hold",
+        "OutOfStock"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionGenealogy",
+      "column_name": "ConsumedQuantity",
+      "generation_type": "decimal_range",
+      "strategy": "ConsumedQuantity",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 1000000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionGenealogy",
+      "column_name": "TraceabilityStatus",
+      "generation_type": "status",
+      "strategy": "TraceabilityStatus",
+      "allowed_values": [
+        "Traced",
+        "MissingSource"
+      ],
+      "min_value": null,
+      "max_value": null,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionCostSummary",
+      "column_name": "LaborCost",
+      "generation_type": "decimal_range",
+      "strategy": "LaborCost",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 10000000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionCostSummary",
+      "column_name": "OverheadCost",
+      "generation_type": "decimal_range",
+      "strategy": "OverheadCost",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 10000000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    },
+    {
+      "table_name": "ProductionCostSummary",
+      "column_name": "ScrapCost",
+      "generation_type": "decimal_range",
+      "strategy": "ScrapCost",
+      "allowed_values": [],
+      "min_value": 0,
+      "max_value": 10000000,
+      "nullable_strategy": "never_null",
+      "depends_on_columns": [],
+      "notes": null
+    }
+  ],
+  "formula_rules": [
+    {
+      "rule_id": "issue_value",
+      "rule_type": "row_level",
+      "target_table": "MaterialIssueLine",
+      "target_column": "IssueValue",
+      "operation": "multiply",
+      "input_columns": [
+        "IssuedQuantity",
+        "UnitCost"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "IssuedQuantity * UnitCost",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": null
+    },
+    {
+      "rule_id": "operation_output_quantity",
+      "rule_type": "row_level",
+      "target_table": "OperationExecution",
+      "target_column": "OutputQuantity",
+      "operation": "subtract",
+      "input_columns": [
+        "InputQuantity",
+        "ScrapQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "InputQuantity - ScrapQuantity",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": null
+    },
+    {
+      "rule_id": "quality_failed_quantity",
+      "rule_type": "row_level",
+      "target_table": "ProductionQualityResult",
+      "target_column": "FailedQuantity",
+      "operation": "subtract",
+      "input_columns": [
+        "TestedQuantity",
+        "PassedQuantity"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "TestedQuantity - PassedQuantity",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": null
+    },
+    {
+      "rule_id": "fg_receipt_value",
+      "rule_type": "row_level",
+      "target_table": "FinishedGoodsReceipt",
+      "target_column": "ReceiptValue",
+      "operation": "multiply",
+      "input_columns": [
+        "GoodQuantity",
+        "UnitCost"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "GoodQuantity * UnitCost",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": null
+    },
+    {
+      "rule_id": "fg_inventory_onhand_quantity",
+      "rule_type": "aggregate",
+      "target_table": "FinishedGoodsInventory",
+      "target_column": "OnHandQuantity",
+      "operation": "sum",
+      "input_columns": [],
+      "source_table": "FinishedGoodsReceipt",
+      "source_column": "GoodQuantity",
+      "relationship_key": null,
+      "group_by_columns": [
+        "ProductID",
+        "PlantID",
+        "WarehouseID"
+      ],
+      "formula": "SUM(FinishedGoodsReceipt.GoodQuantity) GROUP BY ProductID, PlantID, WarehouseID",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.0001,
+      "description": "Finished goods inventory quantity rollup."
+    },
+    {
+      "rule_id": "production_total_cost",
+      "rule_type": "row_level",
+      "target_table": "ProductionCostSummary",
+      "target_column": "TotalProductionCost",
+      "operation": "add",
+      "input_columns": [
+        "MaterialCost",
+        "LaborCost",
+        "OverheadCost",
+        "ScrapCost"
+      ],
+      "source_table": null,
+      "source_column": null,
+      "relationship_key": null,
+      "group_by_columns": [],
+      "formula": "MaterialCost + LaborCost + OverheadCost + ScrapCost",
+      "denominator_column": null,
+      "denominator_guard": false,
+      "tolerance_type": "absolute",
+      "tolerance_value": 0.01,
+      "description": null
+    }
+  ],
+  "date_rules": [
+    {
+      "rule_id": "prod_order_to_actual_end_2025",
+      "earlier_table": "ProductionOrderHdr",
+      "earlier_column": "OrderDate",
+      "later_table": "ProductionOrderHdr",
+      "later_column": "ActualEndDate",
+      "min_offset_days": 366,
+      "max_offset_days": 60,
+      "description": "Production order dates stay inside 2025."
+    }
+  ],
+  "quantity_rules": [
+    {
+      "rule_id": "issued_le_scrap_adjusted",
+      "left_table": "ProductionMaterialRequirement",
+      "left_column": "IssuedQuantity",
+      "operator": "<=",
+      "right_table": "ProductionMaterialRequirement",
+      "right_column": "ScrapAdjustedQuantity",
+      "description": "Issued quantity should not exceed the derived requirement."
+    }
+  ],
+  "status_rules": [
+    {
+      "rule_id": "status_production_order_completed",
+      "table_name": "ProductionOrderHdr",
+      "status_column": "ProductionOrderStatus",
+      "status_values": [
+        "Completed"
+      ],
+      "derivation_logic": "Production v1 should generate mostly or fully completed production orders.",
+      "description": "Controlled Production v1 status guidance."
+    },
+    {
+      "rule_id": "status_material_issue_issued",
+      "table_name": "MaterialIssueHeader",
+      "status_column": "IssueStatus",
+      "status_values": [
+        "Issued"
+      ],
+      "derivation_logic": "Material issue headers should be Issued when production consumes inventory.",
+      "description": "Controlled Production v1 status guidance."
+    }
+  ],
+  "validation_rules": [
+    {
+      "rule_id": "PROD_V1_2025_ONLY",
+      "rule_type": "date_order",
+      "table_name": null,
+      "column_name": null,
+      "condition": "Production dates may use 2026, which is invalid for production_v1.",
+      "severity": "error",
+      "description": "Production v1 is 2025-only."
+    },
+    {
+      "rule_id": "PROD_V1_REQUIRED_QUANTITY",
+      "rule_type": "formula_check",
+      "table_name": "ProductionMaterialRequirement",
+      "column_name": "RequiredQuantity",
+      "condition": "RequiredQuantity = ProductionOrderLine.PlannedQuantity * BOMLine.ComponentQuantity.",
+      "severity": "error",
+      "description": "BOM-derived requirement formula."
+    },
+    {
+      "rule_id": "PROD_V1_SCRAP_ADJUSTED_QUANTITY",
+      "rule_type": "formula_check",
+      "table_name": "ProductionMaterialRequirement",
+      "column_name": "ScrapAdjustedQuantity",
+      "condition": "ScrapAdjustedQuantity = RequiredQuantity * (1 + ScrapFactorPct / 100).",
+      "severity": "error",
+      "description": "Scrap-adjusted material requirement formula."
+    },
+    {
+      "rule_id": "PROD_V1_MATERIAL_ISSUE_LE_AVAILABLE",
+      "rule_type": "quantity_check",
+      "table_name": "MaterialIssueLine",
+      "column_name": "IssuedQuantity",
+      "condition": "IssuedQuantity must not exceed Inventory.AvailableQuantity.",
+      "severity": "error",
+      "description": "Production consumes only available procurement inventory."
+    },
+    {
+      "rule_id": "PROD_V1_GENEALOGY_TRACE",
+      "rule_type": "fk_check",
+      "table_name": "ProductionGenealogy",
+      "column_name": "InventoryReceiptDetailID",
+      "condition": "ProductionGenealogy traces back to MaterialIssueLine, InventoryReceiptDetail, InventoryTransaction, ComponentMaster, and SupplierMaster.",
+      "severity": "error",
+      "description": "Production genealogy must preserve procurement receipt lineage."
+    },
+    {
+      "rule_id": "PROD_V1_UOM_PRECISION",
+      "rule_type": "quantity_check",
+      "table_name": null,
+      "column_name": null,
+      "condition": "Countable UOMs use integer quantities; bulk/measurable UOMs may use decimals.",
+      "severity": "error",
+      "description": "Use shared UOM-aware quantity precision."
+    },
+    {
+      "rule_id": "PROD_V1_UNIT_COST",
+      "rule_type": "formula_check",
+      "table_name": "ProductionCostSummary",
+      "column_name": "UnitProductionCost",
+      "condition": "UnitProductionCost = TotalProductionCost / FinishedGoodsReceipt.GoodQuantity with denominator guard.",
+      "severity": "error",
+      "description": "Production unit cost summary formula."
+    }
+  ],
+  "assumptions": [
+    "Invalid module name, invalid lifecycle order, missing ProductionCostSummary, and 2026 date rule are intentional."
+  ],
+  "warnings": []
+}

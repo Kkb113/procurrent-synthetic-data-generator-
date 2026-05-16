@@ -29,7 +29,7 @@ class PipelineWebRequest:
     load_sql: bool
     if_table_exists: str
     seed: int | None
-    model_version: str = "v1"
+    model_version: str = "v2"
 
 
 class PipelineService:
@@ -104,8 +104,10 @@ class PipelineService:
         return saved_text
 
     def _validate_switches(self, request: PipelineWebRequest) -> None:
-        if request.model_version not in {"v1", "v2"}:
-            raise UploadValidationError("model_version must be v1 or v2.")
+        if request.model_version == "v1":
+            raise UploadValidationError("Procurement V1 is deprecated and no longer supported. Use Procurement V2.")
+        if request.model_version != "v2":
+            raise UploadValidationError("model_version must be v2.")
         if request.if_table_exists not in {"replace", "append", "fail"}:
             raise UploadValidationError("if_table_exists must be replace, append, or fail.")
         if not request.scenario_text or not request.scenario_text.strip():

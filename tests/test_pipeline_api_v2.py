@@ -37,6 +37,7 @@ V2_TABLES = [
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -82,11 +83,11 @@ def _fake_report(model_version: str, output_folder: str) -> PipelineRunReport:
         status = "skipped" if name == "sql_load" else "passed"
         stage.finish(status, "ok")
         report.add_stage(stage)
-    report.tables_generated = 24 if model_version == "v2" else 16
-    report.total_rows_generated = 82273 if model_version == "v2" else 1917
+    report.tables_generated = 25
+    report.total_rows_generated = 82273
     report.data_quality_status = "passed"
     report.sql_load_status = "skipped"
-    report.final_data_tables = V2_TABLES if model_version == "v2" else ["Vendor"]
+    report.final_data_tables = V2_TABLES
     report.complete("passed")
     return report
 
@@ -112,14 +113,16 @@ def test_ui_contains_procurement_v2_model_selector() -> None:
 
     assert response.status_code == 200
     assert 'name="model_version"' in response.text
-    assert 'value="v2"' in response.text
-    assert "24-table" in response.text
-    assert "InventoryTransaction records stock movements" in response.text
+    assert '<option value="v2" selected>' in response.text
+    assert 'option value="v1"' not in response.text
+    assert "25-table" in response.text
+    assert "InventoryReceiptDetail captures receipt-level" in response.text
+    assert "InventoryTransaction is the inbound StockIn ledger sourced from InventoryReceiptDetail" in response.text
     assert "Inventory stores the calculated stock balance" in response.text
     assert "InventoryBalance is not part of v2" in response.text
 
 
-def test_run_defaults_model_version_to_v1(tmp_path: Path, monkeypatch) -> None:
+def test_run_defaults_model_version_to_v2(tmp_path: Path, monkeypatch) -> None:
     fake_runner = FakeRunner()
     service = PipelineService(base_folder=tmp_path, runner_factory=lambda: fake_runner)
     monkeypatch.setattr(pipeline_routes, "pipeline_service", service)
@@ -127,8 +130,8 @@ def test_run_defaults_model_version_to_v1(tmp_path: Path, monkeypatch) -> None:
     response = client.post("/api/pipeline/run", data=_form(), files=_files())
 
     assert response.status_code == 200
-    assert fake_runner.calls[0]["model_version"] == "v1"
-    assert response.json()["model_version"] == "v1"
+    assert fake_runner.calls[0]["model_version"] == "v2"
+    assert response.json()["model_version"] == "v2"
 
 
 def test_run_accepts_model_version_v2_and_returns_v2_summary(tmp_path: Path, monkeypatch) -> None:
@@ -142,7 +145,7 @@ def test_run_accepts_model_version_v2_and_returns_v2_summary(tmp_path: Path, mon
     payload = response.json()
     assert fake_runner.calls[0]["model_version"] == "v2"
     assert payload["model_version"] == "v2"
-    assert payload["tables_generated"] == 24
+    assert payload["tables_generated"] == 25
     assert payload["total_rows_generated"] == 82273
     assert payload["data_quality_status"] == "passed"
     assert payload["sql_load_status"] == "skipped"
@@ -155,7 +158,17 @@ def test_run_rejects_invalid_model_version(tmp_path: Path, monkeypatch) -> None:
     response = client.post("/api/pipeline/run", data=_form(model_version="v3"), files=_files())
 
     assert response.status_code == 400
-    assert "model_version" in response.json()["detail"]
+    assert "model_version must be v2" in response.json()["detail"]
+
+
+def test_run_rejects_procurement_v1_model_version(tmp_path: Path, monkeypatch) -> None:
+    service = PipelineService(base_folder=tmp_path, runner_factory=FakeRunner)
+    monkeypatch.setattr(pipeline_routes, "pipeline_service", service)
+
+    response = client.post("/api/pipeline/run", data=_form(model_version="v1"), files=_files())
+
+    assert response.status_code == 400
+    assert "Procurement V1 is deprecated and no longer supported. Use Procurement V2." in response.json()["detail"]
 
 
 def test_v2_azure_mode_can_submit_without_plan_file(tmp_path: Path, monkeypatch) -> None:
@@ -191,7 +204,7 @@ def test_v2_manual_mode_requires_plan_file(tmp_path: Path, monkeypatch) -> None:
     assert "plan_file" in response.json()["detail"]
 
 
-def test_v2_final_data_zip_contains_24_csv_files(tmp_path: Path, monkeypatch) -> None:
+def test_v2_final_data_zip_contains_25_csv_files(tmp_path: Path, monkeypatch) -> None:
     run_id = "web_run_v2"
     pipeline = tmp_path / run_id / "pipeline_output" / "run_1"
     reports = pipeline / "reports"

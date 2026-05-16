@@ -26,22 +26,12 @@ from procurement_data_generator.modules.procurement.name_generators import (
     NameGenerationError,
     ProcurementNameGenerator,
 )
+from procurement_data_generator.modules.procurement.quantity_precision import (
+    apply_quantity_precision,
+    requires_integer_quantity,
+)
+from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE
 
-
-TRANSACTION_ROLE_ORDER = [
-    "purchase_requisition_header",
-    "purchase_requisition_line",
-    "purchase_order_header",
-    "purchase_order_line",
-    "shipment_header",
-    "shipment_line",
-    "goods_receipt_header",
-    "goods_receipt_line",
-    "quality_inspection_header",
-    "quality_inspection_line",
-    "inventory_transaction",
-    "inventory_balance",
-]
 
 V2_TRANSACTION_ROLE_ORDER = [
     "purchase_requisition",
@@ -59,6 +49,7 @@ V2_TRANSACTION_ROLE_ORDER = [
     "goods_receipt_line",
     "incoming_inspection",
     "inspection_result",
+    "inventory_receipt_detail",
     "inventory_transaction",
     "inventory",
     "supplier_invoice",
@@ -94,7 +85,6 @@ class ProcurementGenerationContext:
     quality_inspection_headers: list[dict[str, Any]]
     quality_inspection_lines: list[dict[str, Any]]
     inventory_transactions: list[dict[str, Any]]
-    inventory_balances: list[dict[str, Any]]
 
 
 class ProcurementTransactionGenerator:
@@ -109,58 +99,21 @@ class ProcurementTransactionGenerator:
         plan: LLMGenerationPlan,
         master_dataframes: dict[str, pd.DataFrame],
         seed: int | None = None,
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> tuple[dict[str, pd.DataFrame], ValidationReport]:
         """Generate transaction/process dataframes and validate basic lifecycle invariants."""
 
-        if model_version == "v2":
-            return self._generate_v2_transaction_data(schema, plan, master_dataframes, seed)
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
+        return self._generate_v2_transaction_data(schema, plan, master_dataframes, seed)
 
-        report = ValidationReport()
-        rng = random.Random(seed)
-        faker = Faker()
-        if seed is not None:
-            faker.seed_instance(seed)
-
-        tables_by_role = {table.table_role: table for table in self.get_transaction_tables(schema)}
-        master_by_role = self._dataframes_by_role(master_dataframes, schema)
-        context = ProcurementGenerationContext([], [], [], [], [], [], [], [], [], [], [], [])
-        dataframes: dict[str, pd.DataFrame] = {}
-
-        generators = {
-            "purchase_requisition_header": self._generate_purchase_requisition_headers,
-            "purchase_requisition_line": self._generate_purchase_requisition_lines,
-            "purchase_order_header": self._generate_purchase_order_headers,
-            "purchase_order_line": self._generate_purchase_order_lines,
-            "shipment_header": self._generate_shipment_headers,
-            "shipment_line": self._generate_shipment_lines,
-            "goods_receipt_header": self._generate_goods_receipt_headers,
-            "goods_receipt_line": self._generate_goods_receipt_lines,
-            "quality_inspection_header": self._generate_quality_inspection_headers,
-            "quality_inspection_line": self._generate_quality_inspection_lines,
-            "inventory_transaction": self._generate_inventory_transactions,
-            "inventory_balance": self._generate_inventory_balances,
-        }
-
-        for role in TRANSACTION_ROLE_ORDER:
-            table = tables_by_role.get(role)
-            if table is None:
-                continue
-            records = generators[role](table, plan, master_by_role, context, rng, faker, report)
-            setattr(context, self._context_attr_for_role(role), records)
-            dataframe = self._records_to_dataframe(table, records, report)
-            dataframes[table.table_name] = dataframe
-
-        self._refresh_mutated_context_tables(tables_by_role, context, dataframes, report)
-        self.validate_generated_transaction_data(dataframes, schema, master_dataframes, report)
-        return dataframes, report
-
-    def get_transaction_tables(self, schema: SchemaContract, model_version: str = "v1") -> list[TableContract]:
+    def get_transaction_tables(self, schema: SchemaContract, model_version: str = "v2") -> list[TableContract]:
         """Return transaction tables in lifecycle order."""
 
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
         table_by_role = {table.table_role: table for table in schema.tables.values()}
-        order = V2_TRANSACTION_ROLE_ORDER if model_version == "v2" else TRANSACTION_ROLE_ORDER
-        return [table_by_role[role] for role in order if role in table_by_role]
+        return [table_by_role[role] for role in V2_TRANSACTION_ROLE_ORDER if role in table_by_role]
 
     def export_transaction_data(self, dataframes: dict[str, pd.DataFrame], output_folder: str | Path) -> list[Path]:
         output_path = Path(output_folder)
@@ -188,6 +141,12 @@ class ProcurementTransactionGenerator:
         table_by_role = {table.table_role: table for table in self.get_transaction_tables(schema, model_version="v2")}
         dataframes: dict[str, pd.DataFrame] = {}
         records: dict[str, list[dict[str, Any]]] = {}
+        component_master = master_dataframes.get("ComponentMaster", pd.DataFrame())
+        records["_component_uom"] = (
+            component_master.set_index("ComponentID")["UOM"].to_dict()
+            if {"ComponentID", "UOM"}.issubset(component_master.columns)
+            else {}
+        )
 
         def save(role: str, role_records: list[dict[str, Any]]) -> None:
             table = table_by_role.get(role)
@@ -211,6 +170,7 @@ class ProcurementTransactionGenerator:
         save("goods_receipt_line", self._v2_goods_receipt_lines(table_by_role["goods_receipt_line"], plan, records, rng))
         save("incoming_inspection", self._v2_incoming_inspections(table_by_role["incoming_inspection"], plan, records, rng, faker))
         save("inspection_result", self._v2_inspection_results(table_by_role["inspection_result"], plan, records, rng))
+        save("inventory_receipt_detail", self._v2_inventory_receipt_details(table_by_role["inventory_receipt_detail"], plan, records, rng))
         save("inventory_transaction", self._v2_inventory_transactions(table_by_role["inventory_transaction"], plan, records, rng))
         save("inventory", self._v2_inventory(table_by_role["inventory"], plan, records, rng))
         save("supplier_invoice", self._v2_supplier_invoices(table_by_role["supplier_invoice"], plan, records, rng))
@@ -247,7 +207,7 @@ class ProcurementTransactionGenerator:
         headers = records["purchase_requisition"]
         component_df = master_dataframes["ComponentMaster"]
         components = list(component_df["ComponentID"])
-        component_lookup = component_df.set_index("ComponentID")[["ComponentCategory", "StandardCost"]].to_dict("index")
+        component_lookup = component_df.set_index("ComponentID")[["ComponentCategory", "StandardCost", "UOM"]].to_dict("index")
         quantity_min, quantity_max = self._column_min_max(table, "RequestedQuantity", 1.0, 1000.0)
         rows = []
         for row_id in range(1, count + 1):
@@ -256,12 +216,20 @@ class ProcurementTransactionGenerator:
             component = component_lookup.get(component_id, {})
             category = component.get("ComponentCategory")
             expected_unit_price = float(component.get("StandardCost", 100.0)) * 1.35
+            requested_quantity = generate_order_quantity(category, expected_unit_price, rng, quantity_min, quantity_max)
+            requested_quantity = self._v2_apply_component_quantity_precision(
+                component_id,
+                requested_quantity,
+                records,
+                minimum=max(1.0, quantity_min),
+                maximum=quantity_max,
+            )
             rows.append(
                 {
                     "id": row_id,
                     "requisition_id": header["id"],
                     "component_id": component_id,
-                    "requested_quantity": generate_order_quantity(category, expected_unit_price, rng, quantity_min, quantity_max),
+                    "requested_quantity": requested_quantity,
                     "required_date": header["required_date"],
                     "line_status": self._v2_varied_status(row_id, "ConvertedToRFQ", ["Open", "Approved", "Cancelled"], [0.04, 0.1, 0.02], rng),
                     "requisition_date": header["requisition_date"],
@@ -301,13 +269,21 @@ class ProcurementTransactionGenerator:
             rfq = rfqs[(row_id - 1) % len(rfqs)]
             candidates = [line for line in req_lines if line["requisition_id"] == rfq["requisition_id"]] or req_lines
             req_line = candidates[(row_id - 1) % len(candidates)]
+            rfq_quantity = self._v2_apply_component_quantity_precision(
+                req_line["component_id"],
+                min(req_line["requested_quantity"], req_line["requested_quantity"] * rng.uniform(0.9, 1.0)),
+                records,
+                minimum=1.0,
+                maximum=req_line["requested_quantity"],
+                rounding="floor",
+            )
             rows.append(
                 {
                     "id": row_id,
                     "rfq_id": rfq["id"],
                     "requisition_line_id": req_line["id"],
                     "component_id": req_line["component_id"],
-                    "rfq_quantity": round(min(req_line["requested_quantity"], req_line["requested_quantity"] * rng.uniform(0.9, 1.0)), 2),
+                    "rfq_quantity": rfq_quantity,
                     "required_date": req_line["required_date"],
                     "line_status": "Awarded" if row_id <= 5400 else self._v2_varied_status(row_id, "Quoted", ["Open", "Closed"], [0.05, 0.15], rng),
                     "rfq_date": rfq["rfq_date"],
@@ -392,7 +368,14 @@ class ProcurementTransactionGenerator:
                 awarded = 0
             contract_price, lead_time = component_contract.get((quote["supplier_id"], rfq_line["component_id"]), (rng.uniform(10, 5000), rng.randint(3, 60)))
             unit_price = generate_quote_price(contract_price, rng)
-            qty = round(min(rfq_line["rfq_quantity"], rfq_line["rfq_quantity"] * rng.uniform(0.96, 1.0)), 2)
+            qty = self._v2_apply_component_quantity_precision(
+                rfq_line["component_id"],
+                min(rfq_line["rfq_quantity"], rfq_line["rfq_quantity"] * rng.uniform(0.96, 1.0)),
+                records,
+                minimum=1.0,
+                maximum=rfq_line["rfq_quantity"],
+                rounding="floor",
+            )
             rows.append(
                 {
                     "id": row_id,
@@ -415,6 +398,7 @@ class ProcurementTransactionGenerator:
 
     def _v2_purchase_order_headers(self, table, plan, records, rng):
         count = self._target_rows(table, plan)
+        count = min(count, self._v2_target_rows_by_table_name(plan, "GoodsReceiptHeader", count))
         quotations = records["supplier_quotation"]
         awarded_quotation_ids = {line["quotation_id"] for line in records.get("supplier_quotation_line", []) if line.get("awarded_flag") == 1}
         quotations = [quote for quote in quotations if quote["id"] in awarded_quotation_ids]
@@ -429,7 +413,7 @@ class ProcurementTransactionGenerator:
                     "quotation_id": quote["id"],
                     "order_date": order_date,
                     "expected_delivery_date": self._v2_add_days(order_date, rng.randint(15, 45)),
-                    "po_status": self._v2_varied_status(row_id, "Closed", ["Sent", "Approved", "PartiallyReceived"], [0.12, 0.1, 0.2], rng),
+                    "po_status": "Received",
                     "total_amount": 0.0,
                     "currency_code": "USD",
                     "quotation_date": quote["quotation_date"],
@@ -439,6 +423,7 @@ class ProcurementTransactionGenerator:
 
     def _v2_purchase_order_lines(self, table, plan, records, rng):
         count = self._target_rows(table, plan)
+        full_received_limit = self._v2_target_rows_by_table_name(plan, "GoodsReceiptHeader", count)
         po_headers = records["purchase_order_header"]
         quote_lines = records["supplier_quotation_line"]
         awarded_by_quote: dict[int, list[dict[str, Any]]] = {}
@@ -449,7 +434,7 @@ class ProcurementTransactionGenerator:
                 remaining_quote_quantity[line["id"]] = float(line["quoted_quantity"])
         rows = []
         totals: dict[int, float] = {}
-        for row_id in range(1, count + 1):
+        for row_id in range(1, min(count, full_received_limit) + 1):
             po = po_headers[(row_id - 1) % len(po_headers)]
             candidates = [
                 line
@@ -459,10 +444,23 @@ class ProcurementTransactionGenerator:
             if not candidates:
                 continue
             qline = candidates[(row_id - 1) % len(candidates)]
-            qty = round(min(float(qline["quoted_quantity"]), remaining_quote_quantity[qline["id"]]), 2)
+            qty = self._v2_apply_component_quantity_precision(
+                qline["component_id"],
+                min(float(qline["quoted_quantity"]), remaining_quote_quantity[qline["id"]]),
+                records,
+                minimum=1.0,
+                maximum=remaining_quote_quantity[qline["id"]],
+                rounding="floor",
+            )
             if qty <= 0:
                 continue
-            remaining_quote_quantity[qline["id"]] = round(remaining_quote_quantity[qline["id"]] - qty, 2)
+            remaining_quote_quantity[qline["id"]] = self._v2_apply_component_quantity_precision(
+                qline["component_id"],
+                remaining_quote_quantity[qline["id"]] - qty,
+                records,
+                minimum=0.0,
+                rounding="floor",
+            )
             unit_price = qline["quoted_unit_price"]
             amount = round(qty * unit_price, 2)
             totals[po["id"]] = totals.get(po["id"], 0.0) + amount
@@ -475,8 +473,8 @@ class ProcurementTransactionGenerator:
                     "ordered_quantity": qty,
                     "unit_price": unit_price,
                     "line_amount": amount,
-                    "open_quantity": qty,
-                    "line_status": "Open",
+                    "open_quantity": 0.0,
+                    "line_status": "Received",
                     "order_date": po["order_date"],
                     "expected_delivery_date": po["expected_delivery_date"],
                     "supplier_id": po["supplier_id"],
@@ -499,17 +497,18 @@ class ProcurementTransactionGenerator:
                 break
             line = available[(row_id - 1) % len(available)]
             rem = remaining[line["id"]]
-            split_line_count = max(count - len(po_lines), 0)
-            if row_id <= len(po_lines) and row_id <= split_line_count:
-                qty = round(max(1.0, rem * rng.uniform(0.45, 0.75)), 2)
-            elif row_id <= len(po_lines):
-                qty = rem
-            else:
-                qty = rem
-            qty = round(min(qty, rem), 2)
+            qty = rem
+            qty = self._v2_apply_component_quantity_precision(
+                line["component_id"],
+                min(qty, rem),
+                records,
+                minimum=0.0,
+                maximum=rem,
+                rounding="floor",
+            )
             if qty <= 0:
                 continue
-            remaining[line["id"]] = round(rem - qty, 2)
+            remaining[line["id"]] = self._v2_apply_component_quantity_precision(line["component_id"], rem - qty, records, minimum=0.0, rounding="floor")
             scheduled_date = self._v2_add_days(line["order_date"], rng.randint(5, 35))
             rows.append(
                 {
@@ -517,7 +516,7 @@ class ProcurementTransactionGenerator:
                     "purchase_order_line_id": line["id"],
                     "scheduled_delivery_date": scheduled_date,
                     "scheduled_quantity": qty,
-                    "schedule_status": "Scheduled",
+                    "schedule_status": "Shipped",
                     "purchase_order_id": line["purchase_order_id"],
                     "component_id": line["component_id"],
                     "order_date": line["order_date"],
@@ -548,7 +547,7 @@ class ProcurementTransactionGenerator:
                     "shipment_date": ship_date,
                     "carrier_name": carriers[(row_id - 1) % len(carriers)],
                     "tracking_number": f"V2TRK{row_id:08d}",
-                    "shipment_status": "Shipped",
+                    "shipment_status": "Delivered",
                     "order_date": po["order_date"],
                     "expected_delivery_date": po["expected_delivery_date"],
                     "plant_id": po["plant_id"],
@@ -576,16 +575,21 @@ class ProcurementTransactionGenerator:
             schedule = schedules[schedule_index]
             schedule_index += 1
             shipment = shipments[(schedule["purchase_order_id"] - 1) % len(shipments)]
-            multiplier = rng.uniform(0.45, 0.85) if row_id % 5 == 0 else rng.uniform(0.9, 1.0)
             schedule_remaining = remaining_schedule[schedule["id"]]
             po_remaining = remaining_po[schedule["purchase_order_line_id"]]
             max_shippable = min(schedule_remaining, po_remaining)
-            shipped = round(max(0.01, max_shippable * multiplier), 2)
-            shipped = min(shipped, max_shippable)
+            shipped = self._v2_apply_component_quantity_precision(
+                schedule["component_id"],
+                max_shippable,
+                records,
+                minimum=0.0,
+                maximum=max_shippable,
+                rounding="floor",
+            )
             if shipped <= 0:
                 continue
-            remaining_schedule[schedule["id"]] = round(schedule_remaining - shipped, 2)
-            remaining_po[schedule["purchase_order_line_id"]] = round(po_remaining - shipped, 2)
+            remaining_schedule[schedule["id"]] = self._v2_apply_component_quantity_precision(schedule["component_id"], schedule_remaining - shipped, records, minimum=0.0, rounding="floor")
+            remaining_po[schedule["purchase_order_line_id"]] = self._v2_apply_component_quantity_precision(schedule["component_id"], po_remaining - shipped, records, minimum=0.0, rounding="floor")
             rows.append(
                 {
                     "id": row_id,
@@ -657,13 +661,18 @@ class ProcurementTransactionGenerator:
             shipment_remaining = remaining_shipment[shipment_line["id"]]
             po_remaining = remaining_po[shipment_line["purchase_order_line_id"]]
             max_receivable = min(shipment_remaining, po_remaining)
-            short = round(max_receivable * rng.uniform(0.04, 0.2), 2) if row_id % 7 == 0 else 0.0
-            received = round(max(max_receivable - short, 0), 2)
+            received = self._v2_apply_component_quantity_precision(
+                shipment_line["component_id"],
+                max_receivable,
+                records,
+                minimum=0.0,
+                maximum=max_receivable,
+                rounding="floor",
+            )
             if received <= 0:
                 continue
-            remaining_shipment[shipment_line["id"]] = round(shipment_remaining - received, 2)
-            remaining_po[shipment_line["purchase_order_line_id"]] = round(po_remaining - received, 2)
-            damaged = round(received * rng.uniform(0.01, 0.08), 2) if row_id % 11 == 0 and received > 0 else 0.0
+            remaining_shipment[shipment_line["id"]] = self._v2_apply_component_quantity_precision(shipment_line["component_id"], shipment_remaining - received, records, minimum=0.0, rounding="floor")
+            remaining_po[shipment_line["purchase_order_line_id"]] = self._v2_apply_component_quantity_precision(shipment_line["component_id"], po_remaining - received, records, minimum=0.0, rounding="floor")
             rows.append(
                 {
                     "id": row_id,
@@ -673,8 +682,8 @@ class ProcurementTransactionGenerator:
                     "component_id": shipment_line["component_id"],
                     "shipped_quantity": shipment_line["shipped_quantity"],
                     "received_quantity": received,
-                    "damaged_quantity": damaged,
-                    "short_quantity": round(shipment_line["shipped_quantity"] - received, 2),
+                    "damaged_quantity": 0.0,
+                    "short_quantity": 0.0,
                     "receipt_date": receipt["receipt_date"],
                     "plant_id": receipt["plant_id"],
                     "warehouse_id": receipt["warehouse_id"],
@@ -689,7 +698,7 @@ class ProcurementTransactionGenerator:
         count = self._target_rows(table, plan)
         receipt_lines = records["goods_receipt_line"]
         rows = []
-        for row_id in range(1, count + 1):
+        for row_id in range(1, min(count, len(receipt_lines)) + 1):
             line = receipt_lines[(row_id - 1) % len(receipt_lines)]
             inspection_date = self._v2_add_days(line["receipt_date"], rng.randint(0, 3))
             rows.append(
@@ -698,7 +707,7 @@ class ProcurementTransactionGenerator:
                     "goods_receipt_line_id": line["id"],
                     "inspection_date": inspection_date,
                     "inspector_name": faker.name(),
-                    "inspection_status": "Pending",
+                    "inspection_status": "Passed",
                     "received_quantity": line["received_quantity"],
                     "component_id": line["component_id"],
                     "plant_id": line["plant_id"],
@@ -738,20 +747,20 @@ class ProcurementTransactionGenerator:
             inspection_index += 1
             receipt_remaining = remaining_receipt[inspection["goods_receipt_line_id"]]
             po_remaining = remaining_po[inspection["purchase_order_line_id"]]
-            inspected = round(max(min(float(inspection["received_quantity"]), receipt_remaining, po_remaining), 0), 2)
-            if row_id % 19 == 0 and inspected > 0:
-                accepted = 0.0
-                rejected = inspected
-            elif row_id % 6 == 0 and inspected > 0:
-                rejected = round(max(0.01, inspected * rng.uniform(0.02, 0.16)), 2)
-                accepted = round(inspected - rejected, 2)
-            else:
-                rejected = 0.0
-                accepted = inspected
-            remaining_receipt[inspection["goods_receipt_line_id"]] = round(receipt_remaining - inspected, 2)
-            remaining_po[inspection["purchase_order_line_id"]] = round(po_remaining - accepted, 2)
-            status = "Failed" if rejected > 0 and accepted == 0 else "PartiallyRejected" if rejected > 0 else "Passed"
-            reason = self._choice(V2_REJECTION_REASONS, rng) if rejected > 0 else "Not Applicable"
+            inspected = self._v2_apply_component_quantity_precision(
+                inspection["component_id"],
+                max(min(float(inspection["received_quantity"]), receipt_remaining, po_remaining), 0),
+                records,
+                minimum=0.0,
+                maximum=min(receipt_remaining, po_remaining),
+                rounding="floor",
+            )
+            rejected = 0.0
+            accepted = inspected
+            remaining_receipt[inspection["goods_receipt_line_id"]] = self._v2_apply_component_quantity_precision(inspection["component_id"], receipt_remaining - inspected, records, minimum=0.0, rounding="floor")
+            remaining_po[inspection["purchase_order_line_id"]] = self._v2_apply_component_quantity_precision(inspection["component_id"], po_remaining - accepted, records, minimum=0.0, rounding="floor")
+            status = "Passed"
+            reason = "Not Applicable"
             rate = None if inspected == 0 else round((rejected / inspected) * 100, 2)
             receipt_line = receipt_lines_by_id[inspection["goods_receipt_line_id"]]
             po_line = po_lines_by_id[inspection["purchase_order_line_id"]]
@@ -781,61 +790,139 @@ class ProcurementTransactionGenerator:
             )
         return rows
 
-    def _v2_inventory_transactions(self, table, plan, records, rng):
-        count = self._target_rows(table, plan)
-        results = [row for row in records["inspection_result"] if row["accepted_quantity"] > 0]
+    def _v2_inventory_receipt_details(self, table, plan, records, rng):
+        results = records["inspection_result"]
         inspections_by_id = {row["id"]: row for row in records["incoming_inspection"]}
         receipt_lines_by_id = {row["id"]: row for row in records["goods_receipt_line"]}
+        receipts_by_id = {row["id"]: row for row in records["goods_receipt_header"]}
+        shipment_lines_by_id = {row["id"]: row for row in records["shipment_line"]}
+        schedules_by_id = {row["id"]: row for row in records["po_schedule"]}
         po_lines_by_id = {row["id"]: row for row in records["purchase_order_line"]}
         po_headers_by_id = {row["id"]: row for row in records["purchase_order_header"]}
-        statuses = ["Posted", "QualityAccepted", "ReceivedToInventory"]
-        remaining_result = {row["id"]: float(row["accepted_quantity"]) for row in results}
-        remaining_po = {line["id"]: float(line["ordered_quantity"]) for line in records["purchase_order_line"]}
+
         rows = []
-        result_index = 0
-        for row_id in range(1, count + 1):
-            while result_index < len(results) and (
-                remaining_result.get(results[result_index]["id"], 0.0) <= 0.0001
-                or remaining_po.get(results[result_index]["purchase_order_line_id"], 0.0) <= 0.0001
-            ):
-                result_index += 1
-            if result_index >= len(results):
-                break
-            result = results[result_index]
-            result_index += 1
+        for row_id, result in enumerate(results, start=1):
             inspection = inspections_by_id[result["inspection_id"]]
             receipt_line = receipt_lines_by_id[inspection["goods_receipt_line_id"]]
+            receipt = receipts_by_id[receipt_line["goods_receipt_id"]]
+            shipment_line = shipment_lines_by_id[receipt_line["shipment_line_id"]]
+            schedule = schedules_by_id[shipment_line["po_schedule_id"]]
             po_line = po_lines_by_id[receipt_line["purchase_order_line_id"]]
             po_header = po_headers_by_id[po_line["purchase_order_id"]]
-            result_remaining = remaining_result[result["id"]]
-            po_remaining = remaining_po[po_line["id"]]
-            transaction_quantity = round(min(float(result["accepted_quantity"]), result_remaining, po_remaining), 2)
-            if transaction_quantity <= 0:
-                continue
-            remaining_result[result["id"]] = round(result_remaining - transaction_quantity, 2)
-            remaining_po[po_line["id"]] = round(po_remaining - transaction_quantity, 2)
-            unit_price = round(float(po_line["unit_price"]), 2)
-            inventory_value = self._v2_multiply_money(transaction_quantity, unit_price)
+
+            ordered_unit_price = round(float(po_line["unit_price"]), 2)
+            variance = self._v2_inventory_receipt_price_variance(row_id, rng)
+            delivered_unit_price = self._v2_round_money(ordered_unit_price * (1 + variance))
+            price_difference = self._v2_round_money(delivered_unit_price - ordered_unit_price)
+            price_difference_pct = 0.0 if ordered_unit_price == 0 else round((price_difference / ordered_unit_price) * 100, 2)
+
+            ordered_quantity = self._v2_apply_component_quantity_precision(po_line["component_id"], po_line["ordered_quantity"], records, minimum=0.0)
+            shipped_quantity = self._v2_apply_component_quantity_precision(po_line["component_id"], shipment_line["shipped_quantity"], records, minimum=0.0)
+            received_quantity = self._v2_apply_component_quantity_precision(po_line["component_id"], receipt_line["received_quantity"], records, minimum=0.0)
+            inspected_quantity = self._v2_apply_component_quantity_precision(po_line["component_id"], result["inspected_quantity"], records, minimum=0.0)
+            accepted_quantity = self._v2_apply_component_quantity_precision(po_line["component_id"], result["accepted_quantity"], records, minimum=0.0)
+            rejected_quantity = self._v2_apply_component_quantity_precision(po_line["component_id"], result["rejected_quantity"], records, minimum=0.0)
+
+            actual_delivery_date = receipt["receipt_date"]
+            expected_delivery_date = schedule["scheduled_delivery_date"]
+            stock_posted_date = max(actual_delivery_date, result["inspection_date"])
+            delivery_delay_days = (actual_delivery_date - expected_delivery_date).days
+            if delivery_delay_days < 0:
+                delivery_status = "Early"
+            elif delivery_delay_days > 0:
+                delivery_status = "Delayed"
+            else:
+                delivery_status = "OnTime"
+            if price_difference > 0:
+                price_variance_status = "PriceIncrease"
+            elif price_difference < 0:
+                price_variance_status = "PriceDecrease"
+            else:
+                price_variance_status = "NoChange"
+
             rows.append(
                 {
                     "id": row_id,
                     "inspection_result_id": result["id"],
                     "goods_receipt_line_id": receipt_line["id"],
                     "purchase_order_line_id": po_line["id"],
+                    "purchase_order_id": po_header["id"],
                     "supplier_id": po_header["supplier_id"],
-                    "component_id": receipt_line["component_id"],
-                    "plant_id": receipt_line["plant_id"],
-                    "warehouse_id": receipt_line["warehouse_id"],
-                    "transaction_date": self._v2_add_days(result["inspection_date"], rng.randint(0, 2)),
+                    "component_id": po_line["component_id"],
+                    "plant_id": receipt["plant_id"],
+                    "warehouse_id": receipt["warehouse_id"],
+                    "po_order_date": po_header["order_date"],
+                    "expected_delivery_date": expected_delivery_date,
+                    "actual_delivery_date": actual_delivery_date,
+                    "stock_posted_date": stock_posted_date,
+                    "ordered_quantity": ordered_quantity,
+                    "shipped_quantity": shipped_quantity,
+                    "received_quantity": received_quantity,
+                    "inspected_quantity": inspected_quantity,
+                    "accepted_quantity": accepted_quantity,
+                    "rejected_quantity": rejected_quantity,
+                    "ordered_unit_price": ordered_unit_price,
+                    "delivered_unit_price": delivered_unit_price,
+                    "price_difference": price_difference,
+                    "price_difference_pct": price_difference_pct,
+                    "ordered_value": self._v2_multiply_money(ordered_quantity, ordered_unit_price),
+                    "delivered_value": self._v2_multiply_money(received_quantity, delivered_unit_price),
+                    "accepted_stock_value": self._v2_multiply_money(accepted_quantity, delivered_unit_price),
+                    "order_year": po_header["order_date"].year,
+                    "delivery_year": actual_delivery_date.year,
+                    "cross_year_delivery_flag": 0,
+                    "delivery_delay_days": delivery_delay_days,
+                    "delivery_status": delivery_status,
+                    "price_variance_status": price_variance_status,
+                    "inventory_receipt_status": "Received",
+                    "shipment_line_id": shipment_line["id"],
+                    "po_schedule_id": schedule["id"],
+                }
+            )
+        return rows
+
+    def _v2_inventory_receipt_price_variance(self, row_id: int, rng: random.Random) -> float:
+        if row_id % 5 == 0:
+            return 0.0
+        if row_id % 2 == 0:
+            return rng.uniform(0.005, 0.05)
+        return rng.uniform(-0.03, -0.005)
+
+    def _v2_inventory_transactions(self, table, plan, records, rng):
+        count = self._target_rows(table, plan)
+        receipt_details = [row for row in records["inventory_receipt_detail"] if row["accepted_quantity"] > 0]
+        statuses = ["Posted", "QualityAccepted", "ReceivedToInventory"]
+        rows = []
+        for row_id in range(1, count + 1):
+            if row_id > len(receipt_details):
+                break
+            detail = receipt_details[row_id - 1]
+            transaction_quantity = self._v2_apply_component_quantity_precision(detail["component_id"], detail["accepted_quantity"], records, minimum=0.0)
+            if transaction_quantity <= 0:
+                continue
+            unit_price = round(float(detail["delivered_unit_price"]), 2)
+            inventory_value = self._v2_multiply_money(transaction_quantity, unit_price)
+            rows.append(
+                {
+                    "id": row_id,
+                    "inspection_result_id": detail["inspection_result_id"],
+                    "goods_receipt_line_id": detail["goods_receipt_line_id"],
+                    "purchase_order_line_id": detail["purchase_order_line_id"],
+                    "supplier_id": detail["supplier_id"],
+                    "component_id": detail["component_id"],
+                    "plant_id": detail["plant_id"],
+                    "warehouse_id": detail["warehouse_id"],
+                    "transaction_date": detail["stock_posted_date"],
                     "transaction_type": "StockIn",
                     "transaction_quantity": transaction_quantity,
                     "unit_price": unit_price,
                     "inventory_value": inventory_value,
-                    "reference_document": f"PO-{po_line['purchase_order_id']:06d}-GRN-{receipt_line['goods_receipt_id']:06d}",
+                    "reference_document": f"IRD-{detail['id']:06d}",
                     "inventory_status": statuses[(row_id - 1) % len(statuses)],
-                    "inspection_date": result["inspection_date"],
-                    "inspection_id": result["inspection_id"],
-                    "goods_receipt_id": receipt_line["goods_receipt_id"],
+                    "inventory_receipt_detail_id": detail["id"],
+                    "stock_posted_date": detail["stock_posted_date"],
+                    "accepted_quantity": detail["accepted_quantity"],
+                    "delivered_unit_price": detail["delivered_unit_price"],
                 }
             )
         return rows
@@ -858,10 +945,11 @@ class ProcurementTransactionGenerator:
 
         rows = []
         for row_id, row in enumerate(grouped.itertuples(index=False), start=1):
-            on_hand = round(float(row.on_hand_quantity), 2)
+            on_hand = self._v2_apply_component_quantity_precision(int(row.component_id), row.on_hand_quantity, records, minimum=0.0)
             on_hand_value = self._v2_round_money(float(row.on_hand_value))
-            reserved = self._v2_reserved_quantity(on_hand, row_id, rng)
-            available = round(on_hand - reserved, 2)
+            integer_required = self._v2_component_requires_integer_quantity(int(row.component_id), records)
+            reserved = self._v2_reserved_quantity(on_hand, row_id, rng, integer_required=integer_required)
+            available = self._v2_apply_component_quantity_precision(int(row.component_id), on_hand - reserved, records, minimum=0.0)
             average_unit_cost = on_hand_value / on_hand if on_hand > 0 else 0.0
             available_value = self._v2_round_money(available * average_unit_cost)
             rows.append(
@@ -882,16 +970,44 @@ class ProcurementTransactionGenerator:
             )
         return rows
 
-    def _v2_reserved_quantity(self, on_hand_quantity: float, row_id: int, rng: random.Random) -> float:
+    def _v2_reserved_quantity(self, on_hand_quantity: float, row_id: int, rng: random.Random, *, integer_required: bool = False) -> float:
         if on_hand_quantity <= 0:
             return 0.0
+        def finalize(value: float) -> float:
+            if integer_required:
+                return float(max(0, min(int(round(value)), int(round(on_hand_quantity)))))
+            return round(value, 2)
         if row_id % 31 == 0:
-            return round(on_hand_quantity, 2)
+            return finalize(on_hand_quantity)
         if row_id % 13 == 0:
-            return round(min(on_hand_quantity, on_hand_quantity * rng.uniform(0.90, 0.96)), 2)
+            return finalize(min(on_hand_quantity, on_hand_quantity * rng.uniform(0.90, 0.96)))
         if row_id % 7 == 0:
             return 0.0
-        return round(min(on_hand_quantity, on_hand_quantity * rng.uniform(0.0, 0.20)), 2)
+        return finalize(min(on_hand_quantity, on_hand_quantity * rng.uniform(0.0, 0.20)))
+
+    def _v2_component_uom(self, component_id: Any, records: dict[str, Any]) -> Any:
+        return records.get("_component_uom", {}).get(int(component_id)) if component_id is not None else None
+
+    def _v2_component_requires_integer_quantity(self, component_id: Any, records: dict[str, Any]) -> bool:
+        return requires_integer_quantity(self._v2_component_uom(component_id, records))
+
+    def _v2_apply_component_quantity_precision(
+        self,
+        component_id: Any,
+        quantity: Any,
+        records: dict[str, Any],
+        *,
+        minimum: float = 0.0,
+        maximum: float | None = None,
+        rounding: str = "nearest",
+    ) -> float:
+        return apply_quantity_precision(
+            quantity,
+            self._v2_component_uom(component_id, records),
+            minimum=minimum,
+            maximum=maximum,
+            rounding=rounding,
+        )
 
     def _v2_inventory_status(self, on_hand_quantity: float, available_quantity: float) -> str:
         if on_hand_quantity <= 0:
@@ -1035,19 +1151,7 @@ class ProcurementTransactionGenerator:
             stock_in_by_po_line[txn["purchase_order_line_id"]] = stock_in_by_po_line.get(txn["purchase_order_line_id"], 0.0) + float(txn["transaction_quantity"])
 
         for schedule in records.get("po_schedule", []):
-            shipped = shipped_by_schedule.get(schedule["id"], 0.0)
-            scheduled = float(schedule["scheduled_quantity"])
-            if shipped <= tolerance:
-                schedule["schedule_status"] = "Scheduled" if schedule["id"] % 3 else "Planned"
-            elif shipped + tolerance < scheduled:
-                schedule["schedule_status"] = "PartiallyShipped"
-            elif schedule.get("scheduled_delivery_date") and any(
-                line["po_schedule_id"] == schedule["id"] and line.get("shipment_date") and line["shipment_date"] > schedule["scheduled_delivery_date"]
-                for line in records.get("shipment_line", [])
-            ):
-                schedule["schedule_status"] = "Delayed"
-            else:
-                schedule["schedule_status"] = "Shipped"
+            schedule["schedule_status"] = "Shipped"
 
         receipt_by_shipment: dict[int, list[dict[str, Any]]] = {}
         for receipt in records.get("goods_receipt_header", []):
@@ -1061,45 +1165,20 @@ class ProcurementTransactionGenerator:
             if receipt is not None:
                 received_by_shipment[receipt["shipment_id"]] = received_by_shipment.get(receipt["shipment_id"], 0.0) + float(line["received_quantity"])
         for shipment in records.get("shipment_header", []):
-            shipped = shipped_by_shipment.get(shipment["id"], 0.0)
-            received = received_by_shipment.get(shipment["id"], 0.0)
-            if shipped <= tolerance:
-                shipment["shipment_status"] = "Shipped"
-            elif received <= tolerance:
-                shipment["shipment_status"] = "Delayed" if shipment["shipment_date"] > shipment["expected_delivery_date"] else ("InTransit" if shipment["id"] % 2 else "Shipped")
-            elif received + tolerance < shipped:
-                shipment["shipment_status"] = "PartiallyDelivered"
-            else:
-                shipment["shipment_status"] = "Delivered"
+            shipment["shipment_status"] = "Delivered"
 
         grl_by_receipt: dict[int, list[dict[str, Any]]] = {}
         for line in records.get("goods_receipt_line", []):
             grl_by_receipt.setdefault(line["goods_receipt_id"], []).append(line)
         for receipt in records.get("goods_receipt_header", []):
-            lines = grl_by_receipt.get(receipt["id"], [])
-            if any(line["damaged_quantity"] > 0 for line in lines):
-                receipt["receipt_status"] = "Damaged"
-            elif any(line["short_quantity"] > 0 for line in lines):
-                receipt["receipt_status"] = "ShortReceived"
-            elif lines and sum(float(line["received_quantity"]) for line in lines) + tolerance < sum(float(line["shipped_quantity"]) for line in lines):
-                receipt["receipt_status"] = "Partial"
-            else:
-                receipt["receipt_status"] = "Closed" if receipt["id"] % 5 == 0 else "Received"
+            receipt["receipt_status"] = "Received"
 
         result_by_inspection = {result["inspection_id"]: result for result in records.get("inspection_result", [])}
         for result in records.get("inspection_result", []):
             if result.get("rejected_quantity", 0) > 0 and result.get("rejection_reason") in {None, "", "Not Applicable"}:
                 result["rejection_reason"] = V2_REJECTION_REASONS[(result["id"] - 1) % len(V2_REJECTION_REASONS)]
         for inspection in records.get("incoming_inspection", []):
-            result = result_by_inspection.get(inspection["id"])
-            if result is None:
-                inspection["inspection_status"] = "Pending"
-            elif result["result_status"] == "Passed":
-                inspection["inspection_status"] = "Passed"
-            elif result["result_status"] == "Failed":
-                inspection["inspection_status"] = "Failed"
-            else:
-                inspection["inspection_status"] = "PartiallyRejected"
+            inspection["inspection_status"] = "Passed"
 
         awarded_by_quotation: dict[int, int] = {}
         for line in records.get("supplier_quotation_line", []):
@@ -1114,42 +1193,15 @@ class ProcurementTransactionGenerator:
 
         for line in records.get("purchase_order_line", []):
             ordered = float(line["ordered_quantity"])
-            scheduled = scheduled_by_po_line.get(line["id"], 0.0)
-            shipped = shipped_by_po_line.get(line["id"], 0.0)
-            received = received_by_po_line.get(line["id"], 0.0)
             stock_in = stock_in_by_po_line.get(line["id"], 0.0)
             line["open_quantity"] = round(max(ordered - stock_in, 0.0), 2)
-            if scheduled <= tolerance:
-                line["line_status"] = "Open"
-            elif shipped <= tolerance:
-                line["line_status"] = "Scheduled"
-            elif stock_in + tolerance >= ordered:
-                line["line_status"] = "Closed"
-            elif received > tolerance or stock_in > tolerance:
-                line["line_status"] = "PartiallyReceived"
-            else:
-                line["line_status"] = "PartiallyShipped"
+            line["line_status"] = "Received"
 
         po_lines_by_header: dict[int, list[dict[str, Any]]] = {}
         for line in records.get("purchase_order_line", []):
             po_lines_by_header.setdefault(line["purchase_order_id"], []).append(line)
         for po in records.get("purchase_order_header", []):
-            lines = po_lines_by_header.get(po["id"], [])
-            total_ordered = sum(float(line["ordered_quantity"]) for line in lines)
-            total_scheduled = sum(scheduled_by_po_line.get(line["id"], 0.0) for line in lines)
-            total_shipped = sum(shipped_by_po_line.get(line["id"], 0.0) for line in lines)
-            total_received = sum(received_by_po_line.get(line["id"], 0.0) for line in lines)
-            total_stock_in = sum(stock_in_by_po_line.get(line["id"], 0.0) for line in lines)
-            if total_scheduled <= tolerance:
-                po["po_status"] = "Approved" if po["id"] % 2 else "Sent"
-            elif total_shipped <= tolerance:
-                po["po_status"] = "Sent"
-            elif total_stock_in + tolerance >= total_ordered and total_ordered > tolerance:
-                po["po_status"] = "Closed"
-            elif total_received > tolerance or total_stock_in > tolerance:
-                po["po_status"] = "PartiallyReceived"
-            else:
-                po["po_status"] = "Sent"
+            po["po_status"] = "Received"
 
         invoice_payments: dict[int, float] = {}
         for payment in records.get("payment_transaction", []):
@@ -1203,78 +1255,9 @@ class ProcurementTransactionGenerator:
         master_dataframes: dict[str, pd.DataFrame],
         report: ValidationReport,
     ) -> None:
-        """Run Phase 9 basic transaction validation."""
+        """Run active Procurement v2 transaction validation."""
 
-        all_dataframes = {**master_dataframes, **dataframes}
-        for table in self.get_transaction_tables(schema):
-            dataframe = dataframes.get(table.table_name)
-            if dataframe is None:
-                report.add_error(
-                    table_name=table.table_name,
-                    message="Transaction table DataFrame was not generated.",
-                    suggested_fix="Generate one DataFrame for each transaction TableRole present in metadata.",
-                )
-                continue
-            target_rows = self._target_rows(table, None)
-            if table.table_role != "inventory_balance" and len(dataframe) != target_rows:
-                report.add_error(
-                    table_name=table.table_name,
-                    message=f"Generated row count {len(dataframe)} does not match target {target_rows}.",
-                    suggested_fix="Generate exactly TargetRows for transaction tables except natural inventory balance grouping.",
-                )
-            if table.table_role == "inventory_balance" and len(dataframe) != target_rows:
-                report.add_warning(
-                    table_name=table.table_name,
-                    message=f"InventoryBalance generated {len(dataframe)} grouped rows; metadata target is {target_rows}.",
-                    suggested_fix="This is acceptable when natural inventory groups differ from TargetRows.",
-                )
-            for column in table.columns:
-                if column.column_name not in dataframe.columns:
-                    report.add_error(
-                        table_name=table.table_name,
-                        column_name=column.column_name,
-                        message="Metadata column missing from generated transaction DataFrame.",
-                        suggested_fix="Generate every metadata column.",
-                    )
-                    continue
-                series = dataframe[column.column_name]
-                if column.key_type == "PK":
-                    if series.isna().any() or not series.is_unique:
-                        report.add_error(
-                            table_name=table.table_name,
-                            column_name=column.column_name,
-                            message="PK must be unique and non-null.",
-                            suggested_fix="Generate unique non-null sequence IDs.",
-                        )
-                if column.key_type == "FK":
-                    self._validate_fk(table, column, series, all_dataframes, report)
-                if column.nullable == "No" and series.isna().any():
-                    report.add_error(
-                        table_name=table.table_name,
-                        column_name=column.column_name,
-                        message="Nullable = No column contains null values.",
-                        suggested_fix="Populate required transaction columns.",
-                    )
-                if column.allowed_values:
-                    invalid = sorted(set(series.dropna()) - set(column.allowed_values))
-                    if invalid:
-                        report.add_error(
-                            table_name=table.table_name,
-                            column_name=column.column_name,
-                            message=f"Generated values outside AllowedValues: {', '.join(map(str, invalid))}.",
-                            suggested_fix="Use only metadata AllowedValues.",
-                        )
-                if "name" in column.column_name.lower() or "description" in column.column_name.lower():
-                    if any(ARTIFICIAL_NUMERIC_SUFFIX_PATTERN.search(str(value)) for value in series.dropna()):
-                        report.add_error(
-                            table_name=table.table_name,
-                            column_name=column.column_name,
-                            message="Generated text contains artificial numeric suffix.",
-                            suggested_fix="Use meaningful references instead of numeric suffixes.",
-                        )
-
-        self._validate_receipt_warehouse_plant_alignment(dataframes, master_dataframes, schema, report)
-        self._validate_business_invariants(dataframes, schema, report)
+        self._validate_v2_transaction_data(dataframes, schema, master_dataframes, report)
 
     def _generate_purchase_requisition_headers(
         self,
@@ -1625,30 +1608,6 @@ class ProcurementTransactionGenerator:
             )
         return records
 
-    def _generate_inventory_balances(self, table, plan, master_by_role, context, rng, faker, report):
-        grouped: dict[tuple[Any, Any, Any], float] = {}
-        latest_date: dict[tuple[Any, Any, Any], date] = {}
-        for txn in context.inventory_transactions:
-            key = (txn["raw_material_id"], txn["plant_id"], txn["warehouse_id"])
-            grouped[key] = grouped.get(key, 0) + txn["transaction_quantity"]
-            latest_date[key] = max(latest_date.get(key, txn["transaction_date"]), txn["transaction_date"])
-        records = []
-        for row_id, (key, quantity) in enumerate(grouped.items(), start=1):
-            raw_material_id, plant_id, warehouse_id = key
-            records.append(
-                {
-                    "id": row_id,
-                    "raw_material_id": raw_material_id,
-                    "plant_id": plant_id,
-                    "warehouse_id": warehouse_id,
-                    "on_hand_quantity": quantity,
-                    "available_quantity": quantity,
-                    "last_updated_date": latest_date[key],
-                    "status": "Active",
-                }
-            )
-        return records
-
     def _records_to_dataframe(self, table: TableContract, records: list[dict[str, Any]], report: ValidationReport) -> pd.DataFrame:
         data = {}
         for column in table.columns:
@@ -1692,6 +1651,7 @@ class ProcurementTransactionGenerator:
         mappings = [
             ("suppliercomponentid", "supplier_component_id"),
             ("supplierinvoiceid", "supplier_invoice_id"),
+            ("inventoryreceiptdetailid", "inventory_receipt_detail_id"),
             ("supplierid", "supplier_id"),
             ("componentid", "component_id"),
             ("inspectionresultid", "inspection_result_id"),
@@ -1714,7 +1674,6 @@ class ProcurementTransactionGenerator:
             ("inspectionid", "inspection_id"),
             ("inventorytransactionid", "inventory_transaction_id"),
             ("inventoryid", "inventory_id"),
-            ("inventorybalanceid", "inventory_balance_id"),
             ("rawmaterialid", "raw_material_id"),
             ("materialid", "raw_material_id"),
             ("vendorid", "vendor_id"),
@@ -1741,6 +1700,17 @@ class ProcurementTransactionGenerator:
             ("inventoryvalue", "inventory_value"),
             ("onhandvalue", "on_hand_value"),
             ("availablevalue", "available_value"),
+            ("orderedunitprice", "ordered_unit_price"),
+            ("deliveredunitprice", "delivered_unit_price"),
+            ("pricedifferencepct", "price_difference_pct"),
+            ("pricedifference", "price_difference"),
+            ("orderedvalue", "ordered_value"),
+            ("deliveredvalue", "delivered_value"),
+            ("acceptedstockvalue", "accepted_stock_value"),
+            ("orderyear", "order_year"),
+            ("deliveryyear", "delivery_year"),
+            ("crossyeardeliveryflag", "cross_year_delivery_flag"),
+            ("deliverydelaydays", "delivery_delay_days"),
             ("unitprice", "unit_price"),
             ("lineamount", "line_amount"),
             ("openquantity", "open_quantity"),
@@ -1750,8 +1720,11 @@ class ProcurementTransactionGenerator:
             ("lastupdateddate", "last_updated_date"),
             ("requisitiondate", "requisition_date"),
             ("requireddate", "required_date"),
+            ("poorderdate", "po_order_date"),
             ("orderdate", "order_date"),
             ("expecteddeliverydate", "expected_delivery_date"),
+            ("actualdeliverydate", "actual_delivery_date"),
+            ("stockposteddate", "stock_posted_date"),
             ("shipmentdate", "shipment_date"),
             ("receiptdate", "receipt_date"),
             ("inspectiondate", "inspection_date"),
@@ -1768,6 +1741,9 @@ class ProcurementTransactionGenerator:
             ("invoicestatus", "invoice_status"),
             ("paymentstatus", "payment_status"),
             ("inventorystatus", "inventory_status"),
+            ("inventoryreceiptstatus", "inventory_receipt_status"),
+            ("deliverystatus", "delivery_status"),
+            ("pricevariancestatus", "price_variance_status"),
             ("linestatus", "line_status"),
             ("status", "status"),
             ("priority", "priority"),
@@ -1813,7 +1789,6 @@ class ProcurementTransactionGenerator:
         grl = by_role.get("goods_receipt_line")
         qil = by_role.get("quality_inspection_line")
         it = by_role.get("inventory_transaction")
-        ib = by_role.get("inventory_balance")
         qih = by_role.get("quality_inspection_header")
         grh = by_role.get("goods_receipt_header")
         sh = by_role.get("shipment_header")
@@ -1832,13 +1807,6 @@ class ProcurementTransactionGenerator:
             if txn_col in merged.columns and "AcceptedQuantity" in merged.columns:
                 if not (merged[txn_col] == merged["AcceptedQuantity"]).all():
                     report.add_error(message="Inventory transaction quantity must equal accepted quantity.", suggested_fix="Post only accepted inspection quantity to inventory.")
-        if ib is not None and it is not None and {"RawMaterialID", "PlantID", "WarehouseID"}.issubset(ib.columns):
-            qty_col = "TransactionQuantity" if "TransactionQuantity" in it.columns else "Quantity"
-            if qty_col in it.columns:
-                grouped = it.groupby(["RawMaterialID", "PlantID", "WarehouseID"], dropna=False)[qty_col].sum().reset_index()
-                merged = ib.merge(grouped, on=["RawMaterialID", "PlantID", "WarehouseID"], how="left")
-                if "OnHandQuantity" in merged.columns and not (merged["OnHandQuantity"] == merged[qty_col].fillna(0)).all():
-                    report.add_error(message="InventoryBalance.OnHandQuantity must equal grouped inventory transactions.", suggested_fix="Aggregate transaction quantity by material, plant, and warehouse.")
 
         self._validate_date_order(prh, poh, "RequisitionID", "RequisitionDate", "OrderDate", report)
         self._validate_date_order(poh, sh, "PurchaseOrderID", "OrderDate", "ShipmentDate", report)
@@ -1976,8 +1944,20 @@ class ProcurementTransactionGenerator:
             "goods_receipt_line",
             "incoming_inspection",
             "inspection_result",
+            "inventory_receipt_detail",
             "inventory_transaction",
             "inventory",
+        }
+        full_received_status_columns = {
+            ("PurchaseOrderHdr", "POStatus"),
+            ("PurchaseOrderLine", "LineStatus"),
+            ("POSchedule", "ScheduleStatus"),
+            ("ShipmentHdr", "ShipmentStatus"),
+            ("GoodsReceiptHeader", "ReceiptStatus"),
+            ("IncomingInspection", "InspectionStatus"),
+            ("InspectionResult", "ResultStatus"),
+            ("InventoryReceiptDetail", "InventoryReceiptStatus"),
+            ("InventoryTransaction", "TransactionType"),
         }
         for table in self.get_transaction_tables(schema, model_version="v2"):
             dataframe = dataframes.get(table.table_name)
@@ -2020,7 +2000,7 @@ class ProcurementTransactionGenerator:
                     invalid = sorted({str(value) for value in series.dropna()} - {str(value) for value in column.allowed_values})
                     if invalid:
                         report.add_error(table_name=table.table_name, column_name=column.column_name, message=f"Generated values outside AllowedValues: {', '.join(invalid)}.", suggested_fix="Use only metadata AllowedValues.")
-                if column.column_name == "TransactionType":
+                if (table.table_name, column.column_name) in full_received_status_columns:
                     continue
                 if column.generation_type == "status" and len(column.allowed_values) > 1 and len(dataframe) >= 10 and series.nunique(dropna=True) <= 1:
                     report.add_warning(table_name=table.table_name, column_name=column.column_name, message="Status column has low diversity for v2 transaction data.", suggested_fix="Derive statuses from lifecycle facts.")
@@ -2121,6 +2101,40 @@ class ProcurementTransactionGenerator:
         inv = data["InventoryTransaction"].merge(results[["InspectionResultID", "AcceptedQuantity"]], on="InspectionResultID")
         if not (abs(inv["TransactionQuantity"] - inv["AcceptedQuantity"]) <= 0.0001).all():
             report.add_error(table_name="InventoryTransaction", column_name="TransactionQuantity", message="Inventory transaction quantity must equal accepted quantity.", suggested_fix="Post only accepted inspection quantity.")
+        receipt_detail = data["InventoryTransaction"].merge(
+            data["InventoryReceiptDetail"][
+                [
+                    "InspectionResultID",
+                    "GoodsReceiptLineID",
+                    "PurchaseOrderLineID",
+                    "SupplierID",
+                    "ComponentID",
+                    "PlantID",
+                    "WarehouseID",
+                    "StockPostedDate",
+                    "AcceptedQuantity",
+                    "DeliveredUnitPrice",
+                ]
+            ],
+            on="InspectionResultID",
+            suffixes=("_txn", "_detail"),
+        )
+        if not (receipt_detail["GoodsReceiptLineID_txn"] == receipt_detail["GoodsReceiptLineID_detail"]).all():
+            report.add_error(table_name="InventoryTransaction", column_name="GoodsReceiptLineID", message="GoodsReceiptLineID must match InventoryReceiptDetail.", suggested_fix="Create InventoryTransaction from InventoryReceiptDetail lineage.")
+        if not (receipt_detail["PurchaseOrderLineID_txn"] == receipt_detail["PurchaseOrderLineID_detail"]).all():
+            report.add_error(table_name="InventoryTransaction", column_name="PurchaseOrderLineID", message="PurchaseOrderLineID must match InventoryReceiptDetail.", suggested_fix="Create InventoryTransaction from InventoryReceiptDetail lineage.")
+        if not (receipt_detail["SupplierID_txn"] == receipt_detail["SupplierID_detail"]).all():
+            report.add_error(table_name="InventoryTransaction", column_name="SupplierID", message="SupplierID must match InventoryReceiptDetail.", suggested_fix="Carry supplier from InventoryReceiptDetail.")
+        if not (receipt_detail["ComponentID_txn"] == receipt_detail["ComponentID_detail"]).all():
+            report.add_error(table_name="InventoryTransaction", column_name="ComponentID", message="ComponentID must match InventoryReceiptDetail.", suggested_fix="Carry component from InventoryReceiptDetail.")
+        if not ((receipt_detail["PlantID_txn"] == receipt_detail["PlantID_detail"]) & (receipt_detail["WarehouseID_txn"] == receipt_detail["WarehouseID_detail"])).all():
+            report.add_error(table_name="InventoryTransaction", column_name="WarehouseID", message="PlantID/WarehouseID must match InventoryReceiptDetail.", suggested_fix="Carry location from InventoryReceiptDetail.")
+        if not (pd.to_datetime(receipt_detail["TransactionDate"]) == pd.to_datetime(receipt_detail["StockPostedDate"])).all():
+            report.add_error(table_name="InventoryTransaction", column_name="TransactionDate", message="TransactionDate must equal InventoryReceiptDetail.StockPostedDate.", suggested_fix="Post inventory using the receipt detail stock posted date.")
+        if not (abs(receipt_detail["TransactionQuantity"] - receipt_detail["AcceptedQuantity"]) <= 0.0001).all():
+            report.add_error(table_name="InventoryTransaction", column_name="TransactionQuantity", message="TransactionQuantity must equal InventoryReceiptDetail.AcceptedQuantity.", suggested_fix="Post the accepted receipt-detail quantity.")
+        if not (abs(receipt_detail["UnitPrice"] - receipt_detail["DeliveredUnitPrice"]) <= 0.01).all():
+            report.add_error(table_name="InventoryTransaction", column_name="UnitPrice", message="UnitPrice must equal InventoryReceiptDetail.DeliveredUnitPrice.", suggested_fix="Use delivered unit price from InventoryReceiptDetail.")
         stock_in_po = data["InventoryTransaction"].groupby("PurchaseOrderLineID")["TransactionQuantity"].sum().reset_index()
         stock_in_po = stock_in_po.merge(data["PurchaseOrderLine"][["PurchaseOrderLineID", "OrderedQuantity"]], on="PurchaseOrderLineID")
         if not (stock_in_po["TransactionQuantity"] <= stock_in_po["OrderedQuantity"] + 0.0001).all():
@@ -2152,15 +2166,13 @@ class ProcurementTransactionGenerator:
         if not (receipt_lineage["ComponentID_txn"] == receipt_lineage["ComponentID_receipt"]).all():
             report.add_error(table_name="InventoryTransaction", column_name="ComponentID", message="InventoryTransaction component must match GoodsReceiptLine component.", suggested_fix="Carry ComponentID from the received line.")
 
-        po_supplier = data["PurchaseOrderLine"][["PurchaseOrderLineID", "PurchaseOrderID", "UnitPrice"]].merge(
+        po_supplier = data["PurchaseOrderLine"][["PurchaseOrderLineID", "PurchaseOrderID"]].merge(
             data["PurchaseOrderHdr"][["PurchaseOrderID", "SupplierID"]],
             on="PurchaseOrderID",
         )
         inv_po = data["InventoryTransaction"].merge(po_supplier, on="PurchaseOrderLineID", suffixes=("_txn", "_po"))
         if not (inv_po["SupplierID_txn"] == inv_po["SupplierID_po"]).all():
             report.add_error(table_name="InventoryTransaction", column_name="SupplierID", message="SupplierID must match PO supplier lineage.", suggested_fix="Derive SupplierID from PurchaseOrderHdr through the PO line.")
-        if not (abs(inv_po["UnitPrice_txn"] - inv_po["UnitPrice_po"]) <= 0.01).all():
-            report.add_error(table_name="InventoryTransaction", column_name="UnitPrice", message="UnitPrice must match PurchaseOrderLine.UnitPrice.", suggested_fix="Copy UnitPrice from the PO line.")
 
         self._validate_v2_inventory_balance_snapshot(data, master, report)
 
@@ -2294,6 +2306,13 @@ class ProcurementTransactionGenerator:
                     return row_count.target_rows
         return table.target_rows
 
+    def _v2_target_rows_by_table_name(self, plan: LLMGenerationPlan | None, table_name: str, default: int) -> int:
+        if plan is not None:
+            for row_count in plan.row_count_plan:
+                if row_count.table_name == table_name:
+                    return row_count.target_rows
+        return default
+
     def _column_values(self, dataframe: pd.DataFrame, preferred_column: str) -> list[Any]:
         if dataframe is None or dataframe.empty:
             return []
@@ -2383,7 +2402,6 @@ class ProcurementTransactionGenerator:
             "quality_inspection_header": "quality_inspection_headers",
             "quality_inspection_line": "quality_inspection_lines",
             "inventory_transaction": "inventory_transactions",
-            "inventory_balance": "inventory_balances",
         }[role]
 
 
@@ -2427,8 +2445,10 @@ def generate_master_and_transaction_data(
     schema: SchemaContract,
     plan: LLMGenerationPlan,
     seed: int | None = None,
-    model_version: str = "v1",
+    model_version: str = "v2",
 ) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame], ValidationReport]:
+    if model_version != "v2":
+        raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
     master_generator = ProcurementMasterDataGenerator()
     master_data, master_report = master_generator.generate_master_data(schema, plan, seed=seed, model_version=model_version)
     if not master_report.is_valid:

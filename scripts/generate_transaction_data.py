@@ -35,7 +35,7 @@ def main() -> int:
     parser.add_argument("--output", required=True, help="Output folder for transaction CSV files.")
     parser.add_argument("--seed", type=int, default=None, help="Optional deterministic random seed.")
     parser.add_argument("--erd", required=False, help="Optional Mermaid ERD file for validation.")
-    parser.add_argument("--model-version", default="v1", choices=["v1", "v2"], help="Procurement model version.")
+    parser.add_argument("--model-version", default="v2", choices=["v2"], help="Procurement model version. Procurement v2 is the only active Procurement model.")
     args = parser.parse_args()
 
     metadata_result = load_metadata_schema(args.metadata)

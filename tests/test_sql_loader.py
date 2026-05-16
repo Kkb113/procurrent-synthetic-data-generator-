@@ -57,8 +57,8 @@ def test_config_parsing_from_env_file(tmp_path: Path) -> None:
 def test_table_create_order_respects_fk_dependencies() -> None:
     order = [table.table_name for table in SQLDDLGenerator().dependency_order(_schema())]
 
-    assert order.index("Vendor") < order.index("PurchaseOrderHeader")
-    assert order.index("PurchaseOrderHeader") < order.index("PurchaseOrderLine")
+    assert order.index("SupplierMaster") < order.index("PurchaseOrderHdr")
+    assert order.index("PurchaseOrderHdr") < order.index("PurchaseOrderLine")
 
 
 def test_replace_mode_uses_reverse_dependency_drop_order() -> None:
@@ -69,7 +69,7 @@ def test_replace_mode_uses_reverse_dependency_drop_order() -> None:
 
     assert report.status == "passed"
     assert "PurchaseOrderLine" in drop_sql[0]
-    assert "Vendor" in drop_sql[-1]
+    assert "SupplierMaster" in drop_sql[-1]
 
 
 def test_later_data_folder_overrides_earlier_table_csv(tmp_path: Path) -> None:
@@ -77,12 +77,43 @@ def test_later_data_folder_overrides_earlier_table_csv(tmp_path: Path) -> None:
     second = tmp_path / "second"
     first.mkdir()
     second.mkdir()
-    pd.DataFrame({"VendorID": [1], "VendorName": ["Old"]}).to_csv(first / "Vendor.csv", index=False)
-    pd.DataFrame({"VendorID": [2], "VendorName": ["New"]}).to_csv(second / "Vendor.csv", index=False)
+    pd.DataFrame({"SupplierID": [1], "SupplierName": ["Old"]}).to_csv(first / "SupplierMaster.csv", index=False)
+    pd.DataFrame({"SupplierID": [2], "SupplierName": ["New"]}).to_csv(second / "SupplierMaster.csv", index=False)
 
     dataframes = load_csv_folders([first, second])
 
-    assert list(dataframes["Vendor"]["VendorID"]) == [2]
+    assert list(dataframes["SupplierMaster"]["SupplierID"]) == [2]
+
+
+def test_csv_loader_preserves_literal_none_values(tmp_path: Path) -> None:
+    folder = tmp_path / "data"
+    folder.mkdir()
+    (folder / "ProductionQualityResult.csv").write_text("DefectSeverity\nNone\nLow\n", encoding="utf-8")
+
+    dataframes = load_csv_folders([folder])
+
+    assert list(dataframes["ProductionQualityResult"]["DefectSeverity"]) == ["None", "Low"]
+
+
+def test_nullable_blank_strings_prepare_as_sql_null() -> None:
+    table = TableContract(
+        table_name="QualityExample",
+        process_order=1,
+        area="Production",
+        table_role="quality_example",
+        target_rows=1,
+        columns=[
+            _col("QualityID", "int", "sequence_id", "No", "PK"),
+            _col("OptionalReason", "varchar(100)", "status", "Yes"),
+        ],
+    )
+    dataframe = pd.DataFrame({"QualityID": [1], "OptionalReason": [""]})
+
+    prepared, warnings = prepare_dataframe_for_sql(dataframe, table)
+    records = dataframe_to_records(prepared)
+
+    assert warnings == []
+    assert records == [(1, None)]
 
 
 def test_quality_report_failed_blocks_load(tmp_path: Path) -> None:
@@ -96,6 +127,15 @@ def test_quality_report_failed_blocks_load(tmp_path: Path) -> None:
 
 def test_quality_report_passed_with_warnings_allows_load(tmp_path: Path) -> None:
     path = _quality_report(tmp_path, "passed_with_warnings")
+    report = SQLLoadReport()
+
+    assert check_quality_gate(path, False, report) is True
+    assert report.warnings
+
+
+def test_quality_gate_accepts_production_status_field(tmp_path: Path) -> None:
+    path = tmp_path / "production_quality.json"
+    path.write_text(json.dumps({"status": "passed_with_warnings", "errors": [], "warnings": [{}]}), encoding="utf-8")
     report = SQLLoadReport()
 
     assert check_quality_gate(path, False, report) is True
@@ -117,8 +157,8 @@ def test_allow_unvalidated_load_allows_but_warns() -> None:
 
 
 def test_nan_to_none_conversion_helper() -> None:
-    dataframe = pd.DataFrame({"VendorID": [1], "VendorName": [np.nan]})
-    prepared, warnings = prepare_dataframe_for_sql(dataframe, _schema().tables["Vendor"])
+    dataframe = pd.DataFrame({"SupplierID": [1], "SupplierName": [np.nan]})
+    prepared, warnings = prepare_dataframe_for_sql(dataframe, _schema().tables["SupplierMaster"])
     records = dataframe_to_records(prepared)
 
     assert warnings == []
@@ -126,31 +166,31 @@ def test_nan_to_none_conversion_helper() -> None:
 
 
 def test_infinity_detection_blocks_insert() -> None:
-    dataframe = pd.DataFrame({"VendorID": [1], "VendorName": ["A"], "Extra": [np.inf]})
+    dataframe = pd.DataFrame({"SupplierID": [1], "SupplierName": ["A"], "Extra": [np.inf]})
 
     assert contains_infinity(dataframe)
 
 
 def test_metadata_column_order_selection_and_extra_warning() -> None:
-    dataframe = pd.DataFrame({"VendorName": ["A"], "Extra": ["ignored"], "VendorID": [1]})
-    prepared, warnings = prepare_dataframe_for_sql(dataframe, _schema().tables["Vendor"])
+    dataframe = pd.DataFrame({"SupplierName": ["A"], "Extra": ["ignored"], "SupplierID": [1]})
+    prepared, warnings = prepare_dataframe_for_sql(dataframe, _schema().tables["SupplierMaster"])
 
-    assert list(prepared.columns) == ["VendorID", "VendorName"]
+    assert list(prepared.columns) == ["SupplierID", "SupplierName"]
     assert warnings and "ignoring extra" in warnings[0]
 
 
 def test_missing_required_columns_error() -> None:
-    dataframe = pd.DataFrame({"VendorID": [1]})
+    dataframe = pd.DataFrame({"SupplierID": [1]})
 
     with pytest.raises(ValueError, match="missing required metadata"):
-        prepare_dataframe_for_sql(dataframe, _schema().tables["Vendor"])
+        prepare_dataframe_for_sql(dataframe, _schema().tables["SupplierMaster"])
 
 
 def test_loader_blocks_infinity_before_insert() -> None:
     connection = FakeConnection()
     dataframes = _dataframes()
-    dataframes["Vendor"] = dataframes["Vendor"].astype({"VendorID": "float64"})
-    dataframes["Vendor"].loc[0, "VendorID"] = np.inf
+    dataframes["SupplierMaster"] = dataframes["SupplierMaster"].astype({"SupplierID": "float64"})
+    dataframes["SupplierMaster"].loc[0, "SupplierID"] = np.inf
     loader = SQLServerLoader(_config(), connection_factory=lambda _: connection)
 
     report = loader.load_dataset(dataframes, _schema(), allow_unvalidated_load=True)
@@ -168,6 +208,35 @@ def test_quality_gate_blocks_failed_report_before_connection(tmp_path: Path) -> 
 
     assert report.status == "failed"
     assert connection.cursor_created is False
+
+
+def test_loader_skips_fk_constraints_to_external_parent_tables() -> None:
+    schema = SchemaContract(
+        tables={
+            "ProductionExample": TableContract(
+                table_name="ProductionExample",
+                process_order=1,
+                area="Production",
+                table_role="production_example",
+                target_rows=1,
+                columns=[
+                    _col("ProductionExampleID", "int", "sequence_id", "No", "PK"),
+                    _col("PlantID", "int", "foreign_key", "No", "FK", "Plant", "PlantID"),
+                ],
+            )
+        }
+    )
+    dataframes = {"ProductionExample": pd.DataFrame({"ProductionExampleID": [1], "PlantID": [1]})}
+    connection = FakeConnection()
+    loader = SQLServerLoader(_config(), connection_factory=lambda _: connection)
+
+    report = loader.load_dataset(dataframes, schema, allow_unvalidated_load=True)
+
+    assert report.status == "passed"
+    assert report.tables_loaded == ["ProductionExample"]
+    assert report.pk_constraints_created == ["PK_ProductionExample"]
+    assert report.fk_constraints_created == []
+    assert any("skipping FK constraint to external table Plant" in warning for warning in report.warnings)
 
 
 class FakeConnection:
@@ -222,8 +291,8 @@ def _quality_report(tmp_path: Path, status: str) -> Path:
 
 def _dataframes() -> dict[str, pd.DataFrame]:
     return {
-        "Vendor": pd.DataFrame({"VendorID": [1], "VendorName": ["Apex"]}),
-        "PurchaseOrderHeader": pd.DataFrame({"PurchaseOrderID": [10], "VendorID": [1], "TotalAmount": [20.0]}),
+        "SupplierMaster": pd.DataFrame({"SupplierID": [1], "SupplierName": ["Apex"]}),
+        "PurchaseOrderHdr": pd.DataFrame({"PurchaseOrderID": [10], "SupplierID": [1], "TotalAmount": [20.0]}),
         "PurchaseOrderLine": pd.DataFrame({"PurchaseOrderLineID": [100], "PurchaseOrderID": [10], "LineAmount": [20.0]}),
     }
 
@@ -231,26 +300,26 @@ def _dataframes() -> dict[str, pd.DataFrame]:
 def _schema() -> SchemaContract:
     return SchemaContract(
         tables={
-            "Vendor": TableContract(
-                table_name="Vendor",
+            "SupplierMaster": TableContract(
+                table_name="SupplierMaster",
                 process_order=1,
                 area="Master",
-                table_role="vendor_dimension",
+                table_role="supplier_master",
                 target_rows=1,
                 columns=[
-                    _col("VendorID", "int", "sequence_id", "No", "PK"),
-                    _col("VendorName", "varchar(200)", "vendor_name", "No"),
+                    _col("SupplierID", "int", "sequence_id", "No", "PK"),
+                    _col("SupplierName", "varchar(200)", "vendor_name", "No"),
                 ],
             ),
-            "PurchaseOrderHeader": TableContract(
-                table_name="PurchaseOrderHeader",
+            "PurchaseOrderHdr": TableContract(
+                table_name="PurchaseOrderHdr",
                 process_order=2,
                 area="Procurement",
                 table_role="purchase_order_header",
                 target_rows=1,
                 columns=[
                     _col("PurchaseOrderID", "int", "sequence_id", "No", "PK"),
-                    _col("VendorID", "int", "foreign_key", "No", "FK", "Vendor", "VendorID"),
+                    _col("SupplierID", "int", "foreign_key", "No", "FK", "SupplierMaster", "SupplierID"),
                     _col("TotalAmount", "decimal(18,2)", "decimal_range", "No"),
                 ],
             ),
@@ -262,7 +331,7 @@ def _schema() -> SchemaContract:
                 target_rows=1,
                 columns=[
                     _col("PurchaseOrderLineID", "int", "sequence_id", "No", "PK"),
-                    _col("PurchaseOrderID", "int", "foreign_key", "No", "FK", "PurchaseOrderHeader", "PurchaseOrderID"),
+                    _col("PurchaseOrderID", "int", "foreign_key", "No", "FK", "PurchaseOrderHdr", "PurchaseOrderID"),
                     _col("LineAmount", "decimal(18,2)", "decimal_range", "No"),
                 ],
             ),

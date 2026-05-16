@@ -135,5 +135,5 @@ def _suggest_fix(field_path: str) -> str:
     if "generation_order" in field_path:
         return "Provide a non-empty generation_order list of table names."
     if "module" in field_path:
-        return "Set module to procurement."
+        return "Set module to procurement or production."
     return "Update the JSON value to match the LLM generation plan schema."

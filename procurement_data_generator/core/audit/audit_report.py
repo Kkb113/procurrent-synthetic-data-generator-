@@ -47,7 +47,7 @@ class AuditReportBuilder:
         data_folders: list[str] | None = None,
         formula_report_path: str | None = None,
         output_folder: str = "output",
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> AuditReportResult:
         plan = self.load_json_report(llm_plan_path)
         data_quality = self.load_json_report(data_quality_report_path)
@@ -349,7 +349,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "## 1. Executive Summary",
         "",
         f"- Final status: **{final_status['status']}**",
-        f"- Model version: {report.get('report_metadata', {}).get('model_version', 'v1')}",
+        f"- Model version: {report.get('report_metadata', {}).get('model_version', 'v2')}",
         f"- Total tables: {schema.get('total_tables')}",
         f"- Total rows: {generation.get('total_rows_generated')}",
         f"- Data quality status: {data_quality.get('overall_status')}",
@@ -360,7 +360,9 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     ]
     if report.get("report_metadata", {}).get("model_version") == "v2":
         lines[9:9] = [
-            "- InventoryTransaction: StockIn detail ledger for accepted supplier receipts.",
+            "- Procurement v2: 25 generated tables with a full-received 2025 lifecycle.",
+            "- InventoryReceiptDetail: receipt-level traceability between inspection and inventory posting.",
+            "- InventoryTransaction: inbound StockIn ledger sourced from InventoryReceiptDetail.",
             "- Inventory: calculated stock balance by component, plant, and warehouse.",
             "- InventoryBalance: excluded from Procurement v2.",
         ]

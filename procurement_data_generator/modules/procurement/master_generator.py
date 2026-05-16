@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 from faker import Faker
 
-from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
+from procurement_data_generator.core.contracts.llm_plan_contract import DomainProfile, LLMGenerationPlan, MaterialCategory
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
 from procurement_data_generator.core.llm.plan_validator import is_date_type, is_numeric_type, is_string_type
@@ -25,14 +25,14 @@ from procurement_data_generator.modules.procurement.name_generators import (
     NameGenerationError,
     ProcurementNameGenerator,
 )
+from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE
+from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
+from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
+from procurement_data_generator.modules.shared.operating_scope import (
+    get_expected_plant_count,
+    get_expected_warehouse_count,
+)
 
-
-MASTER_TABLE_ROLES = {
-    "vendor_dimension",
-    "material_dimension",
-    "plant_dimension",
-    "warehouse_dimension",
-}
 
 V2_MASTER_TABLE_ROLES = {
     "supplier_master",
@@ -100,49 +100,32 @@ GENERIC_ARTIFICIAL_NAME_SUFFIX_PATTERN = re.compile(r"^\s*(?P<base>[A-Za-z ]+?)\
 class ProcurementMasterDataGenerator:
     """Generate procurement master/reference tables as pandas DataFrames."""
 
-    def __init__(self) -> None:
+    def __init__(self, industry_profile: IndustryProfile | None = None, profile_id: str | None = None) -> None:
         self.name_generator = ProcurementNameGenerator()
+        self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
 
     def generate_master_data(
         self,
         schema: SchemaContract,
         plan: LLMGenerationPlan,
         seed: int | None = None,
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> tuple[dict[str, pd.DataFrame], ValidationReport]:
         """Generate master/reference dataframes and validate the result."""
 
         report = ValidationReport()
-        if model_version == "v2":
-            dataframes = self._generate_v2_master_data(schema, plan, seed, report)
-            self.validate_generated_master_data(dataframes, schema, plan, report, model_version=model_version)
-            return dataframes, report
-
-        master_tables = self.get_master_tables(schema, model_version=model_version)
-        ordered_tables = self._order_master_tables(master_tables, report)
-        dataframes: dict[str, pd.DataFrame] = {}
-        existing_names: dict[str, set[str]] = {
-            "vendor": set(),
-            "material": set(),
-            "plant": set(),
-            "warehouse": set(),
-            "faker_company": set(),
-            "faker_person": set(),
-        }
-
-        for table_index, table in enumerate(ordered_tables):
-            table_seed = None if seed is None else seed + table_index * 1000
-            dataframe = self.generate_table(table, plan, dataframes, table_seed, existing_names, report)
-            dataframes[table.table_name] = dataframe
-
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
+        dataframes = self._generate_v2_master_data(schema, plan, seed, report)
         self.validate_generated_master_data(dataframes, schema, plan, report, model_version=model_version)
         return dataframes, report
 
-    def get_master_tables(self, schema: SchemaContract, model_version: str = "v1") -> list[TableContract]:
+    def get_master_tables(self, schema: SchemaContract, model_version: str = "v2") -> list[TableContract]:
         """Return metadata tables whose TableRole is a master/reference role."""
 
-        roles = V2_MASTER_TABLE_ROLES if model_version == "v2" else MASTER_TABLE_ROLES
-        return [table for table in schema.ordered_tables if table.table_role in roles]
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
+        return [table for table in schema.ordered_tables if table.table_role in V2_MASTER_TABLE_ROLES]
 
     def get_target_rows(self, table: TableContract, plan: LLMGenerationPlan) -> int:
         """Use plan row_count_plan when present, otherwise metadata TargetRows."""
@@ -334,10 +317,12 @@ class ProcurementMasterDataGenerator:
         schema: SchemaContract,
         plan: LLMGenerationPlan,
         report: ValidationReport,
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> None:
         """Validate generated master dataframes."""
 
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
         for table in self.get_master_tables(schema, model_version=model_version):
             dataframe = dataframes.get(table.table_name)
             target_rows = self.get_target_rows(table, plan)
@@ -402,8 +387,7 @@ class ProcurementMasterDataGenerator:
                 self._validate_date_range(table, column, series, report)
                 self._validate_name_column(table, column, series, report)
 
-        if model_version == "v2":
-            self._validate_v2_master_business_rules(dataframes, schema, report)
+        self._validate_v2_master_business_rules(dataframes, schema, report)
 
     def export_master_data(self, dataframes: dict[str, pd.DataFrame], output_folder: str | Path) -> list[Path]:
         """Export generated master dataframes to CSV files."""
@@ -454,8 +438,9 @@ class ProcurementMasterDataGenerator:
         rng: random.Random,
     ) -> pd.DataFrame:
         count = self.get_target_rows(table, plan)
+        domain_profile = self._profile_domain_profile(plan)
         locations = self._shuffled_us_locations(count, rng)
-        names = self.name_generator.generate_vendor_names(count, plan.domain_profile, seed, set())
+        names = self.name_generator.generate_vendor_names(count, domain_profile, seed, set())
         values_by_column: dict[str, list[Any]] = {
             "SupplierID": list(range(1, count + 1)),
             "SupplierCode": [f"SUP-{index:05d}" for index in range(1, count + 1)],
@@ -475,16 +460,9 @@ class ProcurementMasterDataGenerator:
         rng: random.Random,
     ) -> pd.DataFrame:
         count = self.get_target_rows(table, plan)
-        names = self.name_generator.generate_material_names(count, plan.domain_profile, seed, set())
-        allowed_categories = self._column_allowed_values(table, "ComponentCategory") or [
-            "Battery",
-            "Electrical",
-            "Mechanical",
-            "Packaging",
-            "Maintenance",
-            "Safety",
-            "Electronics",
-        ]
+        domain_profile = self._profile_domain_profile(plan)
+        names = self.name_generator.generate_material_names(count, domain_profile, seed, set())
+        allowed_categories = self._profile_component_categories(table)
         component_categories = [allowed_categories[index % len(allowed_categories)] for index in range(count)]
         rng.shuffle(component_categories)
         standard_costs = [generate_standard_cost(category, rng) for category in component_categories]
@@ -509,9 +487,9 @@ class ProcurementMasterDataGenerator:
         seed: int | None,
         rng: random.Random,
     ) -> pd.DataFrame:
-        count = self.get_target_rows(table, plan)
+        count = get_expected_plant_count()
         locations = self._shuffled_us_locations(count, rng)
-        plant_types = ("EV Assembly Plant", "Battery Systems Plant", "Component Facility", "Powertrain Plant")
+        plant_types = self.industry_profile.procurement.plant_type_names or ("Manufacturing Plant",)
         values_by_column: dict[str, list[Any]] = {
             "PlantID": list(range(1, count + 1)),
             "PlantCode": [f"PLT-{locations[index]['city'][:3].upper()}-{index + 1:02d}" for index in range(count)],
@@ -532,7 +510,7 @@ class ProcurementMasterDataGenerator:
         rng: random.Random,
         report: ValidationReport,
     ) -> pd.DataFrame:
-        count = self.get_target_rows(table, plan)
+        count = get_expected_warehouse_count()
         plant_df = existing_dataframes.get("Plant")
         if plant_df is None or plant_df.empty:
             report.add_error(
@@ -543,7 +521,9 @@ class ProcurementMasterDataGenerator:
             )
             return pd.DataFrame({column.column_name: [None] * count for column in table.columns})
 
-        allowed_types = self._column_allowed_values(table, "WarehouseType") or list(ProcurementNameGenerator.fallback_warehouse_types)
+        allowed_types = self._column_allowed_values(table, "WarehouseType") or [
+            _warehouse_type_label(value) for value in self.industry_profile.procurement.warehouse_type_names
+        ]
         plant_rows = plant_df.to_dict("records")
         values_by_column: dict[str, list[Any]] = {
             "WarehouseID": list(range(1, count + 1)),
@@ -572,6 +552,46 @@ class ProcurementMasterDataGenerator:
             values_by_column["WarehouseState"].append(state)
             values_by_column["WarehouseZipCode"].append(zip_code)
         return self._build_v2_dataframe(table, count, plan, rng, values_by_column, status_primary="Active")
+
+    def _profile_component_categories(self, table: TableContract) -> list[str]:
+        profile_categories = list(self.industry_profile.procurement.component_category_codes)
+        allowed_categories = self._column_allowed_values(table, "ComponentCategory")
+        if not allowed_categories:
+            return profile_categories
+        compatible_categories = [category for category in profile_categories if category in allowed_categories]
+        return compatible_categories or allowed_categories
+
+    def _profile_domain_profile(self, plan: LLMGenerationPlan) -> DomainProfile:
+        procurement = self.industry_profile.procurement
+        material_categories = []
+        for category_name, examples in procurement.component_material_examples.items():
+            specs = procurement.component_specification_patterns.get(category_name, ())
+            material_categories.append(
+                MaterialCategory(
+                    category_name=category_name,
+                    material_examples=list(examples),
+                    specification_patterns=list(specs),
+                )
+            )
+        if not material_categories:
+            material_categories = [
+                MaterialCategory(
+                    category_name=category,
+                    material_examples=list(procurement.component_name_patterns),
+                    specification_patterns=["Industrial Grade", "Standard Pack", "Grade A"],
+                )
+                for category in procurement.component_categories
+            ]
+        return DomainProfile(
+            industry=self.industry_profile.industry_name,
+            business_context=self.industry_profile.industry_description,
+            vendor_categories=list(procurement.supplier_name_patterns or procurement.component_categories),
+            material_categories=material_categories,
+            warehouse_types=list(procurement.warehouse_type_names or plan.domain_profile.warehouse_types),
+            plant_locations=list(plan.domain_profile.plant_locations),
+            carrier_name_patterns=list(plan.domain_profile.carrier_name_patterns),
+            inspection_test_categories=list(plan.domain_profile.inspection_test_categories),
+        )
 
     def _generate_v2_supplier_component(
         self,
@@ -1266,6 +1286,14 @@ def _plant_base_name(plant_name: str) -> str:
         if plant_name.endswith(suffix):
             return plant_name[: -len(suffix)]
     return plant_name.split()[0] if plant_name.split() else ""
+
+
+def _warehouse_type_label(value: str) -> str:
+    text = str(value).strip()
+    suffix = " Warehouse"
+    if text.endswith(suffix):
+        return text[: -len(suffix)]
+    return text
 
 
 def _is_name_like_column(column: ColumnContract) -> bool:

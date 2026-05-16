@@ -7,14 +7,14 @@ def test_parse_one_to_many_relationship() -> None:
     relationships = parse_mermaid_erd_text(
         """
         erDiagram
-            Vendor ||--o{ PurchaseOrderHeader : supplies
+            SupplierMaster ||--o{ PurchaseOrderHdr : supplies
         """
     )
 
     assert len(relationships) == 1
     relationship = relationships[0]
-    assert relationship.parent_table == "Vendor"
-    assert relationship.child_table == "PurchaseOrderHeader"
+    assert relationship.parent_table == "SupplierMaster"
+    assert relationship.child_table == "PurchaseOrderHdr"
     assert relationship.relationship_type == "one_to_many"
     assert relationship.mermaid_symbol == "||--o{"
     assert relationship.label == "supplies"
@@ -34,13 +34,13 @@ def test_parse_one_to_one_relationship() -> None:
 
 def test_parse_reversed_many_to_one_relationship_normalizes_parent_child() -> None:
     relationships = parse_mermaid_erd_text(
-        "PurchaseOrderHeader }o--|| Vendor : supplied_by"
+        "PurchaseOrderHdr }o--|| SupplierMaster : supplied_by"
     )
 
     assert len(relationships) == 1
     relationship = relationships[0]
-    assert relationship.parent_table == "Vendor"
-    assert relationship.child_table == "PurchaseOrderHeader"
+    assert relationship.parent_table == "SupplierMaster"
+    assert relationship.child_table == "PurchaseOrderHdr"
     assert relationship.relationship_type == "many_to_one"
 
 

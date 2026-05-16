@@ -33,10 +33,12 @@ class SQLDDLGenerator:
         constraint_name = quote_identifier(f"PK_{table.table_name}")
         return f"ALTER TABLE {self.qualified_table_name(table.table_name)} ADD CONSTRAINT {constraint_name} PRIMARY KEY ({columns});"
 
-    def generate_fk_constraint_sql(self, table: TableContract) -> list[str]:
+    def generate_fk_constraint_sql(self, table: TableContract, available_tables: set[str] | None = None) -> list[str]:
         statements: list[str] = []
         for column in table.columns:
             if column.key_type != "FK" or not column.related_table or not column.related_column:
+                continue
+            if available_tables is not None and column.related_table not in available_tables:
                 continue
             constraint_name = quote_identifier(f"FK_{table.table_name}_{column.related_table}_{column.column_name}")
             statements.append(

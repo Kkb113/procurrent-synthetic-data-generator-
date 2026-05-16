@@ -47,7 +47,7 @@ REQUIRED_VALUE_COLUMNS = [
     "GenerationType",
 ]
 
-SUPPORTED_AREAS = {"Master", "Procurement", "Logistics", "Receiving", "Quality", "Inventory", "Finance"}
+SUPPORTED_AREAS = {"Master", "Procurement", "Production", "MES", "Logistics", "Receiving", "Quality", "Inventory", "Finance"}
 SUPPORTED_KEY_TYPES = {"PK", "FK"}
 SUPPORTED_NULLABLE_VALUES = {"Yes", "No"}
 SUPPORTED_GENERATION_TYPES = {

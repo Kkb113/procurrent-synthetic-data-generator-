@@ -128,8 +128,15 @@ class SQLServerLoader:
             if pk_sql:
                 cursor.execute(pk_sql)
                 report.pk_constraints_created.append(f"PK_{table.table_name}")
+        available_tables = set(schema.tables)
         for table in self.ddl.dependency_order(schema):
-            for fk_sql in self.ddl.generate_fk_constraint_sql(table):
+            for column in table.columns:
+                if column.key_type == "FK" and column.related_table and column.related_table not in available_tables:
+                    report.add_warning(
+                        f"{table.table_name}.{column.column_name}: skipping FK constraint to external table "
+                        f"{column.related_table}; load only includes tables from the current metadata schema."
+                    )
+            for fk_sql in self.ddl.generate_fk_constraint_sql(table, available_tables=available_tables):
                 cursor.execute(fk_sql)
                 report.fk_constraints_created.append(_constraint_name_from_fk_sql(fk_sql))
 
@@ -148,7 +155,7 @@ def load_csv_folders(data_folders: list[str | Path]) -> dict[str, pd.DataFrame]:
         if not path.exists():
             continue
         for csv_path in sorted(path.glob("*.csv")):
-            dataframes[csv_path.stem] = pd.read_csv(csv_path)
+            dataframes[csv_path.stem] = pd.read_csv(csv_path, keep_default_na=False)
     return dataframes
 
 
@@ -175,7 +182,7 @@ def check_quality_gate(
         return False
 
     payload = json.loads(path.read_text(encoding="utf-8"))
-    status = payload.get("overall_status")
+    status = payload.get("overall_status") or payload.get("status")
     if status == "failed":
         report.add_error("SQL load blocked: data quality report status is failed.")
         return False
@@ -201,6 +208,11 @@ def prepare_dataframe_for_sql(dataframe: pd.DataFrame, table: TableContract) -> 
     prepared = dataframe[metadata_columns].copy()
     if contains_infinity(prepared):
         raise ValueError(f"{table.table_name} contains positive or negative Infinity values.")
+    for column in table.columns:
+        if column.nullable == "Yes" and column.column_name in prepared.columns:
+            series = prepared[column.column_name]
+            if series.dtype == object or pd.api.types.is_string_dtype(series):
+                prepared[column.column_name] = series.where(series.astype(str).str.strip() != "", None)
     prepared = prepared.astype(object).where(pd.notna(prepared), None)
     return prepared, warnings
 

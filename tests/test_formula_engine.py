@@ -19,19 +19,19 @@ def test_row_level_multiply_works() -> None:
 
 
 def test_row_level_subtract_works() -> None:
-    dataframes = {"QualityInspectionLine": _inspection_lines()}
+    dataframes = {"InspectionResult": _inspection_lines()}
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([_rule("INSPECTION_REJECTED_QTY")]), _schema())
 
     assert report.status == "passed"
-    assert list(updated["QualityInspectionLine"]["RejectedQuantity"]) == [2, 0, 0]
+    assert list(updated["InspectionResult"]["RejectedQuantity"]) == [2, 0, 0]
 
 
 def test_aggregate_sum_works() -> None:
-    dataframes = {"PurchaseOrderHeader": _po_headers(), "PurchaseOrderLine": _po_lines(line_amount=[20.0, 60.0, 10.0])}
+    dataframes = {"PurchaseOrderHdr": _po_headers(), "PurchaseOrderLine": _po_lines(line_amount=[20.0, 60.0, 10.0])}
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([_rule("PO_HEADER_TOTAL")]), _schema())
 
     assert report.status == "passed"
-    assert list(updated["PurchaseOrderHeader"]["TotalAmount"]) == [80.0, 10.0]
+    assert list(updated["PurchaseOrderHdr"]["TotalAmount"]) == [80.0, 10.0]
 
 
 def test_aggregate_sum_with_group_by_columns_and_no_relationship_key_works() -> None:
@@ -39,16 +39,16 @@ def test_aggregate_sum_with_group_by_columns_and_no_relationship_key_works() -> 
         "InventoryTransaction": pd.DataFrame(
             {
                 "InventoryTransactionID": [1, 2, 3],
-                "RawMaterialID": [10, 10, 11],
+                "ComponentID": [10, 10, 11],
                 "PlantID": [1, 1, 1],
                 "WarehouseID": [5, 5, 6],
                 "TransactionQuantity": [7, 8, 3],
             }
         ),
-        "InventoryBalance": pd.DataFrame(
+        "Inventory": pd.DataFrame(
             {
-                "InventoryBalanceID": [1, 2],
-                "RawMaterialID": [10, 11],
+                "InventoryID": [1, 2],
+                "ComponentID": [10, 11],
                 "PlantID": [1, 1],
                 "WarehouseID": [5, 6],
                 "OnHandQuantity": [0, 0],
@@ -56,28 +56,28 @@ def test_aggregate_sum_with_group_by_columns_and_no_relationship_key_works() -> 
         ),
     }
     rule = FormulaRule(
-        rule_id="AGG_INVENTORY_BALANCE",
+        rule_id="AGG_INVENTORY_ON_HAND",
         rule_type="aggregate",
-        target_table="InventoryBalance",
+        target_table="Inventory",
         target_column="OnHandQuantity",
         operation="sum",
         input_columns=[],
         source_table="InventoryTransaction",
         source_column="TransactionQuantity",
         relationship_key=None,
-        group_by_columns=["RawMaterialID", "PlantID", "WarehouseID"],
-        formula="SUM(InventoryTransaction.TransactionQuantity) GROUP BY RawMaterialID, PlantID, WarehouseID",
+        group_by_columns=["ComponentID", "PlantID", "WarehouseID"],
+        formula="SUM(InventoryTransaction.TransactionQuantity) GROUP BY ComponentID, PlantID, WarehouseID",
     )
 
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([rule]), _schema())
 
     assert report.status == "passed"
-    assert list(updated["InventoryBalance"]["OnHandQuantity"]) == [15, 3]
+    assert list(updated["Inventory"]["OnHandQuantity"]) == [15, 3]
 
 
 def test_aggregate_with_neither_relationship_key_nor_group_by_columns_fails() -> None:
     rule = _rule("PO_HEADER_TOTAL").model_copy(update={"relationship_key": None, "group_by_columns": []})
-    dataframes = {"PurchaseOrderHeader": _po_headers(), "PurchaseOrderLine": _po_lines(line_amount=[20.0, 60.0, 10.0])}
+    dataframes = {"PurchaseOrderHdr": _po_headers(), "PurchaseOrderLine": _po_lines(line_amount=[20.0, 60.0, 10.0])}
 
     _, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([rule]), _schema())
 
@@ -86,11 +86,11 @@ def test_aggregate_with_neither_relationship_key_nor_group_by_columns_fails() ->
 
 
 def test_aggregate_count_works() -> None:
-    dataframes = {"PurchaseOrderHeader": _po_headers(), "PurchaseOrderLine": _po_lines(line_amount=[20.0, 60.0, 10.0])}
+    dataframes = {"PurchaseOrderHdr": _po_headers(), "PurchaseOrderLine": _po_lines(line_amount=[20.0, 60.0, 10.0])}
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([_rule("PO_LINE_COUNT")]), _schema())
 
     assert report.status == "passed"
-    assert list(updated["PurchaseOrderHeader"]["LineCount"]) == [2, 1]
+    assert list(updated["PurchaseOrderHdr"]["LineCount"]) == [2, 1]
 
 
 def test_date_difference_works() -> None:
@@ -111,53 +111,53 @@ def test_date_difference_works() -> None:
 
 
 def test_percentage_rule_with_percentage_operation_works() -> None:
-    dataframes = {"QualityInspectionLine": _inspection_lines()}
+    dataframes = {"InspectionResult": _inspection_lines()}
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([_rule("REJECTION_RATE")]), _schema())
 
     assert report.status == "passed"
-    assert list(updated["QualityInspectionLine"]["RejectionRatePct"].dropna())[:2] == [20.0, 0.0]
+    assert list(updated["InspectionResult"]["RejectionRatePct"].dropna())[:2] == [20.0, 0.0]
 
 
 def test_percentage_rule_with_divide_operation_works() -> None:
-    dataframes = {"QualityInspectionLine": _inspection_lines()}
+    dataframes = {"InspectionResult": _inspection_lines()}
     rule = _rule("REJECTION_RATE").model_copy(update={"operation": "divide"})
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([rule]), _schema())
 
     assert report.status == "passed"
-    assert list(updated["QualityInspectionLine"]["RejectionRatePct"].dropna())[:2] == [20.0, 0.0]
+    assert list(updated["InspectionResult"]["RejectionRatePct"].dropna())[:2] == [20.0, 0.0]
 
 
 def test_percentage_denominator_zero_returns_null_not_infinity() -> None:
-    dataframes = {"QualityInspectionLine": _inspection_lines()}
+    dataframes = {"InspectionResult": _inspection_lines()}
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([_rule("REJECTION_RATE")]), _schema())
-    value = updated["QualityInspectionLine"].loc[2, "RejectionRatePct"]
+    value = updated["InspectionResult"].loc[2, "RejectionRatePct"]
 
     assert report.status == "passed"
     assert pd.isna(value)
-    assert not _has_infinity(updated["QualityInspectionLine"]["RejectionRatePct"])
+    assert not _has_infinity(updated["InspectionResult"]["RejectionRatePct"])
 
 
 def test_percentage_divide_denominator_zero_returns_null_not_infinity() -> None:
-    dataframes = {"QualityInspectionLine": _inspection_lines()}
+    dataframes = {"InspectionResult": _inspection_lines()}
     rule = _rule("REJECTION_RATE").model_copy(update={"operation": "divide"})
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([rule]), _schema())
-    value = updated["QualityInspectionLine"].loc[2, "RejectionRatePct"]
+    value = updated["InspectionResult"].loc[2, "RejectionRatePct"]
 
     assert report.status == "passed"
     assert pd.isna(value)
-    assert not _has_infinity(updated["QualityInspectionLine"]["RejectionRatePct"])
+    assert not _has_infinity(updated["InspectionResult"]["RejectionRatePct"])
 
 
 def test_divide_denominator_zero_returns_null_not_infinity() -> None:
     dataframes = {
-        "QualityInspectionLine": pd.DataFrame(
-            {"InspectionLineID": [1], "RejectedQuantity": [3], "InspectedQuantity": [0], "RejectionRatePct": [0.0]}
+        "InspectionResult": pd.DataFrame(
+            {"InspectionResultID": [1], "RejectedQuantity": [3], "InspectedQuantity": [0], "RejectionRatePct": [0.0]}
         )
     }
     rule = FormulaRule(
         rule_id="SAFE_DIVIDE",
         rule_type="row_level",
-        target_table="QualityInspectionLine",
+        target_table="InspectionResult",
         target_column="RejectionRatePct",
         operation="divide",
         input_columns=["RejectedQuantity", "InspectedQuantity"],
@@ -166,42 +166,42 @@ def test_divide_denominator_zero_returns_null_not_infinity() -> None:
     updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([rule]), _schema())
 
     assert report.status == "passed"
-    assert pd.isna(updated["QualityInspectionLine"].loc[0, "RejectionRatePct"])
-    assert not _has_infinity(updated["QualityInspectionLine"]["RejectionRatePct"])
+    assert pd.isna(updated["InspectionResult"].loc[0, "RejectionRatePct"])
+    assert not _has_infinity(updated["InspectionResult"]["RejectionRatePct"])
 
 
-def test_inventory_balance_aggregation_works() -> None:
+def test_inventory_aggregation_works() -> None:
     dataframes = {
         "InventoryTransaction": pd.DataFrame(
             {
                 "InventoryTransactionID": [1, 2, 3],
-                "RawMaterialID": [10, 10, 11],
+                "ComponentID": [10, 10, 11],
                 "PlantID": [1, 1, 1],
                 "WarehouseID": [5, 5, 6],
                 "TransactionQuantity": [7, 8, 3],
             }
         ),
-        "InventoryBalance": pd.DataFrame(
+        "Inventory": pd.DataFrame(
             {
-                "InventoryBalanceID": [1, 2],
-                "RawMaterialID": [10, 11],
+                "InventoryID": [1, 2],
+                "ComponentID": [10, 11],
                 "PlantID": [1, 1],
                 "WarehouseID": [5, 6],
                 "OnHandQuantity": [0, 0],
             }
         ),
     }
-    updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([_rule("INVENTORY_BALANCE_ON_HAND")]), _schema())
+    updated, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([_rule("INVENTORY_ON_HAND")]), _schema())
 
     assert report.status == "passed"
-    assert list(updated["InventoryBalance"]["OnHandQuantity"]) == [15, 3]
+    assert list(updated["Inventory"]["OnHandQuantity"]) == [15, 3]
 
 
-def test_inventory_balance_missing_group_by_columns_fails_clearly() -> None:
-    rule = _rule("INVENTORY_BALANCE_ON_HAND").model_copy(update={"group_by_columns": []})
+def test_inventory_missing_group_by_columns_fails_clearly() -> None:
+    rule = _rule("INVENTORY_ON_HAND").model_copy(update={"group_by_columns": []})
     dataframes = {
-        "InventoryTransaction": pd.DataFrame({"InventoryTransactionID": [1], "RawMaterialID": [10], "PlantID": [1], "WarehouseID": [5], "TransactionQuantity": [7]}),
-        "InventoryBalance": pd.DataFrame({"InventoryBalanceID": [1], "RawMaterialID": [10], "PlantID": [1], "WarehouseID": [5], "OnHandQuantity": [0]}),
+        "InventoryTransaction": pd.DataFrame({"InventoryTransactionID": [1], "ComponentID": [10], "PlantID": [1], "WarehouseID": [5], "TransactionQuantity": [7]}),
+        "Inventory": pd.DataFrame({"InventoryID": [1], "ComponentID": [10], "PlantID": [1], "WarehouseID": [5], "OnHandQuantity": [0]}),
     }
 
     _, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([rule]), _schema())
@@ -210,11 +210,11 @@ def test_inventory_balance_missing_group_by_columns_fails_clearly() -> None:
     assert "group_by_columns" in report.failed_rules[0].message
 
 
-def test_inventory_balance_missing_group_by_column_fails_clearly() -> None:
-    rule = _rule("INVENTORY_BALANCE_ON_HAND").model_copy(update={"group_by_columns": ["RawMaterialID", "PlantID", "MissingWarehouseID"]})
+def test_inventory_missing_group_by_column_fails_clearly() -> None:
+    rule = _rule("INVENTORY_ON_HAND").model_copy(update={"group_by_columns": ["ComponentID", "PlantID", "MissingWarehouseID"]})
     dataframes = {
-        "InventoryTransaction": pd.DataFrame({"InventoryTransactionID": [1], "RawMaterialID": [10], "PlantID": [1], "WarehouseID": [5], "TransactionQuantity": [7]}),
-        "InventoryBalance": pd.DataFrame({"InventoryBalanceID": [1], "RawMaterialID": [10], "PlantID": [1], "WarehouseID": [5], "OnHandQuantity": [0]}),
+        "InventoryTransaction": pd.DataFrame({"InventoryTransactionID": [1], "ComponentID": [10], "PlantID": [1], "WarehouseID": [5], "TransactionQuantity": [7]}),
+        "Inventory": pd.DataFrame({"InventoryID": [1], "ComponentID": [10], "PlantID": [1], "WarehouseID": [5], "OnHandQuantity": [0]}),
     }
 
     _, report = SafeFormulaEngine().execute_formulas(dataframes, _plan([rule]), _schema())
@@ -346,7 +346,7 @@ def _po_headers() -> pd.DataFrame:
 def _inspection_lines() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "InspectionLineID": [1, 2, 3],
+            "InspectionResultID": [1, 2, 3],
             "InspectedQuantity": [10, 5, 0],
             "AcceptedQuantity": [8, 5, 0],
             "RejectedQuantity": [2, 0, 0],
@@ -369,7 +369,7 @@ def _rule(rule_id: str) -> FormulaRule:
         "PO_HEADER_TOTAL": FormulaRule(
             rule_id="PO_HEADER_TOTAL",
             rule_type="aggregate",
-            target_table="PurchaseOrderHeader",
+            target_table="PurchaseOrderHdr",
             target_column="TotalAmount",
             operation="sum",
             input_columns=[],
@@ -381,7 +381,7 @@ def _rule(rule_id: str) -> FormulaRule:
         "PO_LINE_COUNT": FormulaRule(
             rule_id="PO_LINE_COUNT",
             rule_type="aggregate",
-            target_table="PurchaseOrderHeader",
+            target_table="PurchaseOrderHdr",
             target_column="LineCount",
             operation="count",
             input_columns=[],
@@ -402,7 +402,7 @@ def _rule(rule_id: str) -> FormulaRule:
         "REJECTION_RATE": FormulaRule(
             rule_id="REJECTION_RATE",
             rule_type="percentage",
-            target_table="QualityInspectionLine",
+            target_table="InspectionResult",
             target_column="RejectionRatePct",
             operation="percentage",
             input_columns=["RejectedQuantity", "InspectedQuantity"],
@@ -413,23 +413,23 @@ def _rule(rule_id: str) -> FormulaRule:
         "INSPECTION_REJECTED_QTY": FormulaRule(
             rule_id="INSPECTION_REJECTED_QTY",
             rule_type="quantity_reconciliation",
-            target_table="QualityInspectionLine",
+            target_table="InspectionResult",
             target_column="RejectedQuantity",
             operation="subtract",
             input_columns=["InspectedQuantity", "AcceptedQuantity"],
             formula="InspectedQuantity - AcceptedQuantity",
         ),
-        "INVENTORY_BALANCE_ON_HAND": FormulaRule(
-            rule_id="INVENTORY_BALANCE_ON_HAND",
+        "INVENTORY_ON_HAND": FormulaRule(
+            rule_id="INVENTORY_ON_HAND",
             rule_type="inventory_balance",
-            target_table="InventoryBalance",
+            target_table="Inventory",
             target_column="OnHandQuantity",
             operation="sum",
             input_columns=[],
             source_table="InventoryTransaction",
             source_column="TransactionQuantity",
-            group_by_columns=["RawMaterialID", "PlantID", "WarehouseID"],
-            formula="SUM(InventoryTransaction.TransactionQuantity) GROUP BY RawMaterialID, PlantID, WarehouseID",
+            group_by_columns=["ComponentID", "PlantID", "WarehouseID"],
+            formula="SUM(InventoryTransaction.TransactionQuantity) GROUP BY ComponentID, PlantID, WarehouseID",
         ),
         "MISSING_TABLE": FormulaRule(
             rule_id="MISSING_TABLE",
@@ -459,7 +459,7 @@ def _plan(rules: list[FormulaRule]) -> LLMGenerationPlan:
         business_summary="Formula engine unit test plan.",
         domain_profile=DomainProfile(industry="Test manufacturing"),
         table_role_mapping=[],
-        generation_order=["PurchaseOrderHeader", "PurchaseOrderLine"],
+        generation_order=["PurchaseOrderHdr", "PurchaseOrderLine"],
         row_count_plan=[],
         column_generation_rules=[],
         formula_rules=rules,
@@ -489,8 +489,8 @@ def _schema() -> SchemaContract:
                     _col("LineAmount", "decimal(18,2)", "calculated", "No"),
                 ],
             ),
-            "PurchaseOrderHeader": TableContract(
-                table_name="PurchaseOrderHeader",
+            "PurchaseOrderHdr": TableContract(
+                table_name="PurchaseOrderHdr",
                 process_order=2,
                 area="Procurement",
                 table_role="purchase_order_header",
@@ -514,14 +514,14 @@ def _schema() -> SchemaContract:
                     _col("DelayDays", "int", "calculated", "Yes"),
                 ],
             ),
-            "QualityInspectionLine": TableContract(
-                table_name="QualityInspectionLine",
+            "InspectionResult": TableContract(
+                table_name="InspectionResult",
                 process_order=4,
                 area="Quality",
-                table_role="quality_inspection_line",
+                table_role="inspection_result",
                 target_rows=3,
                 columns=[
-                    _col("InspectionLineID", "int", "sequence_id", "No", "PK"),
+                    _col("InspectionResultID", "int", "sequence_id", "No", "PK"),
                     _col("InspectedQuantity", "int", "integer_range", "No"),
                     _col("AcceptedQuantity", "int", "integer_range", "No"),
                     _col("RejectedQuantity", "int", "calculated", "No"),
@@ -536,21 +536,21 @@ def _schema() -> SchemaContract:
                 target_rows=3,
                 columns=[
                     _col("InventoryTransactionID", "int", "sequence_id", "No", "PK"),
-                    _col("RawMaterialID", "int", "foreign_key", "No", "FK"),
+                    _col("ComponentID", "int", "foreign_key", "No", "FK"),
                     _col("PlantID", "int", "foreign_key", "No", "FK"),
                     _col("WarehouseID", "int", "foreign_key", "No", "FK"),
                     _col("TransactionQuantity", "int", "integer_range", "No"),
                 ],
             ),
-            "InventoryBalance": TableContract(
-                table_name="InventoryBalance",
+            "Inventory": TableContract(
+                table_name="Inventory",
                 process_order=6,
                 area="Inventory",
-                table_role="inventory_balance",
+                table_role="inventory",
                 target_rows=2,
                 columns=[
-                    _col("InventoryBalanceID", "int", "sequence_id", "No", "PK"),
-                    _col("RawMaterialID", "int", "foreign_key", "No", "FK"),
+                    _col("InventoryID", "int", "sequence_id", "No", "PK"),
+                    _col("ComponentID", "int", "foreign_key", "No", "FK"),
                     _col("PlantID", "int", "foreign_key", "No", "FK"),
                     _col("WarehouseID", "int", "foreign_key", "No", "FK"),
                     _col("OnHandQuantity", "int", "calculated", "No"),

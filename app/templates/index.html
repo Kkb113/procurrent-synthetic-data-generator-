@@ -10,7 +10,7 @@
   <header class="app-header">
     <div>
       <h1>Procurement Data Generator</h1>
-      <p>Run the validated backend pipeline from metadata, ERD, scenario, and an LLM generation plan.</p>
+      <p>Run the validated Procurement backend pipeline from metadata, ERD, scenario, and an LLM generation plan.</p>
     </div>
   </header>
 
@@ -22,8 +22,7 @@
           <label>
             Model Version
             <select id="model-version" name="model_version">
-              <option value="v1" selected>Procurement v1 - Core 16-table model</option>
-              <option value="v2">Procurement v2 - 24-table RFQ/quotation/invoice/payment/inventory model</option>
+              <option value="v2" selected>Procurement v2 - active 25-table RFQ/quotation/receipt/inventory model</option>
             </select>
           </label>
           <label>
@@ -45,9 +44,15 @@
         </div>
 
         <details id="v2-model-help" class="model-help" hidden>
-          <summary>Procurement v2 expects the expanded 24-table model</summary>
-          <p>Use SupplierMaster, SupplierComponent, ComponentMaster, Plant, Warehouse, PurchaseRequisition, PurchaseReqLine, RFQHeader, RFQLine, SupplierQuotation, SupplierQuotationLn, PurchaseOrderHdr, PurchaseOrderLine, POSchedule, ShipmentHdr, ShipmentLine, GoodsReceiptHeader, GoodsReceiptLine, IncomingInspection, InspectionResult, InventoryTransaction, Inventory, SupplierInvoice, and PaymentTransaction.</p>
-          <p>InventoryTransaction records stock movements. Inventory stores the calculated stock balance by Component, Plant, and Warehouse. InventoryBalance is not part of v2. Procurement v2 uses US locations and USD values.</p>
+          <summary>Procurement v2 is the active Procurement model</summary>
+          <p>Use SupplierMaster, SupplierComponent, ComponentMaster, Plant, Warehouse, PurchaseRequisition, PurchaseReqLine, RFQHeader, RFQLine, SupplierQuotation, SupplierQuotationLn, PurchaseOrderHdr, PurchaseOrderLine, POSchedule, ShipmentHdr, ShipmentLine, GoodsReceiptHeader, GoodsReceiptLine, IncomingInspection, InspectionResult, InventoryReceiptDetail, InventoryTransaction, Inventory, SupplierInvoice, and PaymentTransaction.</p>
+          <p>InventoryReceiptDetail captures receipt-level supplier, component, PO, receipt, date, and price variance traceability. InventoryTransaction is the inbound StockIn ledger sourced from InventoryReceiptDetail. Inventory stores the calculated stock balance by Component, Plant, and Warehouse. InventoryBalance is not part of v2. Procurement v2 uses 2025 dates, US locations, USD values, one Plant, and one Warehouse.</p>
+        </details>
+
+        <details class="model-help">
+          <summary>Production v1 runs from the dedicated command-line pipeline</summary>
+          <p>Production v1 is a Production Execution module within MES context. It consumes Procurement final_data and generates production orders, material issues, batches, operations, quality, finished goods, genealogy, and cost summary through scripts/run_production_pipeline.py. It uses the single upstream Plant and Warehouse, ShiftCode A only, and still allows multiple WorkCenters.</p>
+          <p>The UI does not expose Production as an active pipeline option yet. Use Procurement v2 here, then run the dedicated Production pipeline from the command line.</p>
         </details>
 
         <label>

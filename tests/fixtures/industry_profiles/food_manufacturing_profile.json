@@ -1,0 +1,68 @@
+{
+  "industry_id": "food_manufacturing",
+  "industry_name": "Food Manufacturing",
+  "industry_description": "Catalog hints for packaged food procurement and production execution.",
+  "supported_domains": ["procurement", "production"],
+  "procurement": {
+    "supplier_name_patterns": ["Ingredient Supply", "Packaging Partners", "Food Grade Materials"],
+    "component_categories": ["Ingredients", "Packaging Materials", "Labels", "Bottles", "Caps", "Cleaning Consumables"],
+    "component_name_patterns": ["Ingredient Blend", "Bottle", "Cap", "Label Roll", "Packaging Film"],
+    "component_category_codes": ["Packaging", "Maintenance", "Mechanical", "Electrical"],
+    "component_material_examples": {
+      "Ingredients": ["Ingredient Blend", "Flavor Concentrate", "Sweetener"],
+      "Packaging Materials": ["Bottle", "Cap", "Label Roll", "Carton"]
+    },
+    "component_specification_patterns": {
+      "Ingredients": ["Food Grade", "Batch Certified", "25kg"],
+      "Packaging Materials": ["Food Safe", "Printed", "Standard Pack"]
+    },
+    "component_uom_preferences": {
+      "Ingredients": ["KG", "Liter"],
+      "Packaging Materials": ["EA", "Pack", "Roll"]
+    },
+    "component_cost_profiles": {
+      "Ingredients": [2.0, 150.0],
+      "Packaging Materials": [0.5, 80.0]
+    },
+    "supplier_component_relationship_rules": ["Ingredient suppliers require food safety certification."]
+  },
+  "production": {
+    "product_categories": ["Bottled Beverage", "Packaged Sauce", "Snack Pack", "Ready-to-Eat Packaged Food"],
+    "product_name_patterns": ["Bottled Beverage", "Packaged Sauce", "Snack Pack", "Ready-to-Eat Packaged Food"],
+    "work_center_names": ["Mixing Station", "Filling Line", "Sealing Station", "Labeling Line", "Packaging Line", "Quality Inspection Station"],
+    "routing_operation_names": ["Batch Preparation", "Mixing", "Filling", "Sealing", "Labeling", "Final Inspection", "Packaging Release"],
+    "product_catalog": [
+      {"name": "Bottled Beverage", "category": "Beverage", "product_type": "FinishedGood", "uom": "EA", "base_cost": 8, "base_hours": 1.5},
+      {"name": "Packaged Sauce", "category": "Sauce", "product_type": "FinishedGood", "uom": "EA", "base_cost": 6, "base_hours": 1.2},
+      {"name": "Snack Pack", "category": "Snack", "product_type": "FinishedGood", "uom": "Set", "base_cost": 5, "base_hours": 1.0},
+      {"name": "Ready-to-Eat Packaged Food", "category": "Prepared Food", "product_type": "FinishedGood", "uom": "EA", "base_cost": 9, "base_hours": 1.4}
+    ],
+    "work_center_catalog": [
+      {"name": "Mixing Station", "line_name": "Mixing"},
+      {"name": "Filling Line", "line_name": "Filling"},
+      {"name": "Sealing Station", "line_name": "Sealing"},
+      {"name": "Labeling Line", "line_name": "Labeling"},
+      {"name": "Packaging Line", "line_name": "Packaging"},
+      {"name": "Quality Inspection Station", "line_name": "Quality"}
+    ],
+    "fallback_components": [
+      {"ComponentID": 1, "ComponentName": "Ingredient Blend", "UOM": "KG"},
+      {"ComponentID": 2, "ComponentName": "Bottle", "UOM": "EA"},
+      {"ComponentID": 3, "ComponentName": "Cap", "UOM": "EA"}
+    ],
+    "fallback_plants": [{"PlantID": 1, "PlantName": "Main Food Manufacturing Plant"}],
+    "fallback_warehouses": [{"WarehouseID": 1, "PlantID": 1, "WarehouseName": "Main Ingredient Warehouse"}],
+    "bom_patterns": ["Finished food products consume ingredients, packaging, labels, and caps."],
+    "scrap_yield_profiles": {"Filling": [0.0, 2.0], "Packaging": [0.0, 1.5]},
+    "quality_defect_codes": ["FillLevelIssue", "SealFailure", "LabelMisalignment", "ContaminationRisk", "PackagingDefect"],
+    "rework_reason_codes": ["Re-label", "Re-seal", "Re-pack", "Re-inspect"],
+    "cost_profiles": {"LaborRatePerHour": [18.0, 55.0], "OverheadPct": [5.0, 18.0]}
+  },
+  "shared": {
+    "countable_uoms": ["EA", "Each", "Unit", "Piece", "PCS", "Pack", "Set"],
+    "measurable_uoms": ["KG", "Gram", "Liter", "Meter", "Roll"],
+    "default_currency": "USD",
+    "date_scope_notes": ["Generated scenarios remain in calendar year 2025."],
+    "realism_notes": ["Food profile is catalog content only; Python generates rows."]
+  }
+}

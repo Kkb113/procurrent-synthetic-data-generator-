@@ -11,12 +11,17 @@ from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 from procurement_data_generator.modules.procurement.financial_realism_profiles import get_financial_profile
 from procurement_data_generator.modules.procurement.master_generator import ProcurementMasterDataGenerator
+from procurement_data_generator.modules.shared.industry_profiles import get_default_industry_profile
+from procurement_data_generator.modules.shared.operating_scope import (
+    get_expected_plant_count,
+    get_expected_warehouse_count,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 METADATA_PATH = ROOT / "input" / "procurement_v2_metadata.xlsx"
 PLAN_PATH = ROOT / "input" / "sample_generation_plan_v2_valid.json"
-ARTIFICIAL_SUFFIX_PATTERN = re.compile(r"^\s*(Supplier|Vendor|Material|Component|Warehouse|Plant)\s+[1-9][0-9]?\s*$", re.IGNORECASE)
+ARTIFICIAL_SUFFIX_PATTERN = re.compile(r"^\s*(Supplier|Component|Warehouse|Plant)\s+[1-9][0-9]?\s*$", re.IGNORECASE)
 
 
 @pytest.fixture(scope="module")
@@ -50,12 +55,24 @@ def test_component_master_row_count_is_300(generated_v2_master) -> None:
     assert len(generated_v2_master["ComponentMaster"]) == 300
 
 
-def test_plant_row_count_is_3(generated_v2_master) -> None:
-    assert len(generated_v2_master["Plant"]) == 3
+def test_component_categories_come_from_default_ev_profile(generated_v2_master) -> None:
+    profile_categories = set(get_default_industry_profile().procurement.component_category_codes)
+
+    assert set(generated_v2_master["ComponentMaster"]["ComponentCategory"]).issubset(profile_categories)
 
 
-def test_warehouse_row_count_is_9(generated_v2_master) -> None:
-    assert len(generated_v2_master["Warehouse"]) == 9
+def test_plant_row_count_uses_shared_operating_scope(generated_v2_master) -> None:
+    assert len(generated_v2_master["Plant"]) == get_expected_plant_count()
+
+
+def test_plant_names_use_default_ev_profile_plant_types(generated_v2_master) -> None:
+    plant_types = get_default_industry_profile().procurement.plant_type_names
+
+    assert all(any(plant_type in plant_name for plant_type in plant_types) for plant_name in generated_v2_master["Plant"]["PlantName"])
+
+
+def test_warehouse_row_count_uses_shared_operating_scope(generated_v2_master) -> None:
+    assert len(generated_v2_master["Warehouse"]) == get_expected_warehouse_count()
 
 
 def test_supplier_component_row_count_is_450(generated_v2_master) -> None:
@@ -76,6 +93,7 @@ def test_component_master_pk_unique_and_non_null(generated_v2_master) -> None:
 
 def test_warehouse_plant_fk_references_plant(generated_v2_master) -> None:
     assert set(generated_v2_master["Warehouse"]["PlantID"]).issubset(set(generated_v2_master["Plant"]["PlantID"]))
+    assert set(generated_v2_master["Warehouse"]["PlantID"]) == set(generated_v2_master["Plant"]["PlantID"])
 
 
 def test_supplier_component_supplier_fk_references_supplier(generated_v2_master) -> None:
@@ -142,7 +160,8 @@ def test_status_columns_have_variety(generated_v2_master) -> None:
         ("SupplierComponent", "Status"),
     ]
     for table_name, column_name in checks:
-        assert generated_v2_master[table_name][column_name].nunique() > 1
+        if len(generated_v2_master[table_name]) > 1:
+            assert generated_v2_master[table_name][column_name].nunique() > 1
 
 
 def test_no_artificial_numeric_suffix_in_true_name_columns(generated_v2_master) -> None:

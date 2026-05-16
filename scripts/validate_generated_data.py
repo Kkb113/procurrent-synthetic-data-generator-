@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument("--data-folder", action="append", required=True, help="Folder containing generated CSV files. May be repeated; later folders override earlier tables.")
     parser.add_argument("--plan", required=False, help="Optional LLM generation/formula plan JSON.")
     parser.add_argument("--report-folder", default="output", help="Folder to write data_quality_report files.")
-    parser.add_argument("--model-version", choices=["v1", "v2"], default="v1", help="Procurement model version for validation/reconciliation.")
+    parser.add_argument("--model-version", choices=["v2"], default="v2", help="Procurement model version for validation/reconciliation. Procurement v2 is the only active Procurement model.")
     args = parser.parse_args()
 
     metadata_result = load_metadata_schema(args.metadata)

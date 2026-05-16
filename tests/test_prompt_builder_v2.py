@@ -33,6 +33,7 @@ V2_TABLES = [
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -46,21 +47,7 @@ def test_build_llm_planning_prompt_supports_model_version_v2() -> None:
     assert "Procurement v2 Exact Model" in prompt
 
 
-def test_v1_prompt_behavior_still_works() -> None:
-    result = load_metadata_schema(PROJECT_ROOT / "input" / "sample_procurement_metadata_phase9.xlsx")
-    assert result.schema is not None
-
-    prompt = build_llm_planning_prompt(
-        result.schema,
-        parse_mermaid_erd_file(PROJECT_ROOT / "input" / "procurement_erd_phase9.mmd"),
-        "Existing v1 scenario",
-    )
-
-    assert "InventoryBalance.OnHandQuantity" in prompt
-    assert "Procurement v2 Exact Model" not in prompt
-
-
-def test_v2_prompt_includes_all_24_table_names() -> None:
+def test_v2_prompt_includes_all_25_table_names() -> None:
     prompt = _build_v2_prompt()
 
     for table_name in V2_TABLES:
@@ -70,6 +57,7 @@ def test_v2_prompt_includes_all_24_table_names() -> None:
 def test_v2_prompt_distinguishes_inventory_from_inventory_balance() -> None:
     prompt = _build_v2_prompt()
 
+    assert "InventoryReceiptDetail is included in Procurement v2" in prompt
     assert "Inventory is included in Procurement v2" in prompt
     assert "Inventory should be calculated from InventoryTransaction" in prompt
     assert "InventoryBalance must not be generated or planned for Procurement v2." in prompt
@@ -78,6 +66,8 @@ def test_v2_prompt_distinguishes_inventory_from_inventory_balance() -> None:
 def test_v2_prompt_includes_stockin_and_inventory_value_guidance() -> None:
     prompt = _build_v2_prompt()
 
+    assert "InventoryReceiptDetail must be planned between InspectionResult and InventoryTransaction." in prompt
+    assert "InventoryReceiptDetail.CrossYearDeliveryFlag" in prompt
     assert "InventoryTransaction.TransactionType must be StockIn" in prompt
     assert "InventoryTransaction should represent StockIn postings only" in prompt
     assert "InventoryValue must equal TransactionQuantity * UnitPrice" in prompt
@@ -142,8 +132,11 @@ def test_v2_prompt_includes_lifecycle_based_status_realism() -> None:
     prompt = _build_v2_prompt()
 
     assert "Lifecycle-Based Status Realism" in prompt
-    assert "Do not allow constant/default status values across entire tables" in prompt
+    assert "POStatus = Received only" in prompt
+    assert "LineStatus = Received only" in prompt
     assert "Statuses must be derived from lifecycle facts." in prompt
+    assert "InventoryTransaction should be generated from InventoryReceiptDetail" in prompt
+    assert "InventoryTransaction.UnitPrice = InventoryReceiptDetail.DeliveredUnitPrice" in prompt
 
 
 def test_v2_prompt_includes_rejection_reason_realism() -> None:

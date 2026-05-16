@@ -21,13 +21,13 @@ def test_string_maps_to_nvarchar_255() -> None:
 
 
 def test_nullable_no_creates_not_null() -> None:
-    sql = SQLDDLGenerator().generate_create_table_sql(_schema().tables["Vendor"])
+    sql = SQLDDLGenerator().generate_create_table_sql(_schema().tables["SupplierMaster"])
 
-    assert "[VendorID] INT NOT NULL" in sql
+    assert "[SupplierID] INT NOT NULL" in sql
 
 
 def test_nullable_yes_creates_null() -> None:
-    table = _schema().tables["Vendor"].model_copy(
+    table = _schema().tables["SupplierMaster"].model_copy(
         update={"columns": [_col("OptionalText", "varchar(50)", "category", "Yes")]}
     )
     sql = SQLDDLGenerator().generate_create_table_sql(table)
@@ -36,16 +36,16 @@ def test_nullable_yes_creates_null() -> None:
 
 
 def test_pk_constraint_generated() -> None:
-    sql = SQLDDLGenerator().generate_pk_constraint_sql(_schema().tables["Vendor"])
+    sql = SQLDDLGenerator().generate_pk_constraint_sql(_schema().tables["SupplierMaster"])
 
-    assert sql == "ALTER TABLE [dbo].[Vendor] ADD CONSTRAINT [PK_Vendor] PRIMARY KEY ([VendorID]);"
+    assert sql == "ALTER TABLE [dbo].[SupplierMaster] ADD CONSTRAINT [PK_SupplierMaster] PRIMARY KEY ([SupplierID]);"
 
 
 def test_fk_constraint_generated() -> None:
-    sql = SQLDDLGenerator().generate_fk_constraint_sql(_schema().tables["PurchaseOrderHeader"])[0]
+    sql = SQLDDLGenerator().generate_fk_constraint_sql(_schema().tables["PurchaseOrderHdr"])[0]
 
-    assert "CONSTRAINT [FK_PurchaseOrderHeader_Vendor_VendorID]" in sql
-    assert "FOREIGN KEY ([VendorID]) REFERENCES [dbo].[Vendor] ([VendorID])" in sql
+    assert "CONSTRAINT [FK_PurchaseOrderHdr_SupplierMaster_SupplierID]" in sql
+    assert "FOREIGN KEY ([SupplierID]) REFERENCES [dbo].[SupplierMaster] ([SupplierID])" in sql
 
 
 def test_bracket_escaping_works() -> None:
@@ -53,9 +53,9 @@ def test_bracket_escaping_works() -> None:
 
 
 def test_create_table_sql_contains_expected_columns() -> None:
-    sql = SQLDDLGenerator().generate_create_table_sql(_schema().tables["PurchaseOrderHeader"])
+    sql = SQLDDLGenerator().generate_create_table_sql(_schema().tables["PurchaseOrderHdr"])
 
-    assert "CREATE TABLE [dbo].[PurchaseOrderHeader]" in sql
+    assert "CREATE TABLE [dbo].[PurchaseOrderHdr]" in sql
     assert "[PurchaseOrderID] INT NOT NULL" in sql
     assert "[TotalAmount] DECIMAL(18,2) NOT NULL" in sql
 
@@ -63,26 +63,26 @@ def test_create_table_sql_contains_expected_columns() -> None:
 def _schema() -> SchemaContract:
     return SchemaContract(
         tables={
-            "Vendor": TableContract(
-                table_name="Vendor",
+            "SupplierMaster": TableContract(
+                table_name="SupplierMaster",
                 process_order=1,
                 area="Master",
-                table_role="vendor_dimension",
+                table_role="supplier_master",
                 target_rows=1,
                 columns=[
-                    _col("VendorID", "int", "sequence_id", "No", "PK"),
-                    _col("VendorName", "varchar(200)", "vendor_name", "No"),
+                    _col("SupplierID", "int", "sequence_id", "No", "PK"),
+                    _col("SupplierName", "varchar(200)", "vendor_name", "No"),
                 ],
             ),
-            "PurchaseOrderHeader": TableContract(
-                table_name="PurchaseOrderHeader",
+            "PurchaseOrderHdr": TableContract(
+                table_name="PurchaseOrderHdr",
                 process_order=2,
                 area="Procurement",
                 table_role="purchase_order_header",
                 target_rows=1,
                 columns=[
                     _col("PurchaseOrderID", "int", "sequence_id", "No", "PK"),
-                    _col("VendorID", "int", "foreign_key", "No", "FK", "Vendor", "VendorID"),
+                    _col("SupplierID", "int", "foreign_key", "No", "FK", "SupplierMaster", "SupplierID"),
                     _col("TotalAmount", "decimal(18,2)", "decimal_range", "No"),
                 ],
             ),

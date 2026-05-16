@@ -10,6 +10,10 @@ from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 from procurement_data_generator.modules.procurement.master_generator import ProcurementMasterDataGenerator
 from procurement_data_generator.modules.procurement.transaction_generator import ProcurementTransactionGenerator
+from procurement_data_generator.modules.shared.operating_scope import (
+    get_expected_plant_count,
+    get_expected_warehouse_count,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +36,7 @@ EXPECTED_TABLES = {
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -69,18 +74,80 @@ def test_v2_transaction_generator_creates_inventory_and_process_tables(generated
     _, _, _, data = generated_v2_transactions
     assert set(data) == EXPECTED_TABLES
     assert "Inventory" in data
+    assert "InventoryReceiptDetail" in data
     assert "InventoryBalance" not in data
+
+
+def test_v2_transactions_use_single_plant_and_warehouse_scope(generated_v2_transactions) -> None:
+    _, _, master, data = generated_v2_transactions
+    plant_ids = set(master["Plant"]["PlantID"])
+    warehouse_ids = set(master["Warehouse"]["WarehouseID"])
+    assert len(plant_ids) == get_expected_plant_count()
+    assert len(warehouse_ids) == get_expected_warehouse_count()
+
+    for table_name, frame in data.items():
+        if "PlantID" in frame.columns:
+            assert set(frame["PlantID"].dropna()) == plant_ids, table_name
+        if "WarehouseID" in frame.columns:
+            assert set(frame["WarehouseID"].dropna()) == warehouse_ids, table_name
+
+
+def test_countable_component_quantities_are_integer_across_v2_lifecycle(generated_v2_transactions) -> None:
+    _, _, master, data = generated_v2_transactions
+    countable_components = _countable_component_ids(master)
+
+    direct_specs = [
+        ("PurchaseReqLine", "RequestedQuantity"),
+        ("RFQLine", "RFQQuantity"),
+        ("SupplierQuotationLn", "QuotedQuantity"),
+        ("PurchaseOrderLine", "OrderedQuantity"),
+        ("ShipmentLine", "ShippedQuantity"),
+        ("GoodsReceiptLine", "ReceivedQuantity"),
+        ("InventoryReceiptDetail", "AcceptedQuantity"),
+        ("InventoryTransaction", "TransactionQuantity"),
+        ("Inventory", "OnHandQuantity"),
+        ("Inventory", "AvailableQuantity"),
+    ]
+    for table_name, quantity_column in direct_specs:
+        rows = data[table_name][data[table_name]["ComponentID"].isin(countable_components)]
+        assert _is_whole(rows[quantity_column]).all(), (table_name, quantity_column)
+
+    schedule = data["POSchedule"].merge(data["PurchaseOrderLine"][["PurchaseOrderLineID", "ComponentID"]], on="PurchaseOrderLineID")
+    schedule = schedule[schedule["ComponentID"].isin(countable_components)]
+    assert _is_whole(schedule["ScheduledQuantity"]).all()
+
+    inspection = (
+        data["InspectionResult"]
+        .merge(data["IncomingInspection"][["InspectionID", "GoodsReceiptLineID"]], on="InspectionID")
+        .merge(data["GoodsReceiptLine"][["GoodsReceiptLineID", "ComponentID"]], on="GoodsReceiptLineID")
+    )
+    inspection = inspection[inspection["ComponentID"].isin(countable_components)]
+    assert _is_whole(inspection["InspectedQuantity"]).all()
+    assert _is_whole(inspection["AcceptedQuantity"]).all()
+
+
+def test_decimal_component_quantities_may_remain_decimal(generated_v2_transactions) -> None:
+    _, _, master, data = generated_v2_transactions
+    decimal_components = _decimal_component_ids(master)
+
+    po_lines = data["PurchaseOrderLine"][data["PurchaseOrderLine"]["ComponentID"].isin(decimal_components)]
+    stock_in = data["InventoryTransaction"][data["InventoryTransaction"]["ComponentID"].isin(decimal_components)]
+
+    assert (~_is_whole(po_lines["OrderedQuantity"])).any()
+    assert (~_is_whole(stock_in["TransactionQuantity"])).any()
 
 
 def test_v2_transaction_row_counts_match_metadata_targets(generated_v2_transactions) -> None:
     schema, _, _, data = generated_v2_transactions
     lifecycle_derived_tables = {
         "PurchaseOrderLine",
+        "PurchaseOrderHdr",
         "POSchedule",
         "ShipmentLine",
         "GoodsReceiptLine",
         "IncomingInspection",
         "InspectionResult",
+        "InventoryReceiptDetail",
         "InventoryTransaction",
         "Inventory",
     }
@@ -192,6 +259,51 @@ def test_po_schedule_total_quantity_does_not_exceed_ordered_quantity(generated_v
     grouped = data["POSchedule"].groupby("PurchaseOrderLineID")["ScheduledQuantity"].sum().reset_index()
     merged = grouped.merge(data["PurchaseOrderLine"][["PurchaseOrderLineID", "OrderedQuantity"]], on="PurchaseOrderLineID")
     assert (merged["ScheduledQuantity"] <= merged["OrderedQuantity"] + 0.0001).all()
+    assert (abs(merged["ScheduledQuantity"] - merged["OrderedQuantity"]) <= 0.0001).all()
+
+
+def test_v2_full_received_lifecycle_quantities_are_equal(generated_v2_transactions) -> None:
+    _, _, _, data = generated_v2_transactions
+    po_lines = data["PurchaseOrderLine"][["PurchaseOrderLineID", "OrderedQuantity"]]
+
+    scheduled = data["POSchedule"].groupby("PurchaseOrderLineID", as_index=False)["ScheduledQuantity"].sum()
+    shipped = data["ShipmentLine"].groupby("PurchaseOrderLineID", as_index=False)["ShippedQuantity"].sum()
+    received = data["GoodsReceiptLine"].groupby("PurchaseOrderLineID", as_index=False)["ReceivedQuantity"].sum()
+    inspected = (
+        data["InspectionResult"]
+        .merge(data["IncomingInspection"][["InspectionID", "GoodsReceiptLineID"]], on="InspectionID")
+        .merge(data["GoodsReceiptLine"][["GoodsReceiptLineID", "PurchaseOrderLineID"]], on="GoodsReceiptLineID")
+        .groupby("PurchaseOrderLineID", as_index=False)[["InspectedQuantity", "AcceptedQuantity", "RejectedQuantity"]]
+        .sum()
+    )
+    stock_in = data["InventoryTransaction"].groupby("PurchaseOrderLineID", as_index=False)["TransactionQuantity"].sum()
+
+    lifecycle = (
+        po_lines.merge(scheduled, on="PurchaseOrderLineID")
+        .merge(shipped, on="PurchaseOrderLineID")
+        .merge(received, on="PurchaseOrderLineID")
+        .merge(inspected, on="PurchaseOrderLineID")
+        .merge(stock_in, on="PurchaseOrderLineID")
+    )
+
+    for column_name in [
+        "ScheduledQuantity",
+        "ShippedQuantity",
+        "ReceivedQuantity",
+        "InspectedQuantity",
+        "AcceptedQuantity",
+        "TransactionQuantity",
+    ]:
+        assert (abs(lifecycle[column_name] - lifecycle["OrderedQuantity"]) <= 0.0001).all()
+    assert (lifecycle["RejectedQuantity"] == 0).all()
+
+
+def test_v2_full_received_lifecycle_has_no_short_damaged_or_rejected_quantities(generated_v2_transactions) -> None:
+    _, _, _, data = generated_v2_transactions
+
+    assert (data["GoodsReceiptLine"]["ShortQuantity"] == 0).all()
+    assert (data["GoodsReceiptLine"]["DamagedQuantity"] == 0).all()
+    assert (data["InspectionResult"]["RejectedQuantity"] == 0).all()
 
 
 def test_rfq_quote_and_po_quantities_do_not_exceed_upstream_lifecycle_quantities(generated_v2_transactions) -> None:
@@ -283,8 +395,83 @@ def test_inspection_cumulative_accepted_quantity_does_not_exceed_po(generated_v2
 
 def test_inventory_transaction_quantity_equals_accepted_quantity(generated_v2_transactions) -> None:
     _, _, _, data = generated_v2_transactions
-    merged = data["InventoryTransaction"].merge(data["InspectionResult"][["InspectionResultID", "AcceptedQuantity"]], on="InspectionResultID")
+    merged = data["InventoryTransaction"].merge(data["InventoryReceiptDetail"][["InspectionResultID", "AcceptedQuantity"]], on="InspectionResultID")
     assert (abs(merged["TransactionQuantity"] - merged["AcceptedQuantity"]) <= 0.0001).all()
+
+
+def test_inventory_receipt_detail_generated_at_inspection_result_grain(generated_v2_transactions) -> None:
+    schema, _, _, data = generated_v2_transactions
+    detail = data["InventoryReceiptDetail"]
+    required_columns = {column.column_name for column in schema.tables["InventoryReceiptDetail"].columns}
+
+    assert len(detail) > 0
+    assert required_columns.issubset(detail.columns)
+    assert len(detail) == data["InspectionResult"]["InspectionResultID"].nunique()
+    assert detail["InspectionResultID"].is_unique
+
+
+def test_inventory_receipt_detail_lineage_quantities_dates_and_values(generated_v2_transactions) -> None:
+    _, _, master, data = generated_v2_transactions
+    detail = data["InventoryReceiptDetail"]
+    merged = (
+        detail.merge(data["InspectionResult"][["InspectionResultID", "InspectionID", "InspectedQuantity", "AcceptedQuantity", "RejectedQuantity"]], on="InspectionResultID", suffixes=("", "_inspection"))
+        .merge(data["IncomingInspection"][["InspectionID", "GoodsReceiptLineID", "InspectionDate"]], on="InspectionID", suffixes=("", "_incoming"))
+        .merge(data["GoodsReceiptLine"][["GoodsReceiptLineID", "GoodsReceiptID", "ShipmentLineID", "PurchaseOrderLineID", "ComponentID", "ShippedQuantity", "ReceivedQuantity"]], on="GoodsReceiptLineID", suffixes=("", "_receipt"))
+        .merge(data["GoodsReceiptHeader"][["GoodsReceiptID", "PlantID", "WarehouseID", "ReceiptDate"]], on="GoodsReceiptID", suffixes=("", "_header"))
+        .merge(data["ShipmentLine"][["ShipmentLineID", "POScheduleID", "ShippedQuantity"]], on="ShipmentLineID", suffixes=("", "_shipment"))
+        .merge(data["POSchedule"][["POScheduleID", "ScheduledDeliveryDate"]], on="POScheduleID")
+        .merge(data["PurchaseOrderLine"][["PurchaseOrderLineID", "PurchaseOrderID", "ComponentID", "OrderedQuantity", "UnitPrice"]], on="PurchaseOrderLineID", suffixes=("", "_po_line"))
+        .merge(data["PurchaseOrderHdr"][["PurchaseOrderID", "SupplierID", "OrderDate"]], on="PurchaseOrderID", suffixes=("", "_po"))
+    )
+
+    assert (merged["GoodsReceiptLineID"] == merged["GoodsReceiptLineID_incoming"]).all()
+    assert (merged["PurchaseOrderID"] == merged["PurchaseOrderID_po_line"]).all()
+    assert (merged["SupplierID"] == merged["SupplierID_po"]).all()
+    assert (merged["ComponentID"] == merged["ComponentID_po_line"]).all()
+    assert (merged["PlantID"] == merged["PlantID_header"]).all()
+    assert (merged["WarehouseID"] == merged["WarehouseID_header"]).all()
+    assert set(merged["WarehouseID"]).issubset(set(master["Warehouse"]["WarehouseID"]))
+
+    assert (abs(merged["OrderedQuantity"] - merged["OrderedQuantity_po_line"]) <= 0.0001).all()
+    assert (abs(merged["ShippedQuantity"] - merged["ShippedQuantity_shipment"]) <= 0.0001).all()
+    assert (abs(merged["ReceivedQuantity"] - merged["ReceivedQuantity_receipt"]) <= 0.0001).all()
+    assert (abs(merged["InspectedQuantity"] - merged["InspectedQuantity_inspection"]) <= 0.0001).all()
+    assert (abs(merged["AcceptedQuantity"] - merged["AcceptedQuantity_inspection"]) <= 0.0001).all()
+    assert (merged["RejectedQuantity"] == 0).all()
+    assert (abs(merged["AcceptedQuantity"] - merged["OrderedQuantity"]) <= 0.0001).all()
+
+    assert (pd.to_datetime(merged["POOrderDate"]) == pd.to_datetime(merged["OrderDate"])).all()
+    assert (pd.to_datetime(merged["ExpectedDeliveryDate"]) == pd.to_datetime(merged["ScheduledDeliveryDate"])).all()
+    assert (pd.to_datetime(merged["ActualDeliveryDate"]) == pd.to_datetime(merged["ReceiptDate"])).all()
+    assert (pd.to_datetime(merged["StockPostedDate"]) >= pd.to_datetime(merged["ActualDeliveryDate"])).all()
+    for column_name in ["POOrderDate", "ExpectedDeliveryDate", "ActualDeliveryDate", "StockPostedDate"]:
+        assert (pd.to_datetime(merged[column_name]) >= pd.Timestamp("2025-01-01")).all()
+        assert (pd.to_datetime(merged[column_name]) <= pd.Timestamp("2025-12-31")).all()
+    assert set(merged["CrossYearDeliveryFlag"]) == {0}
+
+    assert (abs(merged["OrderedUnitPrice"] - merged["UnitPrice"]) <= 0.01).all()
+    assert (abs(merged["PriceDifference"] - (merged["DeliveredUnitPrice"] - merged["OrderedUnitPrice"])) <= 0.01).all()
+    expected_pct = ((merged["DeliveredUnitPrice"] - merged["OrderedUnitPrice"]) / merged["OrderedUnitPrice"] * 100).round(2)
+    assert (abs(merged["PriceDifferencePct"] - expected_pct) <= 0.01).all()
+    assert (abs(merged["OrderedValue"] - (merged["OrderedQuantity"] * merged["OrderedUnitPrice"]).round(2)) <= 0.0100001).all()
+    assert (abs(merged["DeliveredValue"] - (merged["ReceivedQuantity"] * merged["DeliveredUnitPrice"]).round(2)) <= 0.0100001).all()
+    assert (abs(merged["AcceptedStockValue"] - (merged["AcceptedQuantity"] * merged["DeliveredUnitPrice"]).round(2)) <= 0.0100001).all()
+
+
+def test_inventory_receipt_detail_status_logic(generated_v2_transactions) -> None:
+    _, _, _, data = generated_v2_transactions
+    detail = data["InventoryReceiptDetail"]
+    delay = (pd.to_datetime(detail["ActualDeliveryDate"]) - pd.to_datetime(detail["ExpectedDeliveryDate"])).dt.days
+    expected_delivery_status = pd.Series("OnTime", index=detail.index)
+    expected_delivery_status[delay < 0] = "Early"
+    expected_delivery_status[delay > 0] = "Delayed"
+    expected_price_status = pd.Series("NoChange", index=detail.index)
+    expected_price_status[detail["PriceDifference"] > 0.01] = "PriceIncrease"
+    expected_price_status[detail["PriceDifference"] < -0.01] = "PriceDecrease"
+
+    assert set(detail["InventoryReceiptStatus"]) == {"Received"}
+    assert (detail["DeliveryStatus"] == expected_delivery_status).all()
+    assert (detail["PriceVarianceStatus"] == expected_price_status).all()
 
 
 def test_inventory_transaction_cumulative_stock_in_does_not_exceed_po_ordered_quantity(generated_v2_transactions) -> None:
@@ -294,6 +481,43 @@ def test_inventory_transaction_cumulative_stock_in_does_not_exceed_po_ordered_qu
 
     assert (stock_in["TransactionQuantity"] <= stock_in["OrderedQuantity"] + 0.0001).all()
     assert stock_in[stock_in["TransactionQuantity"] > stock_in["OrderedQuantity"] + 0.0001].empty
+
+
+def test_inventory_transaction_is_sourced_from_inventory_receipt_detail(generated_v2_transactions) -> None:
+    _, _, _, data = generated_v2_transactions
+    transactions = data["InventoryTransaction"]
+    detail = data["InventoryReceiptDetail"]
+
+    assert len(transactions) == len(detail)
+    merged = transactions.merge(
+        detail[
+            [
+                "InspectionResultID",
+                "GoodsReceiptLineID",
+                "PurchaseOrderLineID",
+                "SupplierID",
+                "ComponentID",
+                "PlantID",
+                "WarehouseID",
+                "StockPostedDate",
+                "AcceptedQuantity",
+                "DeliveredUnitPrice",
+            ]
+        ],
+        on="InspectionResultID",
+        suffixes=("_txn", "_detail"),
+    )
+    assert len(merged) == len(transactions)
+    assert (merged["GoodsReceiptLineID_txn"] == merged["GoodsReceiptLineID_detail"]).all()
+    assert (merged["PurchaseOrderLineID_txn"] == merged["PurchaseOrderLineID_detail"]).all()
+    assert (merged["SupplierID_txn"] == merged["SupplierID_detail"]).all()
+    assert (merged["ComponentID_txn"] == merged["ComponentID_detail"]).all()
+    assert (merged["PlantID_txn"] == merged["PlantID_detail"]).all()
+    assert (merged["WarehouseID_txn"] == merged["WarehouseID_detail"]).all()
+    assert (pd.to_datetime(merged["TransactionDate"]) == pd.to_datetime(merged["StockPostedDate"])).all()
+    assert (abs(merged["TransactionQuantity"] - merged["AcceptedQuantity"]) <= 0.0001).all()
+    assert (abs(merged["UnitPrice"] - merged["DeliveredUnitPrice"]) <= 0.01).all()
+    assert merged["ReferenceDocument"].astype(str).str.startswith("IRD-").all()
 
 
 def test_inventory_transaction_stock_in_columns_are_populated(generated_v2_transactions) -> None:
@@ -337,13 +561,15 @@ def test_inventory_transaction_receipt_and_po_lineage(generated_v2_transactions)
     assert (receipt_lineage["PurchaseOrderLineID_txn"] == receipt_lineage["PurchaseOrderLineID_receipt"]).all()
     assert (receipt_lineage["ComponentID_txn"] == receipt_lineage["ComponentID_receipt"]).all()
 
-    po_supplier = data["PurchaseOrderLine"][["PurchaseOrderLineID", "PurchaseOrderID", "UnitPrice"]].merge(
+    po_supplier = data["PurchaseOrderLine"][["PurchaseOrderLineID", "PurchaseOrderID"]].merge(
         data["PurchaseOrderHdr"][["PurchaseOrderID", "SupplierID"]],
         on="PurchaseOrderID",
     )
     po_lineage = transactions.merge(po_supplier, on="PurchaseOrderLineID", suffixes=("_txn", "_po"))
     assert (po_lineage["SupplierID_txn"] == po_lineage["SupplierID_po"]).all()
-    assert (abs(po_lineage["UnitPrice_txn"] - po_lineage["UnitPrice_po"]) <= 0.01).all()
+
+    detail_lineage = transactions.merge(data["InventoryReceiptDetail"][["InspectionResultID", "DeliveredUnitPrice"]], on="InspectionResultID")
+    assert (abs(detail_lineage["UnitPrice"] - detail_lineage["DeliveredUnitPrice"]) <= 0.01).all()
 
 
 def test_inventory_transaction_value_is_calculated_and_rounded(generated_v2_transactions) -> None:
@@ -544,19 +770,21 @@ def test_status_values_are_within_allowed_values(generated_v2_transactions) -> N
                 assert set(map(str, data[table_name][column.column_name].dropna())).issubset(set(map(str, column.allowed_values)))
 
 
-def test_key_status_columns_have_diversity(generated_v2_transactions) -> None:
+def test_v2_full_received_status_columns_are_single_completed_values(generated_v2_transactions) -> None:
     _, _, _, data = generated_v2_transactions
-    for table_name, column_name in [
-        ("PurchaseOrderHdr", "POStatus"),
-        ("PurchaseOrderLine", "LineStatus"),
-        ("ShipmentHdr", "ShipmentStatus"),
-        ("GoodsReceiptHeader", "ReceiptStatus"),
-        ("IncomingInspection", "InspectionStatus"),
-        ("InspectionResult", "ResultStatus"),
-        ("SupplierInvoice", "InvoiceStatus"),
-        ("PaymentTransaction", "PaymentStatus"),
-    ]:
-        assert data[table_name][column_name].nunique() > 1
+    expected = {
+        ("PurchaseOrderHdr", "POStatus"): {"Received"},
+        ("PurchaseOrderLine", "LineStatus"): {"Received"},
+        ("POSchedule", "ScheduleStatus"): {"Shipped"},
+        ("ShipmentHdr", "ShipmentStatus"): {"Delivered"},
+        ("GoodsReceiptHeader", "ReceiptStatus"): {"Received"},
+        ("IncomingInspection", "InspectionStatus"): {"Passed"},
+        ("InspectionResult", "ResultStatus"): {"Passed"},
+    }
+    for (table_name, column_name), values in expected.items():
+        assert set(data[table_name][column_name]) == values
+    assert not set(data["PurchaseOrderHdr"]["POStatus"]) & {"Sent", "PartiallyReceived", "Closed"}
+    assert not set(data["PurchaseOrderLine"]["LineStatus"]) & {"PartiallyShipped", "PartiallyReceived", "Closed"}
     assert set(data["InventoryTransaction"]["TransactionType"]) == {"StockIn"}
 
 
@@ -566,18 +794,16 @@ def test_rejection_reason_logic_and_variety(generated_v2_transactions) -> None:
     zero = result[result["RejectedQuantity"] == 0]
     rejected = result[result["RejectedQuantity"] > 0]
     assert zero["RejectionReason"].fillna("").isin(["", "Not Applicable"]).all()
-    assert not rejected.empty
-    assert rejected["RejectionReason"].nunique() > 1
+    assert rejected.empty
 
 
-def test_realistic_exception_events_exist(generated_v2_transactions) -> None:
+def test_realistic_exception_events_are_disabled_for_full_received_lifecycle(generated_v2_transactions) -> None:
     _, _, _, data = generated_v2_transactions
     shipment_lines = data["ShipmentLine"].merge(data["POSchedule"][["POScheduleID", "ScheduledQuantity"]], on="POScheduleID")
-    assert (shipment_lines["ShippedQuantity"] < shipment_lines["ScheduledQuantity"]).any()
-    delayed = data["ShipmentHdr"].merge(data["PurchaseOrderHdr"][["PurchaseOrderID", "ExpectedDeliveryDate"]], on="PurchaseOrderID")
-    assert (_dt(delayed["ShipmentDate"]) > _dt(delayed["ExpectedDeliveryDate"])).any()
-    assert (data["GoodsReceiptLine"]["ShortQuantity"] > 0).any()
-    assert (data["InspectionResult"]["RejectedQuantity"] > 0).any()
+    assert not (shipment_lines["ShippedQuantity"] < shipment_lines["ScheduledQuantity"]).any()
+    assert not (data["GoodsReceiptLine"]["ShortQuantity"] > 0).any()
+    assert not (data["GoodsReceiptLine"]["DamagedQuantity"] > 0).any()
+    assert not (data["InspectionResult"]["RejectedQuantity"] > 0).any()
 
 
 def test_invoice_and_payment_status_behaviors_exist(generated_v2_transactions) -> None:
@@ -617,6 +843,54 @@ def test_different_seed_changes_some_v2_transaction_values(generated_v2_transact
 
 def _dt(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series)
+
+
+def _countable_component_ids(master: dict[str, pd.DataFrame]) -> set[int]:
+    countable_uoms = {
+        "assembly",
+        "batterypack",
+        "box",
+        "controller",
+        "device",
+        "ea",
+        "each",
+        "module",
+        "motor",
+        "pack",
+        "pcs",
+        "piece",
+        "sensor",
+        "set",
+        "unit",
+    }
+    components = master["ComponentMaster"]
+    uom = components["UOM"].astype(str).str.replace(" ", "", regex=False).str.lower()
+    return set(components.loc[uom.isin(countable_uoms), "ComponentID"].astype(int))
+
+
+def _decimal_component_ids(master: dict[str, pd.DataFrame]) -> set[int]:
+    decimal_uoms = {
+        "coil",
+        "gallon",
+        "kg",
+        "kilogram",
+        "liter",
+        "litre",
+        "liquidvolume",
+        "meter",
+        "metre",
+        "roll",
+        "sheetweight",
+        "ton",
+    }
+    components = master["ComponentMaster"]
+    uom = components["UOM"].astype(str).str.replace(" ", "", regex=False).str.lower()
+    return set(components.loc[uom.isin(decimal_uoms), "ComponentID"].astype(int))
+
+
+def _is_whole(series: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    return (numeric - numeric.round()).abs() <= 0.0001
 
 
 def _expected_inventory_status(row) -> str:

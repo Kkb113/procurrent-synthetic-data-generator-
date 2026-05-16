@@ -61,7 +61,7 @@ class ProcurementPipelineRunner:
         generate_plan: bool = False,
         use_existing_plan: bool = False,
         if_table_exists: str = "replace",
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> PipelineRunReport:
         run_folder = self.create_run_folder(output_folder)
         report = PipelineRunReport(
@@ -241,7 +241,7 @@ class ProcurementPipelineRunner:
         markdown_path.write_text(self._pipeline_markdown(report), encoding="utf-8")
         return json_path, markdown_path
 
-    def _run_prompt_stage(self, report, schema, relationships, scenario_path, run_folder, model_version: str = "v1") -> str:
+    def _run_prompt_stage(self, report, schema, relationships, scenario_path, run_folder, model_version: str = "v2") -> str:
         stage = PipelineStageReport("prompt_building")
         report.add_stage(stage)
         stage.start()
@@ -339,7 +339,7 @@ class ProcurementPipelineRunner:
         )
         return result.plan, str(normalized_path)
 
-    def _run_master_generation(self, report, schema, plan, seed, run_folder, model_version: str = "v1") -> dict[str, pd.DataFrame]:
+    def _run_master_generation(self, report, schema, plan, seed, run_folder, model_version: str = "v2") -> dict[str, pd.DataFrame]:
         stage = PipelineStageReport("master_generation")
         report.add_stage(stage)
         stage.start()
@@ -363,7 +363,7 @@ class ProcurementPipelineRunner:
         stage.finish(status, message, len(validation_report.errors), len(validation_report.warnings), output_paths)
         return dataframes
 
-    def _run_transaction_generation(self, report, schema, plan, master_data, seed, run_folder, model_version: str = "v1") -> dict[str, pd.DataFrame]:
+    def _run_transaction_generation(self, report, schema, plan, master_data, seed, run_folder, model_version: str = "v2") -> dict[str, pd.DataFrame]:
         stage = PipelineStageReport("transaction_generation")
         report.add_stage(stage)
         stage.start()
@@ -399,7 +399,7 @@ class ProcurementPipelineRunner:
         stage.finish("passed", "Final data merged using master -> transaction -> formula override order.", output_paths=[str(run_folder / "final_data")])
         return final_data
 
-    def _run_data_quality_validation(self, report, final_data, schema, plan, run_folder, model_version: str = "v1") -> Path:
+    def _run_data_quality_validation(self, report, final_data, schema, plan, run_folder, model_version: str = "v2") -> Path:
         stage = PipelineStageReport("data_quality_validation")
         report.add_stage(stage)
         stage.start()
@@ -437,7 +437,7 @@ class ProcurementPipelineRunner:
             report.warnings.extend(sql_report.errors)
         return json_path
 
-    def _run_audit_report(self, report, metadata_path, erd_path, scenario_path, plan_path, data_quality_path, sql_report_path, run_folder, model_version: str = "v1") -> None:
+    def _run_audit_report(self, report, metadata_path, erd_path, scenario_path, plan_path, data_quality_path, sql_report_path, run_folder, model_version: str = "v2") -> None:
         stage = PipelineStageReport("audit_report")
         report.add_stage(stage)
         stage.start()

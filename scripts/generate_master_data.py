@@ -23,6 +23,11 @@ from procurement_data_generator.modules.procurement.role_validator import (
     format_procurement_role_validation_result,
     validate_procurement_roles,
 )
+from procurement_data_generator.modules.shared.industry_profiles import (
+    DEFAULT_INDUSTRY_PROFILE_ID,
+    get_supported_industry_profile_ids,
+    load_industry_profile_from_json,
+)
 
 
 def main() -> int:
@@ -34,7 +39,9 @@ def main() -> int:
     parser.add_argument("--output", required=True, help="Output folder for generated CSV files.")
     parser.add_argument("--seed", type=int, default=None, help="Optional deterministic random seed.")
     parser.add_argument("--erd", required=False, help="Optional Mermaid ERD file for Phase 6 semantic validation.")
-    parser.add_argument("--model-version", default="v1", choices=["v1", "v2"], help="Procurement model version.")
+    parser.add_argument("--model-version", default="v2", choices=["v2"], help="Procurement model version. Procurement v2 is the only active Procurement model.")
+    parser.add_argument("--industry-profile", default=DEFAULT_INDUSTRY_PROFILE_ID, choices=get_supported_industry_profile_ids(), help="Internal static industry profile for catalog content.")
+    parser.add_argument("--industry-profile-file", help="Optional generated industry profile JSON file. Overrides --industry-profile.")
     args = parser.parse_args()
 
     metadata_result = load_metadata_schema(args.metadata)
@@ -68,7 +75,8 @@ def main() -> int:
             print(format_plan_validation_result(validation_result))
             return 1
 
-    generator = ProcurementMasterDataGenerator()
+    industry_profile = load_industry_profile_from_json(args.industry_profile_file) if args.industry_profile_file else None
+    generator = ProcurementMasterDataGenerator(industry_profile=industry_profile, profile_id=args.industry_profile)
     dataframes, report = generator.generate_master_data(
         metadata_result.schema,
         plan_result.plan,

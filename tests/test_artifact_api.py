@@ -23,7 +23,7 @@ def _make_run(base: Path, run_id: str = "web_run_test") -> Path:
     (reports / "pipeline_run_report.json").write_text(json.dumps({"run_id": "run_1", "status": "passed"}), encoding="utf-8")
     (reports / "audit_report.md").write_text("# Audit Report", encoding="utf-8")
     (reports / "audit_report.json").write_text(json.dumps({"final_status": {"status": "passed"}}), encoding="utf-8")
-    (final_data / "Vendor.csv").write_text("VendorID,VendorName\n1,Apex Supplies\n", encoding="utf-8")
+    (final_data / "SupplierMaster.csv").write_text("SupplierID,SupplierName\n1,Apex Supplies\n", encoding="utf-8")
     return pipeline
 
 
@@ -63,7 +63,7 @@ def test_final_data_zip_endpoint_creates_zip(tmp_path: Path, monkeypatch) -> Non
     zip_path = tmp_path / "web_run_test" / "pipeline_output" / "run_1" / "reports" / "final_data.zip"
     assert zip_path.exists()
     with zipfile.ZipFile(zip_path) as archive:
-        assert "Vendor.csv" in archive.namelist()
+        assert "SupplierMaster.csv" in archive.namelist()
 
 
 def test_get_pipeline_run_summary(tmp_path: Path, monkeypatch) -> None:

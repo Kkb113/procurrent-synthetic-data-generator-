@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.validation.data_validator import GeneratedDataValidator
@@ -85,13 +86,18 @@ def test_infinity_value_produces_error() -> None:
     assert _has_issue(report, "INFINITY")
 
 
-def test_inventory_balance_target_row_mismatch_is_warning_not_error() -> None:
+def test_inventory_target_row_mismatch_is_warning_not_error() -> None:
     data = _valid_data()
-    data["InventoryBalance"] = pd.DataFrame({"InventoryBalanceID": [1], "OnHandQuantity": [10]})
+    data["Inventory"] = pd.DataFrame({"InventoryID": [1], "OnHandQuantity": [10]})
     report = GeneratedDataValidator().validate_dataset(data, _schema())
 
     assert _has_issue(report, "ROW_COUNT", level="warning")
     assert not report.errors
+
+
+def test_procurement_v1_data_validation_is_no_longer_supported() -> None:
+    with pytest.raises(ValueError, match="Procurement V1 is deprecated and no longer supported"):
+        GeneratedDataValidator().validate_dataset(_valid_data(), _schema(), model_version="v1")
 
 
 def _valid_data() -> dict[str, pd.DataFrame]:
@@ -108,7 +114,7 @@ def _valid_data() -> dict[str, pd.DataFrame]:
                 "EventDate": ["2025-01-01", "2025-01-02"],
             }
         ),
-        "InventoryBalance": pd.DataFrame({"InventoryBalanceID": [1, 2], "OnHandQuantity": [10, 20]}),
+        "Inventory": pd.DataFrame({"InventoryID": [1, 2], "OnHandQuantity": [10, 20]}),
     }
 
 
@@ -139,14 +145,14 @@ def _schema() -> SchemaContract:
                     _col("EventDate", "date", "date_range", "No", min_value="2025-01-01", max_value="2025-12-31"),
                 ],
             ),
-            "InventoryBalance": TableContract(
-                table_name="InventoryBalance",
+            "Inventory": TableContract(
+                table_name="Inventory",
                 process_order=3,
                 area="Inventory",
-                table_role="inventory_balance",
+                table_role="inventory",
                 target_rows=2,
                 columns=[
-                    _col("InventoryBalanceID", "int", "sequence_id", "No", key_type="PK"),
+                    _col("InventoryID", "int", "sequence_id", "No", key_type="PK"),
                     _col("OnHandQuantity", "int", "integer_range", "No", min_value=0, max_value=100),
                 ],
             ),

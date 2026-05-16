@@ -1,0 +1,43 @@
+"""Shared industry profile architecture for future catalog-driven generation."""
+
+from procurement_data_generator.modules.shared.industry_profiles.ev_manufacturing_profile import EV_MANUFACTURING_PROFILE
+from procurement_data_generator.modules.shared.industry_profiles.generic_mes_profile import GENERIC_MES_PROFILE
+from procurement_data_generator.modules.shared.industry_profiles.profile_contract import (
+    IndustryProfile,
+    ProcurementProfile,
+    ProductionProfile,
+    SharedProfile,
+)
+from procurement_data_generator.modules.shared.industry_profiles.profile_validator import (
+    IndustryProfileValidationResult,
+    validate_industry_profile,
+)
+from procurement_data_generator.modules.shared.industry_profiles.profile_loader import (
+    DEFAULT_INDUSTRY_PROFILE_ID,
+    get_default_industry_profile,
+    get_industry_profile,
+    get_industry_profile_or_default,
+    get_supported_industry_profile_ids,
+    industry_profile_to_dict,
+    load_industry_profile_from_dict,
+    load_industry_profile_from_json,
+)
+
+__all__ = [
+    "EV_MANUFACTURING_PROFILE",
+    "GENERIC_MES_PROFILE",
+    "DEFAULT_INDUSTRY_PROFILE_ID",
+    "IndustryProfile",
+    "IndustryProfileValidationResult",
+    "ProcurementProfile",
+    "ProductionProfile",
+    "SharedProfile",
+    "get_default_industry_profile",
+    "get_industry_profile",
+    "get_industry_profile_or_default",
+    "get_supported_industry_profile_ids",
+    "industry_profile_to_dict",
+    "load_industry_profile_from_dict",
+    "load_industry_profile_from_json",
+    "validate_industry_profile",
+]

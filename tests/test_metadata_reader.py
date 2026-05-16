@@ -38,12 +38,12 @@ def test_valid_metadata_builds_schema(tmp_path: Path) -> None:
         path,
         [
             {
-                "TableName": "Vendor",
+                "TableName": "SupplierMaster",
                 "ProcessOrder": 1,
                 "Area": "Master",
-                "TableRole": "vendor_dimension",
+                "TableRole": "supplier_master",
                 "TargetRows": 10,
-                "ColumnName": "VendorID",
+                "ColumnName": "SupplierID",
                 "DataType": "int",
                 "KeyType": "PK",
                 "RelatedTable": None,
@@ -56,12 +56,12 @@ def test_valid_metadata_builds_schema(tmp_path: Path) -> None:
                 "Formula": None,
             },
             {
-                "TableName": "Vendor",
+                "TableName": "SupplierMaster",
                 "ProcessOrder": 1,
                 "Area": "Master",
-                "TableRole": "vendor_dimension",
+                "TableRole": "supplier_master",
                 "TargetRows": 10,
-                "ColumnName": "VendorName",
+                "ColumnName": "SupplierName",
                 "DataType": "varchar(255)",
                 "KeyType": None,
                 "RelatedTable": None,
@@ -82,7 +82,7 @@ def test_valid_metadata_builds_schema(tmp_path: Path) -> None:
     assert result.schema is not None
     assert result.report.total_tables_detected == 1
     assert result.report.total_columns_detected == 2
-    assert "Vendor" in result.schema.tables
+    assert "SupplierMaster" in result.schema.tables
 
 
 def test_invalid_metadata_reports_errors(tmp_path: Path) -> None:

@@ -33,12 +33,12 @@ def test_audit_report_marks_incomplete_when_data_quality_missing(tmp_path: Path)
 def test_audit_report_includes_row_counts_from_csv_folders(tmp_path: Path) -> None:
     folder = tmp_path / "data"
     folder.mkdir()
-    pd.DataFrame({"A": [1, 2, 3]}).to_csv(folder / "Vendor.csv", index=False)
+    pd.DataFrame({"A": [1, 2, 3]}).to_csv(folder / "SupplierMaster.csv", index=False)
     quality = _write_json(tmp_path / "quality.json", {"overall_status": "passed", "issues": [], "table_summaries": {}})
 
     result = AuditReportBuilder().build_audit_report(data_quality_report_path=str(quality), data_folders=[str(folder)], output_folder=str(tmp_path))
 
-    assert result.report["generation_summary"]["row_counts_by_table"]["Vendor"] == 3
+    assert result.report["generation_summary"]["row_counts_by_table"]["SupplierMaster"] == 3
     assert result.report["generation_summary"]["total_rows_generated"] == 3
 
 
@@ -58,7 +58,7 @@ def test_later_data_folder_overrides_earlier_duplicate_table_csv(tmp_path: Path)
 
 def test_audit_report_includes_sql_load_summary_when_sql_report_exists(tmp_path: Path) -> None:
     quality = _write_json(tmp_path / "quality.json", {"overall_status": "passed", "issues": [], "table_summaries": {}})
-    sql = _write_json(tmp_path / "sql.json", {"status": "passed", "tables_created": ["Vendor"], "tables_loaded": ["Vendor"], "total_rows_inserted": 1, "pk_constraints_created_count": 1, "fk_constraints_created_count": 0})
+    sql = _write_json(tmp_path / "sql.json", {"status": "passed", "tables_created": ["SupplierMaster"], "tables_loaded": ["SupplierMaster"], "total_rows_inserted": 1, "pk_constraints_created_count": 1, "fk_constraints_created_count": 0})
 
     result = AuditReportBuilder().build_audit_report(data_quality_report_path=str(quality), sql_load_report_path=str(sql), output_folder=str(tmp_path))
 
@@ -93,7 +93,7 @@ def test_json_report_is_created(tmp_path: Path) -> None:
 
 
 def test_report_includes_top_warnings(tmp_path: Path) -> None:
-    issue = {"level": "warning", "check_type": "ROW_COUNT", "table_name": "InventoryBalance", "message": "Grouped rows differ."}
+    issue = {"level": "warning", "check_type": "ROW_COUNT", "table_name": "Inventory", "message": "Grouped rows differ."}
     quality = _write_json(tmp_path / "quality.json", {"overall_status": "passed_with_warnings", "warning_count": 1, "error_count": 0, "issues": [issue], "table_summaries": {}})
 
     result = AuditReportBuilder().build_audit_report(data_quality_report_path=str(quality), output_folder=str(tmp_path))

@@ -1,0 +1,73 @@
+{
+  "industry_id": "pharma_manufacturing",
+  "industry_name": "Pharma Manufacturing",
+  "industry_description": "Catalog hints for pharmaceutical procurement and production execution.",
+  "supported_domains": ["procurement", "production"],
+  "procurement": {
+    "supplier_name_patterns": ["Pharma Ingredient Supply", "GMP Packaging Partners", "Lab Grade Materials"],
+    "component_categories": ["Active Ingredients", "Excipients", "Packaging Materials", "Vials", "Blister Packs", "Labels", "Cleaning Consumables"],
+    "component_name_patterns": ["Active Ingredient", "Excipient Blend", "Sterile Vial", "Blister Foil", "Label Roll"],
+    "component_category_codes": ["Packaging", "Maintenance", "Mechanical", "Electrical", "Safety"],
+    "component_material_examples": {
+      "Active Ingredients": ["Active Ingredient", "API Blend", "Potent Compound"],
+      "Excipients": ["Excipient Blend", "Binding Agent", "Coating Polymer"],
+      "Packaging Materials": ["Sterile Vial", "Blister Foil", "Label Roll"]
+    },
+    "component_specification_patterns": {
+      "Active Ingredients": ["GMP Grade", "USP Grade", "Batch Released"],
+      "Excipients": ["Pharma Grade", "Low Moisture", "Validated"],
+      "Packaging Materials": ["Sterile", "Tamper Evident", "Printed"]
+    },
+    "component_uom_preferences": {
+      "Active Ingredients": ["KG", "Gram"],
+      "Excipients": ["KG", "Gram"],
+      "Packaging Materials": ["EA", "Pack", "Roll"]
+    },
+    "component_cost_profiles": {
+      "Active Ingredients": [50.0, 2500.0],
+      "Excipients": [5.0, 400.0]
+    },
+    "supplier_component_relationship_rules": ["Critical suppliers require GMP qualification."]
+  },
+  "production": {
+    "product_categories": ["Tablet Batch", "Capsule Batch", "Injectable Vial Batch", "Blister Pack Product"],
+    "product_name_patterns": ["Tablet Batch", "Capsule Batch", "Injectable Vial Batch", "Blister Pack Product"],
+    "work_center_names": ["Dispensing Station", "Blending Area", "Granulation Line", "Compression Machine", "Coating Pan", "Filling Line", "Packaging Line", "Quality Inspection Lab"],
+    "routing_operation_names": ["Material Dispensing", "Blending", "Granulation", "Compression", "Coating", "Filling", "Visual Inspection", "Packaging Release"],
+    "product_catalog": [
+      {"name": "Tablet Batch", "category": "Tablet", "product_type": "FinishedGood", "uom": "EA", "base_cost": 1200, "base_hours": 6},
+      {"name": "Capsule Batch", "category": "Capsule", "product_type": "FinishedGood", "uom": "EA", "base_cost": 1500, "base_hours": 7},
+      {"name": "Injectable Vial Batch", "category": "Injectable", "product_type": "FinishedGood", "uom": "EA", "base_cost": 2400, "base_hours": 9},
+      {"name": "Blister Pack Product", "category": "Packaged Pharma", "product_type": "FinishedGood", "uom": "Set", "base_cost": 900, "base_hours": 5}
+    ],
+    "work_center_catalog": [
+      {"name": "Dispensing Station", "line_name": "Dispensing"},
+      {"name": "Blending Area", "line_name": "Blending"},
+      {"name": "Granulation Line", "line_name": "Granulation"},
+      {"name": "Compression Machine", "line_name": "Compression"},
+      {"name": "Coating Pan", "line_name": "Coating"},
+      {"name": "Filling Line", "line_name": "Filling"},
+      {"name": "Packaging Line", "line_name": "Packaging"},
+      {"name": "Quality Inspection Lab", "line_name": "Quality"}
+    ],
+    "fallback_components": [
+      {"ComponentID": 1, "ComponentName": "Active Ingredient", "UOM": "KG"},
+      {"ComponentID": 2, "ComponentName": "Excipient Blend", "UOM": "KG"},
+      {"ComponentID": 3, "ComponentName": "Sterile Vial", "UOM": "EA"}
+    ],
+    "fallback_plants": [{"PlantID": 1, "PlantName": "Main Pharma Manufacturing Plant"}],
+    "fallback_warehouses": [{"WarehouseID": 1, "PlantID": 1, "WarehouseName": "Main GMP Material Warehouse"}],
+    "bom_patterns": ["Pharma batches consume active ingredients, excipients, and qualified packaging."],
+    "scrap_yield_profiles": {"Compression": [0.0, 2.0], "Filling": [0.0, 1.5]},
+    "quality_defect_codes": ["WeightVariation", "DissolutionFailure", "VisualParticle", "SealIntegrityFailure", "LabelingError"],
+    "rework_reason_codes": ["Re-inspect", "Re-label", "Re-pack", "HoldForQAReview"],
+    "cost_profiles": {"LaborRatePerHour": [35.0, 95.0], "OverheadPct": [10.0, 30.0]}
+  },
+  "shared": {
+    "countable_uoms": ["EA", "Each", "Unit", "Piece", "PCS", "Pack", "Set"],
+    "measurable_uoms": ["KG", "Gram", "Liter", "Meter", "Roll"],
+    "default_currency": "USD",
+    "date_scope_notes": ["Generated scenarios remain in calendar year 2025."],
+    "realism_notes": ["Pharma profile is catalog content only; Python generates rows."]
+  }
+}

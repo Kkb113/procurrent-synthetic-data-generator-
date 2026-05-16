@@ -10,6 +10,8 @@ from typing import Iterable
 from faker import Faker
 
 from procurement_data_generator.core.contracts.llm_plan_contract import DomainProfile, MaterialCategory
+from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
+from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_default_industry_profile
 
 
 ARTIFICIAL_NUMERIC_SUFFIX_PATTERN = re.compile(r"\s(?:[1-9]|[1-9][0-9])$")
@@ -27,21 +29,37 @@ class FallbackMaterialCatalog:
     categories: tuple[MaterialCategory, ...]
 
 
+def _profile_material_categories(profile: IndustryProfile) -> tuple[MaterialCategory, ...]:
+    procurement = profile.procurement
+    categories: list[MaterialCategory] = []
+    for category_name, examples in procurement.component_material_examples.items():
+        specs = procurement.component_specification_patterns.get(category_name, ())
+        categories.append(
+            MaterialCategory(
+                category_name=category_name,
+                material_examples=list(examples),
+                specification_patterns=list(specs),
+            )
+        )
+    if categories:
+        return tuple(categories)
+    return tuple(
+        MaterialCategory(
+            category_name=category_name,
+            material_examples=list(procurement.component_name_patterns),
+            specification_patterns=["Industrial Grade", "Standard Pack", "Grade A"],
+        )
+        for category_name in procurement.component_categories
+    )
+
+
+_DEFAULT_INDUSTRY_PROFILE = get_default_industry_profile()
+
+
 INDUSTRY_MATERIAL_FALLBACKS: dict[str, FallbackMaterialCatalog] = {
     "ev": FallbackMaterialCatalog(
         keywords=("ev", "electric vehicle", "battery", "mobility"),
-        categories=(
-            MaterialCategory(
-                category_name="Battery Components",
-                material_examples=["Lithium-Ion Cell", "Battery Management PCB", "Thermal Pad", "Copper Busbar"],
-                specification_patterns=["21700", "Prismatic", "Grade A", "2mm", "HV", "12mm"],
-            ),
-            MaterialCategory(
-                category_name="Drive Components",
-                material_examples=["Motor Magnet NdFeB", "Aluminium Housing", "Wiring Harness", "Power Connector"],
-                specification_patterns=["N52", "Reinforced", "High Voltage", "IP67", "Automotive Grade"],
-            ),
-        ),
+        categories=_profile_material_categories(_DEFAULT_INDUSTRY_PROFILE),
     ),
     "pharma": FallbackMaterialCatalog(
         keywords=("pharma", "pharmaceutical", "healthcare", "medicine"),
@@ -319,15 +337,7 @@ class ProcurementNameGenerator:
         "Jaipur",
     )
     fallback_warehouse_types = (
-        "Raw Material Warehouse",
-        "Quality Hold Warehouse",
-        "Rejected Material Warehouse",
-        "Maintenance Spares Warehouse",
-        "Inbound Warehouse",
-        "Packaging Warehouse",
-        "Finished Goods Staging Warehouse",
-        "Tools and Consumables Warehouse",
-        "Safety Stock Warehouse",
+        *_DEFAULT_INDUSTRY_PROFILE.procurement.warehouse_type_names,
     )
     material_modifiers = (
         "",

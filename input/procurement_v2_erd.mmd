@@ -37,6 +37,15 @@ erDiagram
     GoodsReceiptLine ||--o{ IncomingInspection : inspected_by
     IncomingInspection ||--o{ InspectionResult : contains
     InspectionResult ||--o{ InventoryTransaction : posts_inventory
+    InspectionResult ||--o{ InventoryReceiptDetail : creates
+    GoodsReceiptLine ||--o{ InventoryReceiptDetail : received_as
+    PurchaseOrderLine ||--o{ InventoryReceiptDetail : traced_from
+    PurchaseOrderHdr ||--o{ InventoryReceiptDetail : belongs_to
+    SupplierMaster ||--o{ InventoryReceiptDetail : supplied_by
+    ComponentMaster ||--o{ InventoryReceiptDetail : component
+    Plant ||--o{ InventoryReceiptDetail : received_at
+    Warehouse ||--o{ InventoryReceiptDetail : stored_at
+    InventoryReceiptDetail ||--o{ InventoryTransaction : posts_stock
     SupplierMaster ||--o{ InventoryTransaction : supplied_inventory
     GoodsReceiptLine ||--o{ InventoryTransaction : received_inventory_line
     PurchaseOrderLine ||--o{ InventoryTransaction : inventory_po_line

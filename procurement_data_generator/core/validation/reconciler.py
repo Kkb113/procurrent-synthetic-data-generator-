@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,12 @@ from procurement_data_generator.core.contracts.data_quality_report import (
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract
 from procurement_data_generator.core.validation.data_validator import GeneratedDataValidator, _json_safe
+from procurement_data_generator.modules.procurement.quantity_precision import is_whole_quantity, requires_integer_quantity
+from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE
+from procurement_data_generator.modules.shared.operating_scope import (
+    get_expected_plant_count,
+    get_expected_warehouse_count,
+)
 
 
 class ProcurementReconciler:
@@ -24,21 +31,13 @@ class ProcurementReconciler:
         dataframes: dict[str, pd.DataFrame],
         schema: SchemaContract,
         plan: LLMGenerationPlan | None = None,
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> DataQualityReport:
         report = DataQualityReport()
-        if model_version == "v2":
-            self._reconcile_v2(dataframes, plan, report)
-            return report
-        by_role = self._dataframes_by_role(dataframes, schema)
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
 
-        self._reconcile_dates(by_role, report)
-        self._reconcile_plant_and_warehouse(by_role, report)
-        self._reconcile_quantities(by_role, report)
-        self._reconcile_amounts(by_role, plan, report)
-        self._reconcile_inventory(by_role, report)
-        self._reconcile_statuses(by_role, report)
-
+        self._reconcile_v2(dataframes, plan, report)
         return report
 
     def _reconcile_dates(self, by_role: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
@@ -99,7 +98,6 @@ class ProcurementReconciler:
         qih = by_role.get("quality_inspection_header")
         qil = by_role.get("quality_inspection_line")
         it = by_role.get("inventory_transaction")
-        ib = by_role.get("inventory_balance")
 
         self._equality_join(prh, poh, "RequisitionID", "PlantID", "PlantID", "PLANT_REQUISITION_TO_PO", "error", report)
         if grh is not None and sh is not None and poh is not None and {"ShipmentID", "PlantID"}.issubset(grh.columns):
@@ -152,21 +150,6 @@ class ProcurementReconciler:
                     None,
                     report,
                 )
-        if ib is not None and it is not None and {"RawMaterialID", "PlantID", "WarehouseID"}.issubset(ib.columns):
-            keys = ["RawMaterialID", "PlantID", "WarehouseID"]
-            txn_keys = set(map(tuple, it[keys].drop_duplicates().to_numpy()))
-            mask = ib[keys].apply(tuple, axis=1).isin(txn_keys)
-            self._compare_mask(
-                ib,
-                mask,
-                "INVENTORY_BALANCE_KEYS_EXIST",
-                "InventoryBalance contains keys not found in InventoryTransaction groups.",
-                "Build inventory balances only from generated inventory transaction groups.",
-                "error",
-                "InventoryBalance",
-                None,
-                report,
-            )
 
     def _reconcile_quantities(self, by_role: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
         self._positive(by_role.get("purchase_requisition_line"), "RequestedQuantity", "REQUESTED_QUANTITY_POSITIVE", report)
@@ -267,7 +250,6 @@ class ProcurementReconciler:
     def _reconcile_inventory(self, by_role: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
         it = by_role.get("inventory_transaction")
         qil = by_role.get("quality_inspection_line")
-        ib = by_role.get("inventory_balance")
         if it is not None and qil is not None and {"InspectionLineID", "TransactionQuantity"}.issubset(it.columns) and {"InspectionLineID", "AcceptedQuantity"}.issubset(qil.columns):
             merged = it.merge(qil[["InspectionLineID", "AcceptedQuantity"]], on="InspectionLineID", how="left")
             self._numeric_compare(
@@ -278,34 +260,6 @@ class ProcurementReconciler:
                 "InventoryTransaction.TransactionQuantity must equal linked AcceptedQuantity.",
                 "InventoryTransaction",
                 "TransactionQuantity",
-                report,
-            )
-        if ib is not None and it is not None and {"RawMaterialID", "PlantID", "WarehouseID", "OnHandQuantity"}.issubset(ib.columns):
-            qty_col = "TransactionQuantity" if "TransactionQuantity" in it.columns else "Quantity"
-            if qty_col in it.columns:
-                keys = ["RawMaterialID", "PlantID", "WarehouseID"]
-                grouped = it.groupby(keys, dropna=False)[qty_col].sum().reset_index().rename(columns={qty_col: "ExpectedOnHandQuantity"})
-                merged = ib.merge(grouped, on=keys, how="left")
-                self._numeric_compare(
-                    merged,
-                    merged["OnHandQuantity"],
-                    merged["ExpectedOnHandQuantity"],
-                    "INVENTORY_BALANCE_ON_HAND",
-                    "InventoryBalance.OnHandQuantity must equal grouped inventory transaction quantity.",
-                    "InventoryBalance",
-                    "OnHandQuantity",
-                    report,
-                )
-        if ib is not None and {"AvailableQuantity", "OnHandQuantity"}.issubset(ib.columns):
-            self._compare_mask(
-                ib,
-                pd.to_numeric(ib["AvailableQuantity"], errors="coerce") <= pd.to_numeric(ib["OnHandQuantity"], errors="coerce"),
-                "AVAILABLE_LE_ON_HAND",
-                "InventoryBalance.AvailableQuantity must be <= OnHandQuantity.",
-                "Set available quantity at or below on-hand quantity.",
-                "error",
-                "InventoryBalance",
-                "AvailableQuantity",
                 report,
             )
 
@@ -350,20 +304,113 @@ class ProcurementReconciler:
             "PurchaseRequisition", "PurchaseReqLine", "RFQHeader", "RFQLine", "SupplierQuotation",
             "SupplierQuotationLn", "PurchaseOrderHdr", "PurchaseOrderLine", "POSchedule", "ShipmentHdr",
             "ShipmentLine", "GoodsReceiptHeader", "GoodsReceiptLine", "IncomingInspection", "InspectionResult",
-            "InventoryTransaction", "Inventory", "SupplierInvoice", "PaymentTransaction",
+            "InventoryReceiptDetail", "InventoryTransaction", "Inventory", "SupplierInvoice", "PaymentTransaction",
         }
-        if not required.issubset(data):
+        missing = sorted(required - set(data))
+        if missing:
+            for table_name in missing:
+                report.record_check(False)
+                report.add_issue(
+                    "error",
+                    "V2_REQUIRED_TABLE_MISSING",
+                    f"Required Procurement v2 table {table_name} is missing from final data.",
+                    "Generate every required Procurement v2 lifecycle table.",
+                    table_name=table_name,
+            )
             return
+        self._v2_operating_scope(data, report)
         self._v2_locations(data, report)
         self._v2_dates(data, report)
         self._v2_quantities(data, report)
+        self._v2_component_quantity_precision(data, report)
         self._v2_cumulative_quantity_lifecycle(data, report)
         self._v2_rfq_quotation(data, report)
         self._v2_po_schedule_shipment(data, plan, report)
         self._v2_receipt_inspection_inventory(data, report)
+        self._v2_inventory_receipt_detail(data, report)
         self._v2_inventory_snapshot(data, report)
         self._v2_invoice_payment(data, plan, report)
         self._v2_status_and_rejection_reasons(data, report)
+
+    def _v2_operating_scope(self, data: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
+        plant = data["Plant"]
+        warehouse = data["Warehouse"]
+        expected_plant_count = get_expected_plant_count()
+        expected_warehouse_count = get_expected_warehouse_count()
+
+        plant_count_ok = len(plant) == expected_plant_count
+        report.record_check(plant_count_ok)
+        if not plant_count_ok:
+            report.add_issue(
+                "error",
+                "V2_OPERATING_SCOPE_PLANT_COUNT",
+                f"Procurement v2 must contain exactly {expected_plant_count} Plant row.",
+                "Use the shared operating scope plant count during Procurement v2 generation.",
+                table_name="Plant",
+                sample_failed_rows=self._sample_rows(plant),
+            )
+
+        warehouse_count_ok = len(warehouse) == expected_warehouse_count
+        report.record_check(warehouse_count_ok)
+        if not warehouse_count_ok:
+            report.add_issue(
+                "error",
+                "V2_OPERATING_SCOPE_WAREHOUSE_COUNT",
+                f"Procurement v2 must contain exactly {expected_warehouse_count} Warehouse row.",
+                "Use the shared operating scope warehouse count during Procurement v2 generation.",
+                table_name="Warehouse",
+                sample_failed_rows=self._sample_rows(warehouse),
+            )
+
+        if "PlantID" not in plant.columns or "WarehouseID" not in warehouse.columns:
+            return
+        plant_ids = plant["PlantID"].dropna().unique()
+        warehouse_ids = warehouse["WarehouseID"].dropna().unique()
+        if len(plant_ids) != 1 or len(warehouse_ids) != 1:
+            return
+        single_plant_id = plant_ids[0]
+        single_warehouse_id = warehouse_ids[0]
+
+        if "PlantID" in warehouse.columns:
+            self._compare_mask(
+                warehouse,
+                warehouse["PlantID"].eq(single_plant_id),
+                "V2_OPERATING_SCOPE_WAREHOUSE_PLANT",
+                "Warehouse.PlantID must reference the single Procurement PlantID.",
+                "Assign the single PlantID from Plant to Warehouse.",
+                "error",
+                "Warehouse",
+                "PlantID",
+                report,
+            )
+
+        for table_name, dataframe in data.items():
+            if table_name == "InventoryBalance":
+                continue
+            if "PlantID" in dataframe.columns:
+                self._compare_mask(
+                    dataframe,
+                    dataframe["PlantID"].eq(single_plant_id),
+                    "V2_OPERATING_SCOPE_PLANT_REFERENCE",
+                    f"{table_name}.PlantID must use the single Procurement PlantID.",
+                    "Carry the single PlantID through all Procurement v2 location references.",
+                    "error",
+                    table_name,
+                    "PlantID",
+                    report,
+                )
+            if "WarehouseID" in dataframe.columns:
+                self._compare_mask(
+                    dataframe,
+                    dataframe["WarehouseID"].eq(single_warehouse_id),
+                    "V2_OPERATING_SCOPE_WAREHOUSE_REFERENCE",
+                    f"{table_name}.WarehouseID must use the single Procurement WarehouseID.",
+                    "Carry the single WarehouseID through all Procurement v2 location references.",
+                    "error",
+                    table_name,
+                    "WarehouseID",
+                    report,
+                )
 
     def _v2_locations(self, data: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
         wh = data["Warehouse"][["WarehouseID", "PlantID"]]
@@ -407,6 +454,63 @@ class ProcurementReconciler:
         self._compare_mask(sched, sched["ScheduledQuantity"] <= sched["OrderedQuantity"] + 0.0001, "V2_SCHEDULE_LE_ORDERED", "Total POSchedule.ScheduledQuantity per PO line must be <= OrderedQuantity.", "Cap schedules by ordered quantity.", "error", "POSchedule", "ScheduledQuantity", report)
         shipped = data["ShipmentLine"].groupby("POScheduleID", dropna=False)["ShippedQuantity"].sum().reset_index().merge(data["POSchedule"][["POScheduleID", "ScheduledQuantity"]], on="POScheduleID", how="left")
         self._compare_mask(shipped, shipped["ShippedQuantity"] <= shipped["ScheduledQuantity"] + 0.0001, "V2_SHIPPED_LE_SCHEDULED", "Total ShipmentLine.ShippedQuantity per schedule must be <= ScheduledQuantity.", "Cap shipped quantity by schedule.", "error", "ShipmentLine", "ShippedQuantity", report)
+
+    def _v2_component_quantity_precision(self, data: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
+        component = data["ComponentMaster"][["ComponentID", "UOM"]].copy()
+        component["__requires_integer_quantity"] = component["UOM"].map(requires_integer_quantity)
+
+        direct_specs = [
+            ("PurchaseReqLine", ["RequestedQuantity"]),
+            ("RFQLine", ["RFQQuantity"]),
+            ("SupplierQuotationLn", ["QuotedQuantity"]),
+            ("PurchaseOrderLine", ["OrderedQuantity"]),
+            ("ShipmentLine", ["ShippedQuantity"]),
+            ("GoodsReceiptLine", ["ShippedQuantity", "ReceivedQuantity", "DamagedQuantity", "ShortQuantity"]),
+            ("InventoryReceiptDetail", ["OrderedQuantity", "ShippedQuantity", "ReceivedQuantity", "InspectedQuantity", "AcceptedQuantity", "RejectedQuantity"]),
+            ("InventoryTransaction", ["TransactionQuantity"]),
+            ("Inventory", ["OnHandQuantity", "AvailableQuantity"]),
+        ]
+        for table_name, quantity_columns in direct_specs:
+            dataframe = data.get(table_name)
+            if dataframe is None or "ComponentID" not in dataframe.columns:
+                continue
+            merged = dataframe.merge(component, on="ComponentID", how="left")
+            for column_name in quantity_columns:
+                if column_name in merged.columns:
+                    self._integer_quantity_mask(merged, table_name, column_name, report)
+
+        schedule = data["POSchedule"].merge(
+            data["PurchaseOrderLine"][["PurchaseOrderLineID", "ComponentID"]],
+            on="PurchaseOrderLineID",
+            how="left",
+        ).merge(component, on="ComponentID", how="left")
+        self._integer_quantity_mask(schedule, "POSchedule", "ScheduledQuantity", report)
+
+        inspection = (
+            data["InspectionResult"]
+            .merge(data["IncomingInspection"][["InspectionID", "GoodsReceiptLineID"]], on="InspectionID", how="left")
+            .merge(data["GoodsReceiptLine"][["GoodsReceiptLineID", "ComponentID"]], on="GoodsReceiptLineID", how="left")
+            .merge(component, on="ComponentID", how="left")
+        )
+        for column_name in ["InspectedQuantity", "AcceptedQuantity", "RejectedQuantity"]:
+            self._integer_quantity_mask(inspection, "InspectionResult", column_name, report)
+
+    def _integer_quantity_mask(self, dataframe: pd.DataFrame, table_name: str, column_name: str, report: DataQualityReport) -> None:
+        integer_required = dataframe["__requires_integer_quantity"].map(lambda value: bool(value) if pd.notna(value) else False)
+        quantity = pd.to_numeric(dataframe[column_name], errors="coerce")
+        whole = quantity.map(is_whole_quantity)
+        mask = (~integer_required) | whole
+        self._compare_mask(
+            dataframe,
+            mask,
+            f"V2_INTEGER_QUANTITY_PRECISION_{table_name.upper()}_{column_name.upper()}",
+            f"{table_name}.{column_name} must be a whole number for countable component UOMs.",
+            "Generate integer quantities for countable component UOMs such as Each, Box, Set, PCS, Module, Assembly, Device, Sensor, Motor, and BatteryPack.",
+            "error",
+            table_name,
+            column_name,
+            report,
+        )
 
     def _v2_cumulative_quantity_lifecycle(self, data: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
         tolerance = 0.0001
@@ -500,6 +604,17 @@ class ProcurementReconciler:
             "ScheduledQuantity",
             report,
         )
+        self._numeric_compare(
+            schedule,
+            schedule["ActualTotalQuantity"],
+            schedule["OrderedQuantity"],
+            "FULL_RECEIVED_SCHEDULE_EQUALS_ORDERED",
+            "For full-received Procurement v2, total POSchedule.ScheduledQuantity must equal PurchaseOrderLine.OrderedQuantity.",
+            "POSchedule",
+            "ScheduledQuantity",
+            report,
+            tolerance=tolerance,
+        )
 
         shipped_schedule = self._v2_group_sum(
             data["ShipmentLine"],
@@ -518,6 +633,17 @@ class ProcurementReconciler:
             "ShipmentLine",
             "ShippedQuantity",
             report,
+        )
+        self._numeric_compare(
+            shipped_schedule,
+            shipped_schedule["ActualShippedQuantity"],
+            shipped_schedule["ScheduledQuantity"],
+            "FULL_RECEIVED_SHIPPED_EQUALS_SCHEDULED",
+            "For full-received Procurement v2, total ShipmentLine.ShippedQuantity must equal POSchedule.ScheduledQuantity.",
+            "ShipmentLine",
+            "ShippedQuantity",
+            report,
+            tolerance=tolerance,
         )
 
         shipped_po = self._v2_group_sum(
@@ -538,6 +664,17 @@ class ProcurementReconciler:
             "ShippedQuantity",
             report,
         )
+        self._numeric_compare(
+            shipped_po,
+            shipped_po["ActualTotalQuantity"],
+            shipped_po["OrderedQuantity"],
+            "FULL_RECEIVED_SHIPPED_EQUALS_ORDERED",
+            "For full-received Procurement v2, total ShipmentLine.ShippedQuantity must equal PurchaseOrderLine.OrderedQuantity.",
+            "ShipmentLine",
+            "ShippedQuantity",
+            report,
+            tolerance=tolerance,
+        )
 
         receipt_shipment = self._v2_group_sum(
             data["GoodsReceiptLine"],
@@ -556,6 +693,17 @@ class ProcurementReconciler:
             "GoodsReceiptLine",
             "ReceivedQuantity",
             report,
+        )
+        self._numeric_compare(
+            receipt_shipment,
+            receipt_shipment["ActualReceivedQuantity"],
+            receipt_shipment["ShippedQuantity"],
+            "FULL_RECEIVED_RECEIVED_EQUALS_SHIPPED",
+            "For full-received Procurement v2, total GoodsReceiptLine.ReceivedQuantity must equal ShipmentLine.ShippedQuantity.",
+            "GoodsReceiptLine",
+            "ReceivedQuantity",
+            report,
+            tolerance=tolerance,
         )
 
         receipt_po = self._v2_group_sum(
@@ -576,6 +724,17 @@ class ProcurementReconciler:
             "ReceivedQuantity",
             report,
         )
+        self._numeric_compare(
+            receipt_po,
+            receipt_po["ActualTotalQuantity"],
+            receipt_po["OrderedQuantity"],
+            "FULL_RECEIVED_RECEIVED_EQUALS_ORDERED",
+            "For full-received Procurement v2, total GoodsReceiptLine.ReceivedQuantity must equal PurchaseOrderLine.OrderedQuantity.",
+            "GoodsReceiptLine",
+            "ReceivedQuantity",
+            report,
+            tolerance=tolerance,
+        )
 
         inspection = (
             data["InspectionResult"]
@@ -595,12 +754,45 @@ class ProcurementReconciler:
         )
         self._numeric_compare(
             inspection,
+            inspection["InspectedQuantity"],
+            inspection["ReceivedQuantity"],
+            "FULL_RECEIVED_INSPECTED_EQUALS_RECEIVED",
+            "For full-received Procurement v2, InspectionResult.InspectedQuantity must equal GoodsReceiptLine.ReceivedQuantity.",
+            "InspectionResult",
+            "InspectedQuantity",
+            report,
+            tolerance=tolerance,
+        )
+        self._numeric_compare(
+            inspection,
             pd.to_numeric(inspection["AcceptedQuantity"], errors="coerce") + pd.to_numeric(inspection["RejectedQuantity"], errors="coerce"),
             inspection["InspectedQuantity"],
             "INSPECTION_ACCEPTED_REJECTED_MISMATCH",
             "InspectionResult.AcceptedQuantity plus RejectedQuantity must equal InspectedQuantity.",
             "InspectionResult",
             None,
+            report,
+            tolerance=tolerance,
+        )
+        self._numeric_compare(
+            inspection,
+            inspection["AcceptedQuantity"],
+            inspection["InspectedQuantity"],
+            "FULL_RECEIVED_ACCEPTED_EQUALS_INSPECTED",
+            "For full-received Procurement v2, InspectionResult.AcceptedQuantity must equal InspectionResult.InspectedQuantity.",
+            "InspectionResult",
+            "AcceptedQuantity",
+            report,
+            tolerance=tolerance,
+        )
+        self._numeric_compare(
+            inspection,
+            inspection["RejectedQuantity"],
+            0,
+            "FULL_RECEIVED_REJECTED_QUANTITY_ZERO",
+            "For full-received Procurement v2, InspectionResult.RejectedQuantity must be zero.",
+            "InspectionResult",
+            "RejectedQuantity",
             report,
             tolerance=tolerance,
         )
@@ -623,9 +815,20 @@ class ProcurementReconciler:
             "AcceptedQuantity",
             report,
         )
+        self._numeric_compare(
+            accepted_po,
+            accepted_po["ActualTotalQuantity"],
+            accepted_po["OrderedQuantity"],
+            "FULL_RECEIVED_ACCEPTED_EQUALS_ORDERED",
+            "For full-received Procurement v2, total InspectionResult.AcceptedQuantity must equal PurchaseOrderLine.OrderedQuantity.",
+            "InspectionResult",
+            "AcceptedQuantity",
+            report,
+            tolerance=tolerance,
+        )
 
         inventory_txn = data["InventoryTransaction"].merge(
-            data["InspectionResult"][["InspectionResultID", "AcceptedQuantity"]],
+            data["InventoryReceiptDetail"][["InspectionResultID", "AcceptedQuantity"]],
             on="InspectionResultID",
             how="left",
         )
@@ -634,7 +837,7 @@ class ProcurementReconciler:
             inventory_txn["TransactionQuantity"],
             inventory_txn["AcceptedQuantity"],
             "INVENTORY_TRANSACTION_ACCEPTED_MISMATCH",
-            "InventoryTransaction.TransactionQuantity must equal InspectionResult.AcceptedQuantity.",
+            "InventoryTransaction.TransactionQuantity must equal InventoryReceiptDetail.AcceptedQuantity.",
             "InventoryTransaction",
             "TransactionQuantity",
             report,
@@ -658,6 +861,17 @@ class ProcurementReconciler:
             "InventoryTransaction",
             "TransactionQuantity",
             report,
+        )
+        self._numeric_compare(
+            stock_in_po,
+            stock_in_po["ActualTotalQuantity"],
+            stock_in_po["OrderedQuantity"],
+            "FULL_RECEIVED_STOCK_IN_EQUALS_ORDERED",
+            "For full-received Procurement v2, total InventoryTransaction.TransactionQuantity must equal PurchaseOrderLine.OrderedQuantity.",
+            "InventoryTransaction",
+            "TransactionQuantity",
+            report,
+            tolerance=tolerance,
         )
 
         inventory_grouped = self._v2_group_sum(
@@ -721,6 +935,8 @@ class ProcurementReconciler:
         self._numeric_compare(grl, grl["ShippedQuantity_receipt"], grl["ShippedQuantity_ship"], "V2_RECEIPT_SHIPPED_MATCH", "GoodsReceiptLine.ShippedQuantity must match ShipmentLine.ShippedQuantity.", "GoodsReceiptLine", "ShippedQuantity", report)
         self._compare_mask(grl, grl["ReceivedQuantity"] <= grl["ShippedQuantity_receipt"] + 0.0001, "V2_RECEIVED_LE_SHIPPED", "ReceivedQuantity must be <= ShippedQuantity.", "Cap received quantity.", "error", "GoodsReceiptLine", "ReceivedQuantity", report)
         self._numeric_compare(grl, grl["ShortQuantity"], grl["ShippedQuantity_receipt"] - grl["ReceivedQuantity"], "V2_SHORT_QTY", "ShortQuantity must equal ShippedQuantity - ReceivedQuantity.", "GoodsReceiptLine", "ShortQuantity", report)
+        self._numeric_compare(grl, grl["ShortQuantity"], 0, "FULL_RECEIVED_SHORT_QUANTITY_ZERO", "For full-received Procurement v2, GoodsReceiptLine.ShortQuantity must be zero.", "GoodsReceiptLine", "ShortQuantity", report)
+        self._numeric_compare(grl, grl["DamagedQuantity"], 0, "FULL_RECEIVED_DAMAGED_QUANTITY_ZERO", "For full-received Procurement v2, GoodsReceiptLine.DamagedQuantity must be zero.", "GoodsReceiptLine", "DamagedQuantity", report)
         insp = data["InspectionResult"].merge(data["IncomingInspection"][["InspectionID", "GoodsReceiptLineID", "InspectionDate"]], on="InspectionID", how="left").merge(data["GoodsReceiptLine"][["GoodsReceiptLineID", "ReceivedQuantity", "ComponentID", "GoodsReceiptID"]], on="GoodsReceiptLineID", how="left")
         self._compare_mask(insp, insp["InspectedQuantity"] <= insp["ReceivedQuantity"] + 0.0001, "V2_INSPECTED_LE_RECEIVED", "InspectionResult.InspectedQuantity must be <= GoodsReceiptLine.ReceivedQuantity.", "Base inspected quantity on receipt.", "error", "InspectionResult", "InspectedQuantity", report)
         self._numeric_compare(insp, insp["AcceptedQuantity"] + insp["RejectedQuantity"], insp["InspectedQuantity"], "V2_INSPECTION_QTY_TOTAL", "AcceptedQuantity + RejectedQuantity must equal InspectedQuantity.", "InspectionResult", None, report)
@@ -757,12 +973,39 @@ class ProcurementReconciler:
         receipt_location = data["GoodsReceiptHeader"][["GoodsReceiptID", "PlantID", "WarehouseID"]].rename(
             columns={"PlantID": "ExpectedPlantID", "WarehouseID": "ExpectedWarehouseID"}
         )
+        receipt_detail_lineage = data["InventoryReceiptDetail"][
+            [
+                "InspectionResultID",
+                "GoodsReceiptLineID",
+                "PurchaseOrderLineID",
+                "SupplierID",
+                "ComponentID",
+                "PlantID",
+                "WarehouseID",
+                "StockPostedDate",
+                "AcceptedQuantity",
+                "DeliveredUnitPrice",
+            ]
+        ].rename(
+            columns={
+                "GoodsReceiptLineID": "DetailGoodsReceiptLineID",
+                "PurchaseOrderLineID": "DetailPurchaseOrderLineID",
+                "SupplierID": "DetailSupplierID",
+                "ComponentID": "DetailComponentID",
+                "PlantID": "DetailPlantID",
+                "WarehouseID": "DetailWarehouseID",
+                "StockPostedDate": "DetailStockPostedDate",
+                "AcceptedQuantity": "DetailAcceptedQuantity",
+                "DeliveredUnitPrice": "DetailDeliveredUnitPrice",
+            }
+        )
         inv = (
             data["InventoryTransaction"]
             .merge(inspection_lineage, on="InspectionResultID", how="left")
             .merge(receipt_lineage, on="GoodsReceiptLineID", how="left")
             .merge(po_lineage, on="PurchaseOrderLineID", how="left")
             .merge(receipt_location, on="GoodsReceiptID", how="left")
+            .merge(receipt_detail_lineage, on="InspectionResultID", how="left")
         )
         for column_name in ["GoodsReceiptLineID", "PurchaseOrderLineID", "SupplierID", "UnitPrice", "InventoryValue", "InventoryStatus"]:
             self._compare_mask(
@@ -778,18 +1021,121 @@ class ProcurementReconciler:
             )
         self._compare_mask(inv, inv["TransactionType"].astype(str).eq("StockIn"), "V2_INVENTORY_TRANSACTION_STOCK_IN", "InventoryTransaction.TransactionType must be StockIn for Procurement v2 inbound receipts.", "Use StockIn for accepted supplier goods posted into inventory.", "error", "InventoryTransaction", "TransactionType", report)
         self._compare_mask(inv, inv["InventoryStatus"].astype(str).isin(["Posted", "QualityAccepted", "ReceivedToInventory"]), "V2_INVENTORY_TRANSACTION_STATUS_ALLOWED", "InventoryTransaction.InventoryStatus must be a valid stock-in posting status.", "Use Posted, QualityAccepted, or ReceivedToInventory for accepted inventory postings.", "error", "InventoryTransaction", "InventoryStatus", report)
-        self._compare_mask(inv, inv["GoodsReceiptLineID"] == inv["ExpectedGoodsReceiptLineID"], "V2_INVENTORY_GOODS_RECEIPT_LINE_LINEAGE", "InventoryTransaction.GoodsReceiptLineID must match InspectionResult -> IncomingInspection.GoodsReceiptLineID.", "Carry GoodsReceiptLineID from the linked incoming inspection.", "error", "InventoryTransaction", "GoodsReceiptLineID", report)
-        self._compare_mask(inv, inv["PurchaseOrderLineID"] == inv["ExpectedReceiptPurchaseOrderLineID"], "V2_INVENTORY_PO_LINE_RECEIPT_LINEAGE", "InventoryTransaction.PurchaseOrderLineID must match GoodsReceiptLine.PurchaseOrderLineID.", "Carry PurchaseOrderLineID from the goods receipt line.", "error", "InventoryTransaction", "PurchaseOrderLineID", report)
-        self._compare_mask(inv, inv["ComponentID"] == inv["ExpectedReceiptComponentID"], "V2_INVENTORY_COMPONENT_RECEIPT_MATCH", "InventoryTransaction.ComponentID must match GoodsReceiptLine.ComponentID.", "Carry ComponentID from the received line.", "error", "InventoryTransaction", "ComponentID", report)
-        self._compare_mask(inv, inv["ComponentID"] == inv["ExpectedPoComponentID"], "V2_INVENTORY_COMPONENT_PO_MATCH", "InventoryTransaction.ComponentID must match PurchaseOrderLine.ComponentID.", "Carry ComponentID from the PO line lineage.", "error", "InventoryTransaction", "ComponentID", report)
-        self._compare_mask(inv, inv["SupplierID"] == inv["ExpectedSupplierID"], "V2_INVENTORY_SUPPLIER_LINEAGE", "InventoryTransaction.SupplierID must match PurchaseOrderHdr.SupplierID through PurchaseOrderLine.", "Derive SupplierID from the linked purchase order header.", "error", "InventoryTransaction", "SupplierID", report)
-        self._compare_mask(inv, (inv["PlantID"] == inv["ExpectedPlantID"]) & (inv["WarehouseID"] == inv["ExpectedWarehouseID"]), "V2_INVENTORY_LOCATION_LINEAGE", "InventoryTransaction PlantID/WarehouseID must match GoodsReceiptHeader lineage.", "Carry location from the linked goods receipt header.", "error", "InventoryTransaction", None, report)
-        self._compare_mask(inv, pd.to_datetime(inv["TransactionDate"], errors="coerce") >= pd.to_datetime(inv["InspectionDate"], errors="coerce"), "V2_INVENTORY_TRANSACTION_AFTER_INSPECTION", "InventoryTransaction.TransactionDate must be >= IncomingInspection.InspectionDate.", "Post inventory on or after inspection.", "error", "InventoryTransaction", "TransactionDate", report)
-        self._numeric_compare(inv, inv["TransactionQuantity"], inv["ExpectedAcceptedQuantity"], "V2_INVENTORY_ACCEPTED_QTY", "InventoryTransaction.TransactionQuantity must equal InspectionResult.AcceptedQuantity.", "InventoryTransaction", "TransactionQuantity", report)
-        self._numeric_compare(inv, inv["UnitPrice"], inv["ExpectedUnitPrice"], "V2_INVENTORY_UNIT_PRICE_MATCH", "InventoryTransaction.UnitPrice must equal PurchaseOrderLine.UnitPrice.", "InventoryTransaction", "UnitPrice", report, tolerance=0.01)
+        self._compare_mask(inv, inv["DetailGoodsReceiptLineID"].notna(), "V2_INVENTORY_TRANSACTION_RECEIPT_DETAIL_MATCH", "Every InventoryTransaction row must map to one InventoryReceiptDetail row by InspectionResultID.", "Generate InventoryTransaction rows from InventoryReceiptDetail.", "error", "InventoryTransaction", "InspectionResultID", report)
+        self._compare_mask(inv, inv["GoodsReceiptLineID"] == inv["DetailGoodsReceiptLineID"], "V2_INVENTORY_GOODS_RECEIPT_LINE_LINEAGE", "InventoryTransaction.GoodsReceiptLineID must match InventoryReceiptDetail.GoodsReceiptLineID.", "Carry GoodsReceiptLineID from InventoryReceiptDetail.", "error", "InventoryTransaction", "GoodsReceiptLineID", report)
+        self._compare_mask(inv, inv["PurchaseOrderLineID"] == inv["DetailPurchaseOrderLineID"], "V2_INVENTORY_PO_LINE_RECEIPT_LINEAGE", "InventoryTransaction.PurchaseOrderLineID must match InventoryReceiptDetail.PurchaseOrderLineID.", "Carry PurchaseOrderLineID from InventoryReceiptDetail.", "error", "InventoryTransaction", "PurchaseOrderLineID", report)
+        self._compare_mask(inv, inv["ComponentID"] == inv["DetailComponentID"], "V2_INVENTORY_COMPONENT_RECEIPT_MATCH", "InventoryTransaction.ComponentID must match InventoryReceiptDetail.ComponentID.", "Carry ComponentID from InventoryReceiptDetail.", "error", "InventoryTransaction", "ComponentID", report)
+        self._compare_mask(inv, inv["ComponentID"] == inv["ExpectedPoComponentID"], "V2_INVENTORY_COMPONENT_PO_MATCH", "InventoryTransaction.ComponentID must still match PurchaseOrderLine.ComponentID through InventoryReceiptDetail lineage.", "Carry ComponentID from InventoryReceiptDetail.", "error", "InventoryTransaction", "ComponentID", report)
+        self._compare_mask(inv, inv["SupplierID"] == inv["DetailSupplierID"], "V2_INVENTORY_SUPPLIER_LINEAGE", "InventoryTransaction.SupplierID must match InventoryReceiptDetail.SupplierID.", "Derive SupplierID from InventoryReceiptDetail.", "error", "InventoryTransaction", "SupplierID", report)
+        self._compare_mask(inv, (inv["PlantID"] == inv["DetailPlantID"]) & (inv["WarehouseID"] == inv["DetailWarehouseID"]), "V2_INVENTORY_LOCATION_LINEAGE", "InventoryTransaction PlantID/WarehouseID must match InventoryReceiptDetail location.", "Carry location from InventoryReceiptDetail.", "error", "InventoryTransaction", None, report)
+        self._compare_mask(inv, pd.to_datetime(inv["TransactionDate"], errors="coerce").dt.normalize().eq(pd.to_datetime(inv["DetailStockPostedDate"], errors="coerce").dt.normalize()), "V2_INVENTORY_TRANSACTION_AFTER_INSPECTION", "InventoryTransaction.TransactionDate must equal InventoryReceiptDetail.StockPostedDate.", "Post inventory using the receipt detail stock posted date.", "error", "InventoryTransaction", "TransactionDate", report)
+        self._numeric_compare(inv, inv["TransactionQuantity"], inv["DetailAcceptedQuantity"], "V2_INVENTORY_ACCEPTED_QTY", "InventoryTransaction.TransactionQuantity must equal InventoryReceiptDetail.AcceptedQuantity.", "InventoryTransaction", "TransactionQuantity", report)
+        self._numeric_compare(inv, inv["UnitPrice"], inv["DetailDeliveredUnitPrice"], "V2_INVENTORY_UNIT_PRICE_MATCH", "InventoryTransaction.UnitPrice must equal InventoryReceiptDetail.DeliveredUnitPrice.", "InventoryTransaction", "UnitPrice", report, tolerance=0.01)
         self._numeric_compare(inv, inv["InventoryValue"], (pd.to_numeric(inv["TransactionQuantity"], errors="coerce") * pd.to_numeric(inv["UnitPrice"], errors="coerce")).round(2), "V2_INVENTORY_TRANSACTION_VALUE", "InventoryTransaction.InventoryValue must equal TransactionQuantity * UnitPrice.", "InventoryTransaction", "InventoryValue", report, tolerance=0.0100001)
         self._compare_mask(inv, pd.to_numeric(inv["TransactionQuantity"], errors="coerce") >= -0.0001, "V2_INVENTORY_TRANSACTION_QTY_NON_NEGATIVE", "InventoryTransaction.TransactionQuantity must be non-negative.", "Post only accepted non-negative quantities.", "error", "InventoryTransaction", "TransactionQuantity", report)
         self._compare_mask(inv, pd.to_numeric(inv["InventoryValue"], errors="coerce") >= -0.01, "V2_INVENTORY_TRANSACTION_VALUE_NON_NEGATIVE", "InventoryTransaction.InventoryValue must be non-negative.", "Calculate stock-in value from non-negative quantity and unit price.", "error", "InventoryTransaction", "InventoryValue", report)
+
+    def _v2_inventory_receipt_detail(self, data: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
+        detail = data["InventoryReceiptDetail"].copy()
+        if detail.empty:
+            report.record_check(False)
+            report.add_issue("error", "V2_INVENTORY_RECEIPT_DETAIL_EXISTS", "InventoryReceiptDetail must contain receipt traceability rows.", "Generate one InventoryReceiptDetail row per InspectionResult.", table_name="InventoryReceiptDetail")
+            return
+
+        required_columns = [
+            "InventoryReceiptDetailID", "InspectionResultID", "GoodsReceiptLineID", "PurchaseOrderLineID", "PurchaseOrderID",
+            "SupplierID", "ComponentID", "PlantID", "WarehouseID", "POOrderDate", "ExpectedDeliveryDate", "ActualDeliveryDate",
+            "StockPostedDate", "OrderedQuantity", "ShippedQuantity", "ReceivedQuantity", "InspectedQuantity", "AcceptedQuantity",
+            "RejectedQuantity", "OrderedUnitPrice", "DeliveredUnitPrice", "PriceDifference", "PriceDifferencePct", "OrderedValue",
+            "DeliveredValue", "AcceptedStockValue", "OrderYear", "DeliveryYear", "CrossYearDeliveryFlag", "DeliveryDelayDays",
+            "DeliveryStatus", "PriceVarianceStatus", "InventoryReceiptStatus",
+        ]
+        for column_name in required_columns:
+            mask = detail[column_name].notna() if column_name in detail.columns else pd.Series(False, index=detail.index)
+            self._compare_mask(detail, mask, f"V2_INVENTORY_RECEIPT_DETAIL_{column_name.upper()}_REQUIRED", f"InventoryReceiptDetail.{column_name} must be populated.", "Generate InventoryReceiptDetail from inspection, receipt, PO, supplier, and location lineage.", "error", "InventoryReceiptDetail", column_name, report)
+
+        pk_mask = detail["InventoryReceiptDetailID"].notna() & ~detail["InventoryReceiptDetailID"].duplicated(keep=False)
+        self._compare_mask(detail, pk_mask, "V2_INVENTORY_RECEIPT_DETAIL_PK_UNIQUE", "InventoryReceiptDetailID must be unique and non-null.", "Generate sequential unique receipt detail IDs.", "error", "InventoryReceiptDetail", "InventoryReceiptDetailID", report)
+
+        result_expected = data["InspectionResult"][["InspectionResultID", "InspectionID", "InspectedQuantity", "AcceptedQuantity", "RejectedQuantity"]].rename(columns={"InspectedQuantity": "ExpectedInspectedQuantity", "AcceptedQuantity": "ExpectedAcceptedQuantity", "RejectedQuantity": "ExpectedRejectedQuantity"})
+        inspection_expected = data["IncomingInspection"][["InspectionID", "GoodsReceiptLineID", "InspectionDate"]].rename(columns={"GoodsReceiptLineID": "ExpectedInspectionGoodsReceiptLineID", "InspectionDate": "ExpectedInspectionDate"})
+        receipt_line_expected = data["GoodsReceiptLine"][["GoodsReceiptLineID", "GoodsReceiptID", "ShipmentLineID", "PurchaseOrderLineID", "ComponentID", "ShippedQuantity", "ReceivedQuantity"]].rename(columns={"GoodsReceiptID": "ExpectedGoodsReceiptID", "ShipmentLineID": "ExpectedShipmentLineID", "PurchaseOrderLineID": "ExpectedReceiptPurchaseOrderLineID", "ComponentID": "ExpectedReceiptComponentID", "ShippedQuantity": "ExpectedReceiptShippedQuantity", "ReceivedQuantity": "ExpectedReceivedQuantity"})
+        receipt_expected = data["GoodsReceiptHeader"][["GoodsReceiptID", "PlantID", "WarehouseID", "ReceiptDate"]].rename(columns={"PlantID": "ExpectedPlantID", "WarehouseID": "ExpectedWarehouseID", "ReceiptDate": "ExpectedActualDeliveryDate"})
+        shipment_line_expected = data["ShipmentLine"][["ShipmentLineID", "POScheduleID", "ShippedQuantity"]].rename(columns={"POScheduleID": "ExpectedPOScheduleID", "ShippedQuantity": "ExpectedShippedQuantity"})
+        schedule_expected = data["POSchedule"][["POScheduleID", "ScheduledDeliveryDate"]].rename(columns={"ScheduledDeliveryDate": "ExpectedScheduledDeliveryDate"})
+        po_line_expected = data["PurchaseOrderLine"][["PurchaseOrderLineID", "PurchaseOrderID", "ComponentID", "OrderedQuantity", "UnitPrice"]].rename(columns={"PurchaseOrderID": "ExpectedPurchaseOrderID", "ComponentID": "ExpectedPoComponentID", "OrderedQuantity": "ExpectedOrderedQuantity", "UnitPrice": "ExpectedOrderedUnitPrice"})
+        po_expected = data["PurchaseOrderHdr"][["PurchaseOrderID", "SupplierID", "OrderDate"]].rename(columns={"SupplierID": "ExpectedSupplierID", "OrderDate": "ExpectedPOOrderDate"})
+        warehouse_expected = data["Warehouse"][["WarehouseID", "PlantID"]].rename(columns={"PlantID": "ExpectedWarehousePlantID"})
+
+        merged = (
+            detail.merge(result_expected, on="InspectionResultID", how="left")
+            .merge(inspection_expected, on="InspectionID", how="left")
+            .merge(receipt_line_expected, on="GoodsReceiptLineID", how="left")
+            .merge(receipt_expected, left_on="ExpectedGoodsReceiptID", right_on="GoodsReceiptID", how="left")
+            .merge(shipment_line_expected, left_on="ExpectedShipmentLineID", right_on="ShipmentLineID", how="left")
+            .merge(schedule_expected, left_on="ExpectedPOScheduleID", right_on="POScheduleID", how="left")
+            .merge(po_line_expected, on="PurchaseOrderLineID", how="left")
+            .merge(po_expected, on="PurchaseOrderID", how="left")
+            .merge(warehouse_expected, on="WarehouseID", how="left")
+        )
+
+        self._compare_mask(merged, merged["ExpectedInspectedQuantity"].notna(), "V2_INVENTORY_RECEIPT_DETAIL_INSPECTION_RESULT_FK", "InventoryReceiptDetail.InspectionResultID must exist in InspectionResult.", "Use valid inspection result IDs.", "error", "InventoryReceiptDetail", "InspectionResultID", report)
+        self._compare_mask(merged, merged["ExpectedReceivedQuantity"].notna(), "V2_INVENTORY_RECEIPT_DETAIL_GOODS_RECEIPT_LINE_FK", "InventoryReceiptDetail.GoodsReceiptLineID must exist in GoodsReceiptLine.", "Use valid goods receipt line IDs.", "error", "InventoryReceiptDetail", "GoodsReceiptLineID", report)
+        self._compare_mask(merged, merged["ExpectedOrderedQuantity"].notna(), "V2_INVENTORY_RECEIPT_DETAIL_PO_LINE_FK", "InventoryReceiptDetail.PurchaseOrderLineID must exist in PurchaseOrderLine.", "Use valid purchase order line IDs.", "error", "InventoryReceiptDetail", "PurchaseOrderLineID", report)
+        self._compare_mask(merged, merged["ExpectedSupplierID"].notna(), "V2_INVENTORY_RECEIPT_DETAIL_PO_FK", "InventoryReceiptDetail.PurchaseOrderID must exist in PurchaseOrderHdr.", "Use valid purchase order IDs.", "error", "InventoryReceiptDetail", "PurchaseOrderID", report)
+        self._compare_mask(merged, merged["GoodsReceiptLineID"].eq(merged["ExpectedInspectionGoodsReceiptLineID"]), "V2_INVENTORY_RECEIPT_DETAIL_INSPECTION_LINEAGE", "InventoryReceiptDetail.GoodsReceiptLineID must match IncomingInspection.GoodsReceiptLineID.", "Carry receipt-line lineage from IncomingInspection.", "error", "InventoryReceiptDetail", "GoodsReceiptLineID", report)
+        self._compare_mask(merged, merged["PurchaseOrderLineID"].eq(merged["ExpectedReceiptPurchaseOrderLineID"]), "V2_INVENTORY_RECEIPT_DETAIL_PO_LINEAGE", "InventoryReceiptDetail.PurchaseOrderLineID must match GoodsReceiptLine.PurchaseOrderLineID.", "Carry PO line from GoodsReceiptLine.", "error", "InventoryReceiptDetail", "PurchaseOrderLineID", report)
+        self._compare_mask(merged, merged["PurchaseOrderID"].eq(merged["ExpectedPurchaseOrderID"]), "V2_INVENTORY_RECEIPT_DETAIL_PO_HEADER_LINEAGE", "InventoryReceiptDetail.PurchaseOrderID must match PurchaseOrderLine.PurchaseOrderID.", "Carry PO header from PurchaseOrderLine.", "error", "InventoryReceiptDetail", "PurchaseOrderID", report)
+        self._compare_mask(merged, merged["SupplierID"].eq(merged["ExpectedSupplierID"]), "V2_INVENTORY_RECEIPT_DETAIL_SUPPLIER_LINEAGE", "InventoryReceiptDetail.SupplierID must match PurchaseOrderHdr.SupplierID.", "Carry supplier from PurchaseOrderHdr.", "error", "InventoryReceiptDetail", "SupplierID", report)
+        self._compare_mask(merged, merged["ComponentID"].eq(merged["ExpectedPoComponentID"]) & merged["ComponentID"].eq(merged["ExpectedReceiptComponentID"]), "V2_INVENTORY_RECEIPT_DETAIL_COMPONENT_LINEAGE", "InventoryReceiptDetail.ComponentID must match PO and receipt component lineage.", "Carry component from PO and receipt lines.", "error", "InventoryReceiptDetail", "ComponentID", report)
+        self._compare_mask(merged, merged["PlantID"].eq(merged["ExpectedPlantID"]) & merged["WarehouseID"].eq(merged["ExpectedWarehouseID"]) & merged["PlantID"].eq(merged["ExpectedWarehousePlantID"]), "V2_INVENTORY_RECEIPT_DETAIL_LOCATION_LINEAGE", "InventoryReceiptDetail PlantID/WarehouseID must match GoodsReceiptHeader and warehouse master lineage.", "Carry plant and warehouse from GoodsReceiptHeader.", "error", "InventoryReceiptDetail", "WarehouseID", report)
+
+        self._compare_mask(merged, pd.to_datetime(merged["POOrderDate"], errors="coerce").dt.normalize().eq(pd.to_datetime(merged["ExpectedPOOrderDate"], errors="coerce").dt.normalize()), "V2_INVENTORY_RECEIPT_DETAIL_PO_ORDER_DATE", "InventoryReceiptDetail.POOrderDate must match PurchaseOrderHdr.OrderDate.", "Carry PO order date from the PO header.", "error", "InventoryReceiptDetail", "POOrderDate", report)
+        self._compare_mask(merged, pd.to_datetime(merged["ExpectedDeliveryDate"], errors="coerce").dt.normalize().eq(pd.to_datetime(merged["ExpectedScheduledDeliveryDate"], errors="coerce").dt.normalize()), "V2_INVENTORY_RECEIPT_DETAIL_EXPECTED_DELIVERY_DATE", "InventoryReceiptDetail.ExpectedDeliveryDate must match POSchedule.ScheduledDeliveryDate.", "Carry expected delivery date from POSchedule.", "error", "InventoryReceiptDetail", "ExpectedDeliveryDate", report)
+        self._compare_mask(merged, pd.to_datetime(merged["ActualDeliveryDate"], errors="coerce").dt.normalize().eq(pd.to_datetime(merged["ExpectedActualDeliveryDate"], errors="coerce").dt.normalize()), "V2_INVENTORY_RECEIPT_DETAIL_ACTUAL_DELIVERY_DATE", "InventoryReceiptDetail.ActualDeliveryDate must match GoodsReceiptHeader.ReceiptDate.", "Carry actual delivery date from GoodsReceiptHeader.", "error", "InventoryReceiptDetail", "ActualDeliveryDate", report)
+        self._compare_mask(merged, pd.to_datetime(merged["StockPostedDate"], errors="coerce") >= pd.to_datetime(merged["ActualDeliveryDate"], errors="coerce"), "V2_INVENTORY_RECEIPT_DETAIL_STOCK_POSTED_DATE", "InventoryReceiptDetail.StockPostedDate must be on or after ActualDeliveryDate.", "Post stock on or after goods receipt.", "error", "InventoryReceiptDetail", "StockPostedDate", report)
+        for column_name in ["POOrderDate", "ExpectedDeliveryDate", "ActualDeliveryDate", "StockPostedDate"]:
+            dates = pd.to_datetime(merged[column_name], errors="coerce")
+            self._compare_mask(merged, (dates >= pd.Timestamp("2025-01-01")) & (dates <= pd.Timestamp("2025-12-31")), f"V2_INVENTORY_RECEIPT_DETAIL_{column_name.upper()}_2025", f"InventoryReceiptDetail.{column_name} must be within calendar year 2025.", "Keep Procurement v2 generated dates in 2025.", "error", "InventoryReceiptDetail", column_name, report)
+
+        self._numeric_compare(merged, merged["OrderedQuantity"], merged["ExpectedOrderedQuantity"], "V2_INVENTORY_RECEIPT_DETAIL_ORDERED_QTY", "InventoryReceiptDetail.OrderedQuantity must match PurchaseOrderLine.OrderedQuantity.", "InventoryReceiptDetail", "OrderedQuantity", report)
+        self._numeric_compare(merged, merged["ShippedQuantity"], merged["ExpectedShippedQuantity"], "V2_INVENTORY_RECEIPT_DETAIL_SHIPPED_QTY", "InventoryReceiptDetail.ShippedQuantity must match ShipmentLine.ShippedQuantity.", "InventoryReceiptDetail", "ShippedQuantity", report)
+        self._numeric_compare(merged, merged["ReceivedQuantity"], merged["ExpectedReceivedQuantity"], "V2_INVENTORY_RECEIPT_DETAIL_RECEIVED_QTY", "InventoryReceiptDetail.ReceivedQuantity must match GoodsReceiptLine.ReceivedQuantity.", "InventoryReceiptDetail", "ReceivedQuantity", report)
+        self._numeric_compare(merged, merged["InspectedQuantity"], merged["ExpectedInspectedQuantity"], "V2_INVENTORY_RECEIPT_DETAIL_INSPECTED_QTY", "InventoryReceiptDetail.InspectedQuantity must match InspectionResult.InspectedQuantity.", "InventoryReceiptDetail", "InspectedQuantity", report)
+        self._numeric_compare(merged, merged["AcceptedQuantity"], merged["ExpectedAcceptedQuantity"], "V2_INVENTORY_RECEIPT_DETAIL_ACCEPTED_QTY", "InventoryReceiptDetail.AcceptedQuantity must match InspectionResult.AcceptedQuantity.", "InventoryReceiptDetail", "AcceptedQuantity", report)
+        self._numeric_compare(merged, merged["RejectedQuantity"], 0, "V2_INVENTORY_RECEIPT_DETAIL_REJECTED_QTY_ZERO", "InventoryReceiptDetail.RejectedQuantity must be zero for full-received Procurement v2.", "InventoryReceiptDetail", "RejectedQuantity", report)
+        for column_name in ["ShippedQuantity", "ReceivedQuantity", "InspectedQuantity", "AcceptedQuantity"]:
+            self._numeric_compare(merged, merged[column_name], merged["OrderedQuantity"], f"V2_INVENTORY_RECEIPT_DETAIL_FULL_RECEIVED_{column_name.upper()}", f"InventoryReceiptDetail.{column_name} must equal OrderedQuantity for full-received Procurement v2.", "InventoryReceiptDetail", column_name, report)
+
+        self._numeric_compare(merged, merged["OrderedUnitPrice"], merged["ExpectedOrderedUnitPrice"], "V2_INVENTORY_RECEIPT_DETAIL_ORDERED_UNIT_PRICE", "InventoryReceiptDetail.OrderedUnitPrice must match PurchaseOrderLine.UnitPrice.", "InventoryReceiptDetail", "OrderedUnitPrice", report, tolerance=0.01)
+        self._numeric_compare(merged, merged["PriceDifference"], pd.to_numeric(merged["DeliveredUnitPrice"], errors="coerce") - pd.to_numeric(merged["OrderedUnitPrice"], errors="coerce"), "V2_INVENTORY_RECEIPT_DETAIL_PRICE_DIFFERENCE", "InventoryReceiptDetail.PriceDifference must equal DeliveredUnitPrice - OrderedUnitPrice.", "InventoryReceiptDetail", "PriceDifference", report, tolerance=0.01)
+        expected_pct = merged.apply(self._inventory_receipt_price_difference_pct, axis=1)
+        self._numeric_compare(merged, merged["PriceDifferencePct"], expected_pct, "V2_INVENTORY_RECEIPT_DETAIL_PRICE_DIFFERENCE_PCT", "InventoryReceiptDetail.PriceDifferencePct must equal price difference percentage.", "InventoryReceiptDetail", "PriceDifferencePct", report, tolerance=0.01)
+        self._numeric_compare(merged, merged["OrderedValue"], (pd.to_numeric(merged["OrderedQuantity"], errors="coerce") * pd.to_numeric(merged["OrderedUnitPrice"], errors="coerce")).round(2), "V2_INVENTORY_RECEIPT_DETAIL_ORDERED_VALUE", "InventoryReceiptDetail.OrderedValue must equal OrderedQuantity * OrderedUnitPrice.", "InventoryReceiptDetail", "OrderedValue", report, tolerance=0.0100001)
+        self._numeric_compare(merged, merged["DeliveredValue"], (pd.to_numeric(merged["ReceivedQuantity"], errors="coerce") * pd.to_numeric(merged["DeliveredUnitPrice"], errors="coerce")).round(2), "V2_INVENTORY_RECEIPT_DETAIL_DELIVERED_VALUE", "InventoryReceiptDetail.DeliveredValue must equal ReceivedQuantity * DeliveredUnitPrice.", "InventoryReceiptDetail", "DeliveredValue", report, tolerance=0.0100001)
+        self._numeric_compare(merged, merged["AcceptedStockValue"], (pd.to_numeric(merged["AcceptedQuantity"], errors="coerce") * pd.to_numeric(merged["DeliveredUnitPrice"], errors="coerce")).round(2), "V2_INVENTORY_RECEIPT_DETAIL_ACCEPTED_STOCK_VALUE", "InventoryReceiptDetail.AcceptedStockValue must equal AcceptedQuantity * DeliveredUnitPrice.", "InventoryReceiptDetail", "AcceptedStockValue", report, tolerance=0.0100001)
+
+        self._compare_mask(merged, pd.to_numeric(merged["OrderYear"], errors="coerce").eq(2025) & pd.to_numeric(merged["DeliveryYear"], errors="coerce").eq(2025), "V2_INVENTORY_RECEIPT_DETAIL_YEAR_FIELDS", "InventoryReceiptDetail OrderYear and DeliveryYear must be 2025.", "Keep Phase 3 generation in the 2025-only scope.", "error", "InventoryReceiptDetail", "OrderYear", report)
+        self._numeric_compare(merged, merged["CrossYearDeliveryFlag"], 0, "V2_INVENTORY_RECEIPT_DETAIL_CROSS_YEAR_FLAG", "InventoryReceiptDetail.CrossYearDeliveryFlag must be 0 for 2025-only generation.", "InventoryReceiptDetail", "CrossYearDeliveryFlag", report)
+        expected_delay = (pd.to_datetime(merged["ActualDeliveryDate"], errors="coerce") - pd.to_datetime(merged["ExpectedDeliveryDate"], errors="coerce")).dt.days
+        self._numeric_compare(merged, merged["DeliveryDelayDays"], expected_delay, "V2_INVENTORY_RECEIPT_DETAIL_DELIVERY_DELAY_DAYS", "InventoryReceiptDetail.DeliveryDelayDays must equal ActualDeliveryDate - ExpectedDeliveryDate.", "InventoryReceiptDetail", "DeliveryDelayDays", report)
+        expected_delivery_status = np.select([expected_delay < 0, expected_delay > 0], ["Early", "Delayed"], default="OnTime")
+        self._compare_mask(merged, merged["DeliveryStatus"].astype(str).eq(pd.Series(expected_delivery_status, index=merged.index)), "V2_INVENTORY_RECEIPT_DETAIL_DELIVERY_STATUS", "InventoryReceiptDetail.DeliveryStatus must match expected versus actual delivery date.", "Derive DeliveryStatus from delivery delay days.", "error", "InventoryReceiptDetail", "DeliveryStatus", report)
+        price_difference = pd.to_numeric(merged["PriceDifference"], errors="coerce").fillna(0)
+        expected_price_status = np.select([price_difference > 0.01, price_difference < -0.01], ["PriceIncrease", "PriceDecrease"], default="NoChange")
+        self._compare_mask(merged, merged["PriceVarianceStatus"].astype(str).eq(pd.Series(expected_price_status, index=merged.index)), "V2_INVENTORY_RECEIPT_DETAIL_PRICE_VARIANCE_STATUS", "InventoryReceiptDetail.PriceVarianceStatus must match PriceDifference.", "Derive price variance status from price difference.", "error", "InventoryReceiptDetail", "PriceVarianceStatus", report)
+        self._compare_mask(merged, merged["InventoryReceiptStatus"].astype(str).eq("Received"), "V2_INVENTORY_RECEIPT_DETAIL_STATUS", "InventoryReceiptDetail.InventoryReceiptStatus must be Received.", "Use Received for full-received inventory receipt details.", "error", "InventoryReceiptDetail", "InventoryReceiptStatus", report)
+
+    def _inventory_receipt_price_difference_pct(self, row: pd.Series) -> float:
+        try:
+            ordered_unit_price = Decimal(str(row["OrderedUnitPrice"]))
+            if ordered_unit_price == 0:
+                return 0.0
+            price_difference = Decimal(str(row["PriceDifference"]))
+            percentage = (price_difference / ordered_unit_price) * Decimal("100")
+            return float(percentage.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN))
+        except Exception:
+            return float("nan")
 
     def _v2_inventory_snapshot(self, data: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
         inventory = data["Inventory"]
@@ -1005,22 +1351,19 @@ class ProcurementReconciler:
         for column in ["TotalScheduledQuantity", "TotalShippedQuantity", "TotalReceivedQuantity", "TotalStockInQuantity"]:
             line_status[column] = pd.to_numeric(line_status[column], errors="coerce").fillna(0)
         ordered = pd.to_numeric(line_status["OrderedQuantity"], errors="coerce").fillna(0)
-        expected_line_status = np.select(
-            [
-                line_status["TotalScheduledQuantity"] <= tolerance,
-                line_status["TotalShippedQuantity"] <= tolerance,
-                line_status["TotalStockInQuantity"] + tolerance >= ordered,
-                (line_status["TotalReceivedQuantity"] > tolerance) | (line_status["TotalStockInQuantity"] > tolerance),
-            ],
-            ["Open", "Scheduled", "Closed", "PartiallyReceived"],
-            default="PartiallyShipped",
+        full_line_mask = (
+            line_status["LineStatus"].astype(str).eq("Received")
+            & ((line_status["TotalScheduledQuantity"] - ordered).abs() <= tolerance)
+            & ((line_status["TotalShippedQuantity"] - ordered).abs() <= tolerance)
+            & ((line_status["TotalReceivedQuantity"] - ordered).abs() <= tolerance)
+            & ((line_status["TotalStockInQuantity"] - ordered).abs() <= tolerance)
         )
         self._compare_mask(
             line_status,
-            line_status["LineStatus"].astype(str).eq(pd.Series(expected_line_status, index=line_status.index)),
+            full_line_mask,
             "V2_PO_LINE_STATUS_LOGIC",
-            "PurchaseOrderLine.LineStatus must match schedule, shipment, receipt, and stock-in lifecycle quantities.",
-            "Derive PO line status from cumulative downstream lifecycle quantities.",
+            "PurchaseOrderLine.LineStatus must be Received and all downstream quantities must equal OrderedQuantity for full-received Procurement v2.",
+            "Generate full-received PO lines with schedule, shipment, receipt, inspection, and stock-in quantities equal to OrderedQuantity.",
             "error",
             "PurchaseOrderLine",
             "LineStatus",
@@ -1028,10 +1371,10 @@ class ProcurementReconciler:
         )
         self._compare_mask(
             line_status,
-            ~(line_status["LineStatus"].astype(str).eq("Closed") & (line_status["TotalStockInQuantity"] + tolerance < ordered)),
+            ~line_status["LineStatus"].astype(str).eq("Closed"),
             "V2_PO_LINE_CLOSED_WITH_PARTIAL_STOCK_IN",
-            "PurchaseOrderLine.LineStatus cannot be Closed when StockIn quantity is less than OrderedQuantity.",
-            "Set partially stocked PO lines to PartiallyReceived rather than Closed.",
+            "PurchaseOrderLine.LineStatus must not be Closed in the full-received v2 lifecycle.",
+            "Use Received for completed inbound PO lines.",
             "error",
             "PurchaseOrderLine",
             "LineStatus",
@@ -1047,30 +1390,21 @@ class ProcurementReconciler:
             TotalStockInQuantity=("TotalStockInQuantity", "sum"),
         ).reset_index()
         header_status = header_status.merge(by_po, on="PurchaseOrderID", how="left").fillna(0)
-        expected_po_status = np.select(
-            [
-                header_status["TotalScheduledQuantity"] <= tolerance,
-                header_status["TotalShippedQuantity"] <= tolerance,
-                header_status["TotalStockInQuantity"] + tolerance >= header_status["TotalOrderedQuantity"],
-                (header_status["TotalReceivedQuantity"] > tolerance) | (header_status["TotalStockInQuantity"] > tolerance),
-            ],
-            ["Approved", "Sent", "Closed", "PartiallyReceived"],
-            default="Sent",
-        )
         po_status_text = header_status["POStatus"].astype(str)
         po_status_mask = (
-            ((pd.Series(expected_po_status, index=header_status.index).eq("Approved")) & po_status_text.isin(["Approved", "Sent"]))
-            | ((pd.Series(expected_po_status, index=header_status.index).eq("Sent")) & po_status_text.eq("Sent"))
-            | ((pd.Series(expected_po_status, index=header_status.index).eq("Closed")) & po_status_text.eq("Closed"))
-            | ((pd.Series(expected_po_status, index=header_status.index).eq("PartiallyReceived")) & po_status_text.eq("PartiallyReceived"))
+            po_status_text.eq("Received")
+            & ((header_status["TotalScheduledQuantity"] - header_status["TotalOrderedQuantity"]).abs() <= tolerance)
+            & ((header_status["TotalShippedQuantity"] - header_status["TotalOrderedQuantity"]).abs() <= tolerance)
+            & ((header_status["TotalReceivedQuantity"] - header_status["TotalOrderedQuantity"]).abs() <= tolerance)
+            & ((header_status["TotalStockInQuantity"] - header_status["TotalOrderedQuantity"]).abs() <= tolerance)
         )
-        self._compare_mask(header_status, po_status_mask, "V2_PO_HEADER_STATUS_LOGIC", "PurchaseOrderHdr.POStatus must match aggregate downstream lifecycle quantities.", "Derive PO header status from its PO line lifecycle totals.", "error", "PurchaseOrderHdr", "POStatus", report)
+        self._compare_mask(header_status, po_status_mask, "V2_PO_HEADER_STATUS_LOGIC", "PurchaseOrderHdr.POStatus must be Received and all aggregate downstream quantities must equal ordered quantity for full-received Procurement v2.", "Generate full-received PO headers with completed downstream lifecycle totals.", "error", "PurchaseOrderHdr", "POStatus", report)
         self._compare_mask(
             header_status,
-            ~(po_status_text.eq("Closed") & (header_status["TotalStockInQuantity"] + tolerance < header_status["TotalOrderedQuantity"])),
+            ~po_status_text.eq("Closed"),
             "V2_PO_HEADER_CLOSED_WITH_PARTIAL_STOCK_IN",
-            "PurchaseOrderHdr.POStatus cannot be Closed when total StockIn quantity is less than total OrderedQuantity.",
-            "Keep partially stocked POs in PartiallyReceived or Sent status.",
+            "PurchaseOrderHdr.POStatus must not be Closed in the full-received v2 lifecycle.",
+            "Use Received for completed inbound POs.",
             "error",
             "PurchaseOrderHdr",
             "POStatus",
@@ -1084,25 +1418,16 @@ class ProcurementReconciler:
         ).fillna({"TotalShippedQuantity": 0})
         shipped_schedule = pd.to_numeric(schedule_status["TotalShippedQuantity"], errors="coerce").fillna(0)
         scheduled_quantity = pd.to_numeric(schedule_status["ScheduledQuantity"], errors="coerce").fillna(0)
-        schedule_expected = np.select(
-            [shipped_schedule <= tolerance, shipped_schedule + tolerance < scheduled_quantity],
-            ["Scheduled", "PartiallyShipped"],
-            default="Shipped",
-        )
         schedule_status_text = schedule_status["ScheduleStatus"].astype(str)
-        schedule_mask = (
-            ((pd.Series(schedule_expected, index=schedule_status.index).eq("Scheduled")) & schedule_status_text.isin(["Scheduled", "Planned"]))
-            | ((pd.Series(schedule_expected, index=schedule_status.index).eq("PartiallyShipped")) & schedule_status_text.isin(["PartiallyShipped", "Delayed"]))
-            | ((pd.Series(schedule_expected, index=schedule_status.index).eq("Shipped")) & schedule_status_text.isin(["Shipped", "Delayed"]))
-        )
-        self._compare_mask(schedule_status, schedule_mask, "V2_PO_SCHEDULE_STATUS_LOGIC", "POSchedule.ScheduleStatus must match shipped quantity.", "Do not mark schedules as shipped until shipped quantity reaches scheduled quantity.", "error", "POSchedule", "ScheduleStatus", report)
+        schedule_mask = schedule_status_text.eq("Shipped") & ((shipped_schedule - scheduled_quantity).abs() <= tolerance)
+        self._compare_mask(schedule_status, schedule_mask, "V2_PO_SCHEDULE_STATUS_LOGIC", "POSchedule.ScheduleStatus must be Shipped and shipped quantity must equal scheduled quantity.", "Generate completed schedules for the full-received v2 lifecycle.", "error", "POSchedule", "ScheduleStatus", report)
 
         shipment_quantities = data["ShipmentLine"].groupby("ShipmentID", dropna=False)["ShippedQuantity"].sum().reset_index(name="TotalShippedQuantity")
         receipt_quantities = data["GoodsReceiptLine"].merge(data["GoodsReceiptHeader"][["GoodsReceiptID", "ShipmentID"]], on="GoodsReceiptID", how="left").groupby("ShipmentID", dropna=False)["ReceivedQuantity"].sum().reset_index(name="TotalReceivedQuantity")
         shipment_status = data["ShipmentHdr"][["ShipmentID", "ShipmentStatus"]].merge(shipment_quantities, on="ShipmentID", how="left").merge(receipt_quantities, on="ShipmentID", how="left").fillna(0)
         shipment_status_text = shipment_status["ShipmentStatus"].astype(str)
-        delivered_bad = shipment_status_text.eq("Delivered") & (shipment_status["TotalReceivedQuantity"] + tolerance < shipment_status["TotalShippedQuantity"])
-        self._compare_mask(shipment_status, ~delivered_bad, "V2_SHIPMENT_DELIVERED_WITH_PARTIAL_RECEIPT", "ShipmentHdr.ShipmentStatus cannot be Delivered until received quantity reaches shipped quantity.", "Use InTransit, Shipped, Delayed, or PartiallyDelivered for open shipments.", "error", "ShipmentHdr", "ShipmentStatus", report)
+        shipment_mask = shipment_status_text.eq("Delivered") & ((shipment_status["TotalReceivedQuantity"] - shipment_status["TotalShippedQuantity"]).abs() <= tolerance)
+        self._compare_mask(shipment_status, shipment_mask, "V2_SHIPMENT_DELIVERED_WITH_PARTIAL_RECEIPT", "ShipmentHdr.ShipmentStatus must be Delivered and received quantity must equal shipped quantity.", "Generate delivered shipments for the full-received v2 lifecycle.", "error", "ShipmentHdr", "ShipmentStatus", report)
 
         receipt_status = data["GoodsReceiptHeader"][["GoodsReceiptID", "ReceiptStatus"]].merge(
             data["GoodsReceiptLine"].groupby("GoodsReceiptID", dropna=False).agg(
@@ -1114,12 +1439,13 @@ class ProcurementReconciler:
             on="GoodsReceiptID",
             how="left",
         ).fillna(0)
-        receipt_bad = receipt_status["ReceiptStatus"].astype(str).isin(["Received", "Closed"]) & (
-            (receipt_status["TotalDamagedQuantity"] > tolerance)
-            | (receipt_status["TotalShortQuantity"] > tolerance)
-            | (receipt_status["TotalReceivedQuantity"] + tolerance < receipt_status["TotalShippedQuantity"])
+        receipt_mask = (
+            receipt_status["ReceiptStatus"].astype(str).eq("Received")
+            & (receipt_status["TotalDamagedQuantity"].abs() <= tolerance)
+            & (receipt_status["TotalShortQuantity"].abs() <= tolerance)
+            & ((receipt_status["TotalReceivedQuantity"] - receipt_status["TotalShippedQuantity"]).abs() <= tolerance)
         )
-        self._compare_mask(receipt_status, ~receipt_bad, "V2_RECEIPT_STATUS_LOGIC", "GoodsReceiptHeader.ReceiptStatus cannot be Received/Closed when short or damaged quantities exist.", "Derive receipt status from receipt line short and damaged quantities.", "error", "GoodsReceiptHeader", "ReceiptStatus", report)
+        self._compare_mask(receipt_status, receipt_mask, "V2_RECEIPT_STATUS_LOGIC", "GoodsReceiptHeader.ReceiptStatus must be Received with no short or damaged quantity.", "Generate fully received goods receipts with zero short and damaged quantities.", "error", "GoodsReceiptHeader", "ReceiptStatus", report)
 
         result = data["InspectionResult"]
         rejected = pd.to_numeric(result["RejectedQuantity"], errors="coerce").fillna(0)
@@ -1132,19 +1458,12 @@ class ProcurementReconciler:
             report.add_issue("error", "V2_REJECTION_REASON_REQUIRED", "Rows with RejectedQuantity > 0 must have a populated rejection reason.", "Populate rejection reasons for rejected rows.", table_name="InspectionResult", column_name="RejectionReason", sample_failed_rows=self._sample_rows(result[missing]))
         else:
             report.record_check(True)
-        status_mask = ((rejected == 0) & result["ResultStatus"].eq("Passed")) | ((rejected > 0) & (accepted > 0) & result["ResultStatus"].eq("PartiallyRejected")) | ((rejected > 0) & (accepted == 0) & result["ResultStatus"].eq("Failed"))
-        self._compare_mask(result, status_mask, "V2_INSPECTION_STATUS_REALISM", "Inspection ResultStatus must align with accepted/rejected quantities.", "Derive inspection status from quantities.", "error", "InspectionResult", "ResultStatus", report)
+        inspected = pd.to_numeric(result["InspectedQuantity"], errors="coerce").fillna(0)
+        status_mask = (rejected.abs() <= tolerance) & ((accepted - inspected).abs() <= tolerance) & result["ResultStatus"].astype(str).eq("Passed")
+        self._compare_mask(result, status_mask, "V2_INSPECTION_STATUS_REALISM", "InspectionResult.ResultStatus must be Passed with AcceptedQuantity equal to InspectedQuantity and RejectedQuantity equal to zero.", "Generate passed inspection results for the full-received v2 lifecycle.", "error", "InspectionResult", "ResultStatus", report)
         incoming_status = data["IncomingInspection"][["InspectionID", "InspectionStatus"]].merge(result[["InspectionID", "AcceptedQuantity", "RejectedQuantity", "ResultStatus"]], on="InspectionID", how="left")
-        expected_incoming = np.select(
-            [
-                incoming_status["ResultStatus"].isna(),
-                incoming_status["ResultStatus"].eq("Passed"),
-                incoming_status["ResultStatus"].eq("Failed"),
-            ],
-            ["Pending", "Passed", "Failed"],
-            default="PartiallyRejected",
-        )
-        self._compare_mask(incoming_status, incoming_status["InspectionStatus"].astype(str).eq(pd.Series(expected_incoming, index=incoming_status.index)), "V2_INCOMING_INSPECTION_STATUS_LOGIC", "IncomingInspection.InspectionStatus must match its InspectionResult.", "Derive incoming inspection status from accepted and rejected quantities.", "error", "IncomingInspection", "InspectionStatus", report)
+        incoming_mask = incoming_status["InspectionStatus"].astype(str).eq("Passed") & incoming_status["ResultStatus"].astype(str).eq("Passed")
+        self._compare_mask(incoming_status, incoming_mask, "V2_INCOMING_INSPECTION_STATUS_LOGIC", "IncomingInspection.InspectionStatus must be Passed when the linked InspectionResult is Passed.", "Generate passed incoming inspections for the full-received v2 lifecycle.", "error", "IncomingInspection", "InspectionStatus", report)
         rejected_rows = result[rejected > 0]
         enough_variety = len(rejected_rows) <= 50 or rejected_rows["RejectionReason"].nunique(dropna=True) >= 3
         report.record_check(enough_variety)
@@ -1243,8 +1562,10 @@ class ProcurementDataQualityEngine:
         dataframes: dict[str, pd.DataFrame],
         schema: SchemaContract,
         plan: LLMGenerationPlan | None = None,
-        model_version: str = "v1",
+        model_version: str = "v2",
     ) -> DataQualityReport:
+        if model_version != "v2":
+            raise ValueError(PROCUREMENT_V1_UNSUPPORTED_MESSAGE)
         report = self.validator.validate_dataset(dataframes, schema, plan, model_version=model_version)
         reconciliation_report = self.reconciler.reconcile_dataset(dataframes, schema, plan, model_version=model_version)
         report.merge(reconciliation_report)

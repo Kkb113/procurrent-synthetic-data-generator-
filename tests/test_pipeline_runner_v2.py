@@ -39,6 +39,7 @@ EXPECTED_FINAL_TABLES = {
     "GoodsReceiptLine",
     "IncomingInspection",
     "InspectionResult",
+    "InventoryReceiptDetail",
     "InventoryTransaction",
     "Inventory",
     "SupplierInvoice",
@@ -97,7 +98,7 @@ def test_v2_pipeline_report_includes_model_version_and_final_tables(v2_pipeline_
     payload = json.loads(report_path.read_text(encoding="utf-8"))
 
     assert payload["model_version"] == "v2"
-    assert payload["tables_generated"] == 24
+    assert payload["tables_generated"] == 25
     assert payload["data_quality_status"] in {"passed", "passed_with_warnings"}
     assert payload["sql_load_status"] == "skipped"
     assert set(payload["final_data_tables"]) == EXPECTED_FINAL_TABLES
@@ -122,10 +123,15 @@ def test_v2_audit_report_lists_inventory(v2_pipeline_run) -> None:
     table_names = {table["table_name"] for table in payload["schema_summary"]["tables"]}
 
     assert payload["report_metadata"]["model_version"] == "v2"
-    assert payload["generation_summary"]["tables_generated"] == 24
+    assert payload["generation_summary"]["tables_generated"] == 25
     assert payload["generation_summary"]["row_counts_by_table"]["Inventory"] > 0
+    assert payload["generation_summary"]["row_counts_by_table"]["InventoryReceiptDetail"] > 0
     assert "Inventory" in table_names
+    assert "InventoryReceiptDetail" in table_names
     assert "InventoryBalance" not in table_names
+    assert "Procurement v2: 25 generated tables" in markdown
+    assert "InventoryReceiptDetail: receipt-level traceability" in markdown
+    assert "InventoryTransaction: inbound StockIn ledger sourced from InventoryReceiptDetail." in markdown
     assert "| Inventory | inventory | Inventory |" in markdown
 
 
@@ -160,6 +166,7 @@ def test_v2_final_row_counts_match_expected_targets(v2_pipeline_run) -> None:
 
     assert sum(row_counts.values()) == v2_pipeline_run.total_rows_generated
     assert row_counts["SupplierMaster"] == 80
+    assert row_counts["InventoryReceiptDetail"] > 0
     assert row_counts["Inventory"] > 0
     assert row_counts["SupplierQuotationLn"] == 10500
     assert row_counts["PaymentTransaction"] == 1700
@@ -171,7 +178,7 @@ def test_v2_generate_plan_mode_uses_model_version_and_saves_artifacts(tmp_path: 
     plan_payload["column_generation_rules"][0]["depends_on_columns"] = ["NotAColumn"]
     raw_plan = json.dumps(plan_payload)
 
-    def fake_prompt_builder(schema, relationships, scenario, model_version="v1"):
+    def fake_prompt_builder(schema, relationships, scenario, model_version="v2"):
         calls["model_version"] = model_version
         return f"mock prompt for {model_version}"
 

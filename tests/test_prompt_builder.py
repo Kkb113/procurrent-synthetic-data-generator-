@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from procurement_data_generator.core.contracts.erd_contract import RelationshipContract
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.llm.prompt_builder import build_llm_planning_prompt
@@ -16,23 +18,23 @@ def test_prompt_includes_business_scenario() -> None:
 def test_prompt_includes_all_table_names_from_schema() -> None:
     prompt = _build_prompt()
 
-    assert "TableName: Vendor" in prompt
-    assert "TableName: PurchaseOrderHeader" in prompt
+    assert "TableName: SupplierMaster" in prompt
+    assert "TableName: PurchaseOrderHdr" in prompt
 
 
 def test_prompt_includes_column_names() -> None:
     prompt = _build_prompt()
 
-    assert "ColumnName=VendorID" in prompt
-    assert "ColumnName=VendorName" in prompt
+    assert "ColumnName=SupplierID" in prompt
+    assert "ColumnName=SupplierName" in prompt
     assert "ColumnName=PurchaseOrderID" in prompt
 
 
 def test_prompt_includes_erd_relationships() -> None:
     prompt = _build_prompt()
 
-    assert "Parent: Vendor" in prompt
-    assert "Child: PurchaseOrderHeader" in prompt
+    assert "Parent: SupplierMaster" in prompt
+    assert "Child: PurchaseOrderHdr" in prompt
     assert "Type: one_to_many" in prompt
 
 
@@ -69,9 +71,8 @@ def test_prompt_includes_formula_guidance() -> None:
     prompt = _build_prompt()
 
     assert "PurchaseOrderLine.LineAmount = OrderedQuantity * UnitPrice" in prompt
-    assert "InventoryBalance.OnHandQuantity = SUM(InventoryTransaction.Quantity)" in prompt
-    assert "For InventoryBalance formulas, use rule_type = inventory_balance." in prompt
-    assert 'group_by_columns = ["RawMaterialID", "PlantID", "WarehouseID"]' in prompt
+    assert "Inventory.OnHandQuantity: can be expressed as a validation_rule for now" in prompt
+    assert "InventoryReceiptDetail must be planned between InspectionResult and InventoryTransaction." in prompt
     assert "relationship_key is only for single-key parent-child aggregations like PurchaseOrderID." in prompt
 
 
@@ -105,50 +106,61 @@ def test_prompt_can_be_saved_to_output_file(tmp_path: Path) -> None:
     assert "LLMGenerationPlan" in output_path.read_text(encoding="utf-8")
 
 
+def test_prompt_builder_rejects_procurement_v1_model_version() -> None:
+    with pytest.raises(ValueError, match="Procurement V1 is deprecated and no longer supported"):
+        build_llm_planning_prompt(
+            schema_contract=_schema(),
+            relationships=[],
+            business_scenario="Deprecated V1 request.",
+            model_version="v1",
+        )
+
+
 def _build_prompt() -> str:
     return build_llm_planning_prompt(
         schema_contract=_schema(),
         relationships=[
             RelationshipContract(
-                parent_table="Vendor",
-                child_table="PurchaseOrderHeader",
+                parent_table="SupplierMaster",
+                child_table="PurchaseOrderHdr",
                 relationship_type="one_to_many",
                 mermaid_symbol="||--o{",
                 label="supplies",
-                raw_line="Vendor ||--o{ PurchaseOrderHeader : supplies",
+                raw_line="SupplierMaster ||--o{ PurchaseOrderHdr : supplies",
             )
         ],
         business_scenario="EV manufacturing procurement scenario",
+        model_version="v2",
     )
 
 
 def _schema() -> SchemaContract:
     return SchemaContract(
         tables={
-            "Vendor": TableContract(
-                table_name="Vendor",
+            "SupplierMaster": TableContract(
+                table_name="SupplierMaster",
                 process_order=1,
                 area="Master",
-                table_role="vendor_dimension",
+                table_role="supplier_master",
                 target_rows=10,
                 columns=[
                     ColumnContract(
-                        column_name="VendorID",
+                        column_name="SupplierID",
                         data_type="int",
                         key_type="PK",
                         nullable="No",
                         generation_type="sequence_id",
                     ),
                     ColumnContract(
-                        column_name="VendorName",
+                        column_name="SupplierName",
                         data_type="varchar(255)",
                         nullable="No",
                         generation_type="vendor_name",
                     ),
                 ],
             ),
-            "PurchaseOrderHeader": TableContract(
-                table_name="PurchaseOrderHeader",
+            "PurchaseOrderHdr": TableContract(
+                table_name="PurchaseOrderHdr",
                 process_order=2,
                 area="Procurement",
                 table_role="purchase_order_header",
@@ -162,11 +174,11 @@ def _schema() -> SchemaContract:
                         generation_type="sequence_id",
                     ),
                     ColumnContract(
-                        column_name="VendorID",
+                        column_name="SupplierID",
                         data_type="int",
                         key_type="FK",
-                        related_table="Vendor",
-                        related_column="VendorID",
+                        related_table="SupplierMaster",
+                        related_column="SupplierID",
                         nullable="No",
                         generation_type="foreign_key",
                     ),

@@ -12,11 +12,11 @@ def test_invalid_cross_table_depends_on_columns_get_normalized() -> None:
     result = normalize_column_generation_dependencies(_plan(), _schema())
     rule = result.plan.column_generation_rules[0]
 
-    assert rule.table_name == "QualityInspectionHeader"
+    assert rule.table_name == "IncomingInspection"
     assert rule.column_name == "InspectorName"
     assert rule.depends_on_columns == []
     assert len(result.warnings) == 1
-    assert result.warnings[0].table_name == "QualityInspectionHeader"
+    assert result.warnings[0].table_name == "IncomingInspection"
     assert result.warnings[0].column_name == "InspectorName"
     assert result.warnings[0].removed_dependency == "PlantID"
 
@@ -41,9 +41,9 @@ def test_formula_rules_are_not_normalized() -> None:
 
 def test_semantic_validation_uses_normalized_depends_on_columns() -> None:
     normalized = normalize_column_generation_dependencies(_plan(), _schema())
-    validation = validate_generation_plan(normalized.plan, _schema(), [])
+    validation = validate_generation_plan(normalized.plan, _schema(), [], model_version="v2")
 
-    assert validation.report.is_valid
+    assert not any("depends_on_columns" in issue.message for issue in validation.report.errors)
 
 
 def _plan() -> LLMGenerationPlan:
@@ -54,7 +54,7 @@ def _plan_data() -> dict:
     return deepcopy(
         {
             "module": "procurement",
-            "business_summary": "Quality inspection plan.",
+            "business_summary": "Incoming inspection plan.",
             "domain_profile": {
                 "industry": "General manufacturing",
                 "business_context": "Inspection planning.",
@@ -73,17 +73,17 @@ def _plan_data() -> dict:
             },
             "table_role_mapping": [
                 {
-                    "table_name": "QualityInspectionHeader",
-                    "table_role": "quality_inspection_header",
+                    "table_name": "IncomingInspection",
+                    "table_role": "incoming_inspection",
                     "area": "Quality",
                     "confidence": "high",
                     "reasoning": None,
                 }
             ],
-            "generation_order": ["QualityInspectionHeader"],
+            "generation_order": ["IncomingInspection"],
             "row_count_plan": [
                 {
-                    "table_name": "QualityInspectionHeader",
+                    "table_name": "IncomingInspection",
                     "target_rows": 1,
                     "source": "metadata",
                     "reasoning": None,
@@ -91,7 +91,7 @@ def _plan_data() -> dict:
             ],
             "column_generation_rules": [
                 {
-                    "table_name": "QualityInspectionHeader",
+                    "table_name": "IncomingInspection",
                     "column_name": "InspectorName",
                     "generation_type": "faker_person",
                     "strategy": "Generate inspector names.",
@@ -107,7 +107,7 @@ def _plan_data() -> dict:
                 {
                     "rule_id": "inspection_id_echo",
                     "rule_type": "row_level",
-                    "target_table": "QualityInspectionHeader",
+                    "target_table": "IncomingInspection",
                     "target_column": "InspectionID",
                     "operation": "add",
                     "input_columns": ["InspectionID", "InspectionID"],
@@ -136,11 +136,11 @@ def _plan_data() -> dict:
 def _schema() -> SchemaContract:
     return SchemaContract(
         tables={
-            "QualityInspectionHeader": TableContract(
-                table_name="QualityInspectionHeader",
+            "IncomingInspection": TableContract(
+                table_name="IncomingInspection",
                 process_order=1,
                 area="Quality",
-                table_role="quality_inspection_header",
+                table_role="incoming_inspection",
                 target_rows=1,
                 columns=[
                     ColumnContract(

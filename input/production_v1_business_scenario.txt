@@ -1,0 +1,18 @@
+Production Execution module within MES context v1 synthetic data is connected to completed Procurement v2 data.
+
+Production v1 is scoped to calendar year 2025 only. All dates should remain between 2025-01-01 and 2025-12-31.
+
+Procurement provides component inventory through ComponentMaster, Plant, Warehouse, Inventory, InventoryTransaction, and InventoryReceiptDetail. Production must not change Procurement InventoryTransaction; Procurement InventoryTransaction remains a StockIn ledger. Production MaterialIssueLine is the production-side material consumption ledger.
+
+Production v1 uses one Procurement Plant, one Procurement Warehouse, and Shift A only for the simplified demo operating scope. Multiple WorkCenters remain valid inside the single Plant.
+
+Production creates finished goods and semi-finished goods using ProductMaster, BOMHeader, BOMLine, WorkCenter, RoutingHeader, RoutingOperation, and ProductionShift. Production orders define the product and quantity to build. BOM lines derive material requirements from ProductionOrderLine. MaterialIssueHeader and MaterialIssueLine consume available procurement inventory, and issued quantities must not exceed available inventory.
+
+The corrected Production/MES lifecycle is:
+Procurement Inventory -> ProductionOrderHdr -> ProductionOrderLine -> ProductionMaterialRequirement -> MaterialIssueHeader -> MaterialIssueLine -> ProductionBatch -> OperationExecution -> ProductionQualityInspection -> ProductionQualityResult -> ScrapReworkEvent -> FinishedGoodsReceipt -> FinishedGoodsInventory -> ProductionGenealogy -> ProductionCostSummary.
+
+Production tracks BOM, routing, work centers, shifts, production orders, material issue, batch execution, operations, production quality, controlled scrap and rework, finished goods receipt, finished goods inventory, genealogy, and production cost summary.
+
+UOM-aware quantity precision must be used. Countable products and components should use integer quantities. Bulk or measurable components may use decimal quantities.
+
+FinishedGoodsInventory should roll up from FinishedGoodsReceipt. ProductionGenealogy should trace finished goods back to MaterialIssueLine, InventoryReceiptDetail, InventoryTransaction, ComponentMaster, and SupplierMaster.

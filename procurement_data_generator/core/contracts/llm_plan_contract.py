@@ -261,9 +261,9 @@ class LLMGenerationPlan(StrictPlanModel):
 
     @field_validator("module")
     @classmethod
-    def module_must_be_procurement(cls, value: str) -> str:
-        if value != "procurement":
-            raise ValueError("module must be 'procurement'.")
+    def module_must_be_supported(cls, value: str) -> str:
+        if value not in {"procurement", "production"}:
+            raise ValueError("module must be 'procurement' or 'production'.")
         return value
 
     @field_validator("business_summary")

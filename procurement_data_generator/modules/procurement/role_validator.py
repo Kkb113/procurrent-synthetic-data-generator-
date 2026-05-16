@@ -32,7 +32,7 @@ class ProcurementRoleValidationResult:
 def validate_procurement_roles(
     schema: SchemaContract,
     report: ValidationReport | None = None,
-    model_version: str = "v1",
+    model_version: str = "v2",
 ) -> ProcurementRoleValidationResult:
     """Validate schema table roles against the procurement role catalog."""
 

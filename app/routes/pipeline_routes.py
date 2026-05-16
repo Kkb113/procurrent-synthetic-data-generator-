@@ -24,7 +24,7 @@ async def run_pipeline(
     load_sql: bool = Form(default=False),
     if_table_exists: str = Form(default="replace"),
     seed: int | None = Form(default=None),
-    model_version: str = Form(default="v1"),
+    model_version: str = Form(default="v2"),
 ) -> dict:
     try:
         request = PipelineWebRequest(

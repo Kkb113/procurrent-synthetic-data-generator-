@@ -35,7 +35,7 @@ def main() -> int:
     parser.add_argument("--raw-output", required=True, help="Path for raw Azure OpenAI response text.")
     parser.add_argument("--prompt-output", help="Optional path for the planning prompt text.")
     parser.add_argument("--env", help="Optional .env file path.")
-    parser.add_argument("--model-version", default="v1", choices=["v1", "v2"], help="Procurement model version for role validation and prompt guidance.")
+    parser.add_argument("--model-version", default="v2", choices=["v2"], help="Procurement model version for role validation and prompt guidance. Procurement v2 is the only active Procurement model.")
     args = parser.parse_args()
 
     metadata_result = load_metadata_schema(args.metadata)
