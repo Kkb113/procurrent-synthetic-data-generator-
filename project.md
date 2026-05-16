@@ -332,11 +332,29 @@ Production v1 is documented in the UI as a command-line workflow only. Do not ad
 
 ## 9. Current Regression Commands
 
-Run the full test suite:
+Run the normal local test baseline without SQL Server or live Azure OpenAI calls:
 
 ```powershell
-python -m pytest -q
+pytest -m "not sql and not llm" -q
 ```
+
+Run the full collected suite and stop at the first failure:
+
+```powershell
+pytest -q -x
+```
+
+Focused marker runs:
+
+```powershell
+pytest -m unit -q
+pytest -m integration -q
+pytest -m pipeline -q
+pytest -m sql -q
+pytest -m llm -q
+```
+
+The `sql` marker is for tests requiring SQL Server or database connectivity. The `llm` marker is for tests requiring live Azure OpenAI/LLM calls. These are excluded from normal local test runs unless explicitly requested. Tests should not depend on pre-existing generated CSVs under repo-level `output/` folders.
 
 Run Production validation:
 

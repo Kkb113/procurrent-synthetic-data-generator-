@@ -3,13 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
+from procurement_data_generator.core.pipeline.pipeline_runner import ProcurementPipelineRunner
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 from procurement_data_generator.core.validation.reconciler import ProcurementDataQualityEngine
 from procurement_data_generator.core.validation.data_validator import GeneratedDataValidator
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+METADATA = PROJECT_ROOT / "input" / "procurement_v2_metadata.xlsx"
+ERD = PROJECT_ROOT / "input" / "procurement_v2_erd.mmd"
+SCENARIO = PROJECT_ROOT / "input" / "procurement_v2_business_scenario.txt"
+PLAN = PROJECT_ROOT / "input" / "sample_generation_plan_v2_valid.json"
 V2_TABLES = {
     "SupplierMaster",
     "SupplierComponent",
@@ -37,6 +43,30 @@ V2_TABLES = {
     "SupplierInvoice",
     "PaymentTransaction",
 }
+_BASE_V2_DATA: dict[str, pd.DataFrame] | None = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _generated_v2_baseline(tmp_path_factory) -> None:
+    global _BASE_V2_DATA
+
+    output = tmp_path_factory.mktemp("validator_v2_pipeline_runs")
+    report = ProcurementPipelineRunner().run_pipeline(
+        metadata_path=str(METADATA),
+        erd_path=str(ERD),
+        scenario_path=str(SCENARIO),
+        plan_path=str(PLAN),
+        output_folder=str(output),
+        seed=42,
+        load_sql=False,
+        build_prompt=False,
+        model_version="v2",
+    )
+    assert report.status in {"passed", "passed_with_warnings"}
+
+    final_data = Path(report.output_folder) / "final_data"
+    _BASE_V2_DATA = {path.stem: pd.read_csv(path) for path in final_data.glob("*.csv")}
+    assert V2_TABLES.issubset(_BASE_V2_DATA)
 
 
 def test_v2_generated_data_has_all_expected_tables_for_validation() -> None:
@@ -261,22 +291,20 @@ def test_v2_data_validation_enforces_single_location_references() -> None:
 
 
 def _validate(dataframes: dict[str, pd.DataFrame]):
-    schema_result = load_metadata_schema(PROJECT_ROOT / "input" / "procurement_v2_metadata.xlsx")
+    schema_result = load_metadata_schema(METADATA)
     assert schema_result.schema is not None
     return GeneratedDataValidator().validate_dataset(dataframes, schema_result.schema, model_version="v2")
 
 
 def _validate_and_reconcile(dataframes: dict[str, pd.DataFrame]):
-    schema_result = load_metadata_schema(PROJECT_ROOT / "input" / "procurement_v2_metadata.xlsx")
+    schema_result = load_metadata_schema(METADATA)
     assert schema_result.schema is not None
     return ProcurementDataQualityEngine().validate_and_reconcile(dataframes, schema_result.schema, model_version="v2")
 
 
 def _clean_v2_data() -> dict[str, pd.DataFrame]:
-    data: dict[str, pd.DataFrame] = {}
-    for folder_name in ("v2_master_data", "v2_transaction_data", "v2_formula_data"):
-        for path in (PROJECT_ROOT / "output" / folder_name).glob("*.csv"):
-            data[path.stem] = pd.read_csv(path)
+    assert _BASE_V2_DATA is not None
+    data: dict[str, pd.DataFrame] = {table_name: dataframe.copy(deep=True) for table_name, dataframe in _BASE_V2_DATA.items()}
 
     invoices = data["SupplierInvoice"].copy()
     invoices["TaxAmount"] = 100.0
