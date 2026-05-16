@@ -22,12 +22,10 @@ from procurement_data_generator.core.llm.plan_normalizer import normalize_column
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
 from procurement_data_generator.core.llm.prompt_builder import build_llm_planning_prompt
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
+from procurement_data_generator.core.modules.contracts import MESModulePlugin
 from procurement_data_generator.core.sql.db_config import DatabaseConfig
 from procurement_data_generator.core.sql.sql_loader import SQLServerLoader, save_sql_load_report
-from procurement_data_generator.core.validation.reconciler import ProcurementDataQualityEngine
-from procurement_data_generator.modules.procurement.master_generator import ProcurementMasterDataGenerator
-from procurement_data_generator.modules.procurement.role_validator import validate_procurement_roles
-from procurement_data_generator.modules.procurement.transaction_generator import ProcurementTransactionGenerator
+from procurement_data_generator.modules.procurement.plugin import ProcurementModulePlugin
 
 
 SQLLoaderFactory = Callable[[DatabaseConfig], SQLServerLoader]
@@ -41,11 +39,13 @@ class ProcurementPipelineRunner:
         self,
         sql_loader_factory: SQLLoaderFactory | None = None,
         llm_client_factory: LLMClientFactory | None = None,
+        module_plugin: MESModulePlugin | None = None,
     ) -> None:
         self.sql_loader_factory = sql_loader_factory or (lambda config: SQLServerLoader(config))
         self.llm_client_factory = llm_client_factory or (
             lambda: AzureOpenAIClient(AzureOpenAIConfig.from_env())
         )
+        self.module_plugin = module_plugin or ProcurementModulePlugin()
 
     def run_pipeline(
         self,
@@ -117,7 +117,7 @@ class ProcurementPipelineRunner:
             schema = metadata_result.schema
             report.expected_tables = [table.table_name for table in schema.ordered_tables]
 
-            role_result = validate_procurement_roles(schema, model_version=model_version)
+            role_result = self.module_plugin.validate_roles(schema, model_version=model_version)
             self._stage_from_validation_report(
                 report,
                 "role_validation",
@@ -343,7 +343,7 @@ class ProcurementPipelineRunner:
         stage = PipelineStageReport("master_generation")
         report.add_stage(stage)
         stage.start()
-        generator = ProcurementMasterDataGenerator()
+        generator = self.module_plugin.create_master_generator()
         try:
             dataframes, validation_report = generator.generate_master_data(schema, plan, seed=seed, model_version=model_version)
         except TypeError:
@@ -367,7 +367,7 @@ class ProcurementPipelineRunner:
         stage = PipelineStageReport("transaction_generation")
         report.add_stage(stage)
         stage.start()
-        generator = ProcurementTransactionGenerator()
+        generator = self.module_plugin.create_transaction_generator()
         try:
             dataframes, validation_report = generator.generate_transaction_data(schema, plan, master_data, seed=seed, model_version=model_version)
         except TypeError:
@@ -403,7 +403,7 @@ class ProcurementPipelineRunner:
         stage = PipelineStageReport("data_quality_validation")
         report.add_stage(stage)
         stage.start()
-        engine = ProcurementDataQualityEngine()
+        engine = self.module_plugin.create_data_quality_engine()
         try:
             quality_report = engine.validate_and_reconcile(final_data, schema, plan, model_version=model_version)
         except TypeError:
