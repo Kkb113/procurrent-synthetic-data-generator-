@@ -11,10 +11,12 @@ from procurement_data_generator.core.contracts.erd_contract import RelationshipC
 from procurement_data_generator.core.contracts.llm_plan_contract import (
     FormulaRule,
     LLMGenerationPlan,
+    NormalizedLLMGenerationPlan,
     PlanValidationRule,
 )
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.llm.plan_normalizer import get_legacy_module_plan, normalize_llm_generation_plan
 from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE, get_procurement_role_catalog
 from procurement_data_generator.modules.production.role_catalog import (
     PRODUCTION_V1_EXPECTED_TABLES,
@@ -170,7 +172,7 @@ class PlanValidationResult:
 
 
 def validate_generation_plan(
-    plan: LLMGenerationPlan,
+    plan: LLMGenerationPlan | NormalizedLLMGenerationPlan | dict,
     schema: SchemaContract,
     relationships: list[RelationshipContract],
     model_version: str = "v2",
@@ -183,9 +185,26 @@ def validate_generation_plan(
         total_tables_detected=len(schema.tables),
         total_columns_detected=sum(len(table.columns) for table in schema.tables.values()),
     )
+    normalized_plan = normalize_llm_generation_plan(plan)
+    expected_module = _expected_module(model_version)
+    legacy_plan = get_legacy_module_plan(normalized_plan, expected_module)
+    if legacy_plan is None and len(normalized_plan.module_set) == 1:
+        legacy_plan = get_legacy_module_plan(normalized_plan, normalized_plan.module_set[0])
+    if legacy_plan is None:
+        report.add_error(
+            message=(
+                f"Normalized plan does not contain a legacy {expected_module} payload for current semantic validation."
+            ),
+            suggested_fix=(
+                "Provide a legacy module payload under modules[module_id].legacy_plan until Phase 7 "
+                "moves semantic validation to normalized module payloads."
+            ),
+        )
+        return PlanValidationResult(report=report, summary=PlanValidationSummary())
+    plan = legacy_plan
     fk_relationships = get_fk_relationships_from_schema(schema)
 
-    _validate_module(plan, report, _expected_module(model_version))
+    _validate_module(plan, report, expected_module)
     role_catalog = _role_catalog_for_model(model_version)
 
     _validate_table_role_mapping(plan, schema, report, role_catalog)

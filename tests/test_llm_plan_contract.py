@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
+from procurement_data_generator.core.contracts.llm_plan_contract import NormalizedLLMGenerationPlan
 from procurement_data_generator.core.llm.plan_loader import validate_llm_plan_data
 
 
@@ -118,6 +121,59 @@ def test_assumptions_and_warnings_lists_are_accepted() -> None:
     assert result.plan is not None
     assert result.plan.assumptions == []
     assert result.plan.warnings == []
+
+
+def test_normalized_one_module_plan_contract_accepts_unknown_future_module() -> None:
+    plan = NormalizedLLMGenerationPlan.model_validate(
+        {
+            "plan_id": "quality_v1_default",
+            "plan_version": "1.0",
+            "industry": "Discrete manufacturing",
+            "module_set": ["quality"],
+            "module_versions": {"quality": "v1"},
+            "modules": {"quality": {"planning_rules": []}},
+            "global_assumptions": ["Future module contract test."],
+            "validation_rules": [],
+        }
+    )
+
+    assert plan.module_set == ["quality"]
+    assert plan.modules["quality"] == {"planning_rules": []}
+
+
+def test_normalized_multi_module_plan_contract_accepts_multiple_modules() -> None:
+    plan = NormalizedLLMGenerationPlan.model_validate(
+        {
+            "plan_id": "mes_plan",
+            "module_set": ["procurement", "production", "quality"],
+            "module_versions": {"procurement": "v2", "production": "v1", "quality": "v1"},
+            "operating_scope": {
+                "plant_count": 1,
+                "warehouse_count": 1,
+                "shift_codes": ["A"],
+                "calendar_year": 2025,
+            },
+            "modules": {
+                "procurement": {"legacy_plan": _valid_plan()},
+                "production": {"planning_rules": []},
+            },
+        }
+    )
+
+    assert plan.module_set == ["procurement", "production", "quality"]
+    assert plan.modules["quality"] == {}
+    assert plan.operating_scope is not None
+    assert plan.operating_scope.shift_codes == ["A"]
+
+
+def test_normalized_plan_rejects_empty_module_set() -> None:
+    with pytest.raises(ValueError, match="module_set"):
+        NormalizedLLMGenerationPlan.model_validate({"module_set": [], "modules": {}})
+
+
+def test_normalized_plan_rejects_duplicate_module_ids() -> None:
+    with pytest.raises(ValueError, match="duplicate module ids"):
+        NormalizedLLMGenerationPlan.model_validate({"module_set": ["procurement", "Procurement"], "modules": {}})
 
 
 def _valid_plan() -> dict[str, object]:

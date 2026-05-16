@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -286,7 +286,90 @@ class LLMGenerationPlan(StrictPlanModel):
         return self
 
 
+class OperatingScopePlan(StrictPlanModel):
+    """Optional operating scope metadata for a normalized MES plan envelope."""
+
+    plant_count: int | None = Field(default=None, gt=0)
+    warehouse_count: int | None = Field(default=None, gt=0)
+    shift_codes: list[str] = Field(default_factory=list)
+    calendar_year: int | None = Field(default=None, gt=0)
+
+    @field_validator("shift_codes")
+    @classmethod
+    def shift_codes_not_blank(cls, value: list[str]) -> list[str]:
+        for shift_code in value:
+            _not_blank(shift_code, "shift_code")
+        return value
+
+
+class NormalizedLLMGenerationPlan(StrictPlanModel):
+    """Multi-module-capable LLM plan envelope.
+
+    This envelope is intentionally module-id agnostic. Current Procurement and
+    Production semantic validators still consume legacy module payloads from
+    ``modules[module_id]["legacy_plan"]`` until later phases migrate prompt and
+    validation layers.
+    """
+
+    plan_id: str | None = None
+    plan_version: str = "1.0"
+    industry: str | None = None
+    module_set: list[str]
+    module_versions: dict[str, str] = Field(default_factory=dict)
+    operating_scope: OperatingScopePlan | None = None
+    industry_profile: dict[str, Any] = Field(default_factory=dict)
+    modules: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    global_assumptions: list[str] = Field(default_factory=list)
+    validation_rules: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("plan_version")
+    @classmethod
+    def plan_version_not_blank(cls, value: str) -> str:
+        return _not_blank(value, "plan_version")
+
+    @field_validator("industry")
+    @classmethod
+    def industry_not_blank_when_present(cls, value: str | None) -> str | None:
+        return _not_blank(value, "industry") if value is not None else value
+
+    @model_validator(mode="after")
+    def normalize_module_references(self) -> "NormalizedLLMGenerationPlan":
+        normalized_modules = [_normalize_module_id(module_id) for module_id in self.module_set]
+        if not normalized_modules:
+            raise ValueError("module_set must contain at least one module id.")
+        duplicates = sorted({module_id for module_id in normalized_modules if normalized_modules.count(module_id) > 1})
+        if duplicates:
+            raise ValueError(f"module_set contains duplicate module ids: {', '.join(duplicates)}.")
+
+        module_versions = {
+            _normalize_module_id(module_id): version
+            for module_id, version in self.module_versions.items()
+            if _normalize_module_id(module_id)
+        }
+        for module_id, version in module_versions.items():
+            _not_blank(version, f"module_versions[{module_id}]")
+
+        modules = {
+            _normalize_module_id(module_id): payload
+            for module_id, payload in self.modules.items()
+            if _normalize_module_id(module_id)
+        }
+        for module_id in normalized_modules:
+            modules.setdefault(module_id, {})
+
+        self.module_set = normalized_modules
+        self.module_versions = module_versions
+        self.modules = modules
+        return self
+
+
 def _not_blank(value: str, field_name: str) -> str:
     if not value.strip():
         raise ValueError(f"{field_name} must not be blank.")
     return value
+
+
+def _normalize_module_id(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("module ids must be strings.")
+    return _not_blank(value, "module_id").strip().lower()
