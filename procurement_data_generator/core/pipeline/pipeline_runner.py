@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.audit.audit_report import AuditReportBuilder
 from procurement_data_generator.core.contracts.pipeline_report import PipelineRunReport, PipelineStageReport, utc_now_iso
 from procurement_data_generator.core.erd.erd_validator import validate_erd_relationships
@@ -40,12 +41,16 @@ class ProcurementPipelineRunner:
         sql_loader_factory: SQLLoaderFactory | None = None,
         llm_client_factory: LLMClientFactory | None = None,
         module_plugin: MESModulePlugin | None = None,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
     ) -> None:
         self.sql_loader_factory = sql_loader_factory or (lambda config: SQLServerLoader(config))
         self.llm_client_factory = llm_client_factory or (
             lambda: AzureOpenAIClient(AzureOpenAIConfig.from_env())
         )
         self.module_plugin = module_plugin or ProcurementModulePlugin()
+        self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
+        self.generation_config = generation_config or GenerationConfig()
 
     def run(self, **kwargs) -> PipelineRunReport:
         """Backward-compatible convenience wrapper for run_pipeline."""
@@ -348,7 +353,10 @@ class ProcurementPipelineRunner:
         stage = PipelineStageReport("master_generation")
         report.add_stage(stage)
         stage.start()
-        generator = self.module_plugin.create_master_generator()
+        generator = self.module_plugin.create_master_generator(
+            operating_scope=self.operating_scope,
+            generation_config=self.generation_config,
+        )
         try:
             dataframes, validation_report = generator.generate_master_data(schema, plan, seed=seed, model_version=model_version)
         except TypeError:
@@ -372,7 +380,10 @@ class ProcurementPipelineRunner:
         stage = PipelineStageReport("transaction_generation")
         report.add_stage(stage)
         stage.start()
-        generator = self.module_plugin.create_transaction_generator()
+        generator = self.module_plugin.create_transaction_generator(
+            operating_scope=self.operating_scope,
+            generation_config=self.generation_config,
+        )
         try:
             dataframes, validation_report = generator.generate_transaction_data(schema, plan, master_data, seed=seed, model_version=model_version)
         except TypeError:

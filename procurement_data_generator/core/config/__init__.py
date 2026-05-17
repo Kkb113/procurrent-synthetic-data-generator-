@@ -1,6 +1,7 @@
-"""Shared utilities for synthetic data generation modules."""
+"""Runtime configuration objects for synthetic data generation."""
 
-from procurement_data_generator.modules.shared.operating_scope import (
+from procurement_data_generator.core.config.generation_config import GenerationConfig
+from procurement_data_generator.core.config.operating_scope import (
     ALLOWED_SHIFT_CODES,
     CALENDAR_YEAR,
     DEFAULT_OPERATING_SCOPE,
@@ -22,6 +23,7 @@ __all__ = [
     "CALENDAR_YEAR",
     "DEFAULT_OPERATING_SCOPE",
     "DEFAULT_SHIFT_CODE",
+    "GenerationConfig",
     "OperatingScope",
     "PLANT_COUNT",
     "WAREHOUSE_COUNT",

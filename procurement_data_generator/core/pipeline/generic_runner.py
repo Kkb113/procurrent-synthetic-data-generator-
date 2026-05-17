@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.contracts.pipeline_report import PipelineRunReport
 from procurement_data_generator.core.llm.llm_client_base import LLMClientBase
 from procurement_data_generator.core.modules.contracts import MESModulePlugin
@@ -49,6 +50,8 @@ class PipelineRunSpec:
     use_existing_plan: bool = False
     if_table_exists: str = "replace"
     model_version: str | None = None
+    operating_scope: OperatingScope | None = None
+    generation_config: GenerationConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -67,10 +70,14 @@ class SyntheticDataPipelineRunner:
         module_registry: ModuleRegistry | None = None,
         sql_loader_factory: SQLLoaderFactory | None = None,
         llm_client_factory: LLMClientFactory | None = None,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
     ) -> None:
         self.module_registry = module_registry or create_default_module_registry()
         self.sql_loader_factory = sql_loader_factory
         self.llm_client_factory = llm_client_factory
+        self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
+        self.generation_config = generation_config or GenerationConfig()
 
     def resolve_modules(self, module_ids: list[str] | tuple[str, ...]) -> ModuleResolution:
         normalized = tuple(_normalize_module_id(module_id) for module_id in module_ids)
@@ -113,6 +120,8 @@ class SyntheticDataPipelineRunner:
         use_existing_plan: bool = False,
         if_table_exists: str = "replace",
         model_version: str | None = None,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
     ) -> PipelineRunReport:
         return self.run(
             PipelineRunSpec(
@@ -130,6 +139,8 @@ class SyntheticDataPipelineRunner:
                 use_existing_plan=use_existing_plan,
                 if_table_exists=if_table_exists,
                 model_version=model_version,
+                operating_scope=operating_scope,
+                generation_config=generation_config,
             )
         )
 
@@ -142,6 +153,8 @@ class SyntheticDataPipelineRunner:
             sql_loader_factory=self.sql_loader_factory,
             llm_client_factory=self.llm_client_factory,
             module_plugin=plugin,
+            operating_scope=spec.operating_scope or self.operating_scope,
+            generation_config=spec.generation_config or self.generation_config,
         )
         return runner.run_pipeline(
             metadata_path=spec.metadata_path,

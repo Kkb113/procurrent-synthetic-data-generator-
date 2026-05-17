@@ -392,4 +392,4 @@ Python reconciliation and data quality reports
 manager-facing SQL validation packs
 ```
 
-The next planned phase can focus on final Production regression proof or a future UI/API integration phase. Generic module dispatch has still not been added.
+Phase 5 introduced explicit `OperatingScope` and `GenerationConfig` objects. The default operating scope remains the current simple setup: one plant, one warehouse, Shift A, and calendar year 2025. Existing constants and generation behavior remain backward compatible; this phase does not introduce multi-plant, multi-warehouse, or multi-shift behavior. The plan/profile-driven generator refactor remains scheduled for Phase 6.
