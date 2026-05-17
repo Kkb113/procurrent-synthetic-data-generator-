@@ -77,8 +77,10 @@ class AzureOpenAIClient(LLMClientBase):
         return self.generate_json(
             prompt,
             system_message=(
-                "You are a procurement data planning assistant. Return only valid JSON "
-                "matching the LLMGenerationPlan schema. Do not include markdown or generated rows."
+                "You are an MES synthetic data planning assistant. Return only valid JSON. "
+                "Do not generate raw rows, CSV data, SQL inserts, Python code, or markdown. "
+                "The LLM creates a structured business generation plan. Python validates the plan, "
+                "generates deterministic data, calculates formulas, reconciles data, and validates business rules."
             ),
         )
 

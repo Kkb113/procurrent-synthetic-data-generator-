@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -75,6 +76,24 @@ def test_client_sends_prompt_to_mocked_azure_openai() -> None:
     assert response.status == "passed"
     assert fake.completions.calls[0]["model"] == "plan-deployment"
     assert fake.completions.calls[0]["messages"][1]["content"] == "Build a plan."
+
+
+def test_generate_plan_uses_generic_mes_system_message() -> None:
+    fake = FakeClient([_completion('{"module": "procurement"}')])
+
+    AzureOpenAIClient(_config(), openai_client=fake).generate_plan("Build a plan.")
+
+    system_message = fake.completions.calls[0]["messages"][0]["content"]
+    assert "MES synthetic data planning assistant" in system_message
+    assert "procurement data planning assistant" not in system_message
+    assert "Do not generate raw rows, CSV data, SQL inserts, Python code, or markdown." in system_message
+
+
+def test_core_llm_layer_does_not_use_procurement_specific_system_prompt() -> None:
+    llm_folder = Path(__file__).resolve().parents[1] / "procurement_data_generator" / "core" / "llm"
+    core_llm_text = "\n".join(path.read_text(encoding="utf-8") for path in llm_folder.glob("*.py"))
+
+    assert "procurement data planning assistant" not in core_llm_text
 
 
 def test_raw_response_and_extracted_json_are_captured() -> None:
