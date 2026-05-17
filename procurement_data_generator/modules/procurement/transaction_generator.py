@@ -16,6 +16,7 @@ from faker import Faker
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.modules.procurement.financial_realism_profiles import (
     generate_order_quantity,
     generate_quote_price,
@@ -31,6 +32,12 @@ from procurement_data_generator.modules.procurement.quantity_precision import (
     requires_integer_quantity,
 )
 from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE
+from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
+from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
+from procurement_data_generator.modules.shared.industry_profiles.profile_value_provider import (
+    DEFAULT_PROCUREMENT_REJECTION_REASONS,
+    IndustryProfileValueProvider,
+)
 
 
 V2_TRANSACTION_ROLE_ORDER = [
@@ -56,18 +63,7 @@ V2_TRANSACTION_ROLE_ORDER = [
     "payment_transaction",
 ]
 
-V2_REJECTION_REASONS = [
-    "Dimension Out of Tolerance",
-    "Surface Defect",
-    "Electrical Test Failure",
-    "Packaging Damage",
-    "Material Contamination",
-    "Wrong Specification",
-    "Thermal Stress Failure",
-    "Supplier Documentation Issue",
-    "Visual Defect",
-    "Functional Test Failure",
-]
+V2_REJECTION_REASONS = list(DEFAULT_PROCUREMENT_REJECTION_REASONS)
 
 
 @dataclass
@@ -90,8 +86,18 @@ class ProcurementGenerationContext:
 class ProcurementTransactionGenerator:
     """Generate procurement transaction tables from metadata, plan, and master data."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        industry_profile: IndustryProfile | None = None,
+        profile_id: str | None = None,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
+    ) -> None:
         self.name_generator = ProcurementNameGenerator()
+        self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
+        self.profile_values = IndustryProfileValueProvider(self.industry_profile)
+        self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
+        self.generation_config = generation_config or GenerationConfig()
 
     def generate_transaction_data(
         self,
@@ -183,7 +189,7 @@ class ProcurementTransactionGenerator:
     def _v2_purchase_requisitions(self, table, plan, master_dataframes, rng, faker):
         count = self._target_rows(table, plan)
         plants = master_dataframes["Plant"].to_dict("records")
-        start = date(2025, 1, 1)
+        start = self.operating_scope.date_start
         records = []
         for row_id in range(1, count + 1):
             req_date = start + timedelta(days=rng.randint(0, 240))
@@ -216,7 +222,14 @@ class ProcurementTransactionGenerator:
             component = component_lookup.get(component_id, {})
             category = component.get("ComponentCategory")
             expected_unit_price = float(component.get("StandardCost", 100.0)) * 1.35
-            requested_quantity = generate_order_quantity(category, expected_unit_price, rng, quantity_min, quantity_max)
+            requested_quantity = generate_order_quantity(
+                category,
+                expected_unit_price,
+                rng,
+                quantity_min,
+                quantity_max,
+                self.industry_profile.procurement,
+            )
             requested_quantity = self._v2_apply_component_quantity_precision(
                 component_id,
                 requested_quantity,
@@ -314,7 +327,7 @@ class ProcurementTransactionGenerator:
                     "quotation_date": quote_date,
                     "valid_until_date": self._v2_add_days(quote_date, rng.randint(20, 60)),
                     "quotation_status": "Awarded" if row_id <= 1800 else self._v2_varied_status(row_id, "Rejected", ["Submitted", "UnderReview", "Expired"], [0.12, 0.08, 0.06], rng),
-                    "currency_code": "USD",
+                    "currency_code": self.profile_values.default_currency,
                     "rfq_date": rfq["rfq_date"],
                     "plant_id": rfq["plant_id"],
                     "quoted_component_id": component_id,
@@ -415,7 +428,7 @@ class ProcurementTransactionGenerator:
                     "expected_delivery_date": self._v2_add_days(order_date, rng.randint(15, 45)),
                     "po_status": "Received",
                     "total_amount": 0.0,
-                    "currency_code": "USD",
+                    "currency_code": self.profile_values.default_currency,
                     "quotation_date": quote["quotation_date"],
                 }
             )
@@ -722,13 +735,23 @@ class ProcurementTransactionGenerator:
             )
         return rows
 
+    def _profile_driven_inspection_test_names(self, count: int, plan: LLMGenerationPlan, rng: random.Random) -> list[str]:
+        profile_tests = list(self.profile_values.procurement_inspection_test_names())
+        if profile_tests:
+            return profile_tests
+        try:
+            return self.name_generator.generate_inspection_test_names(
+                count,
+                plan.domain_profile,
+                seed=rng.randint(1, 999999),
+            )
+        except NameGenerationError:
+            return list(self.profile_values.fallback_procurement_inspection_test_names())
+
     def _v2_inspection_results(self, table, plan, records, rng):
         count = self._target_rows(table, plan)
         inspections = records["incoming_inspection"]
-        try:
-            tests = self.name_generator.generate_inspection_test_names(40, plan.domain_profile, seed=rng.randint(1, 999999))
-        except NameGenerationError:
-            tests = ["Electrical Test", "Dimensional Inspection", "Visual Inspection", "Functional Test"]
+        tests = self._profile_driven_inspection_test_names(40, plan, rng)
         receipt_lines_by_id = {row["id"]: row for row in records["goods_receipt_line"]}
         po_lines_by_id = {row["id"]: row for row in records["purchase_order_line"]}
         remaining_receipt = {line["id"]: float(line["received_quantity"]) for line in records["goods_receipt_line"]}
@@ -1058,7 +1081,7 @@ class ProcurementTransactionGenerator:
                     "tax_amount": tax,
                     "freight_amount": freight,
                     "total_invoice_amount": total,
-                    "currency_code": "USD",
+                    "currency_code": self.profile_values.default_currency,
                     "receipt_date": receipt["receipt_date"],
                 }
             )
@@ -1097,7 +1120,7 @@ class ProcurementTransactionGenerator:
                     "payment_amount": amount,
                     "payment_method": methods[(row_id - 1) % len(methods)],
                     "payment_status": status,
-                    "currency_code": "USD",
+                    "currency_code": self.profile_values.default_currency,
                     "invoice_date": invoice["invoice_date"],
                     "total_invoice_amount": invoice["total_invoice_amount"],
                 }
@@ -1174,9 +1197,10 @@ class ProcurementTransactionGenerator:
             receipt["receipt_status"] = "Received"
 
         result_by_inspection = {result["inspection_id"]: result for result in records.get("inspection_result", [])}
+        rejection_reasons = self.profile_values.procurement_rejection_reasons()
         for result in records.get("inspection_result", []):
             if result.get("rejected_quantity", 0) > 0 and result.get("rejection_reason") in {None, "", "Not Applicable"}:
-                result["rejection_reason"] = V2_REJECTION_REASONS[(result["id"] - 1) % len(V2_REJECTION_REASONS)]
+                result["rejection_reason"] = rejection_reasons[(result["id"] - 1) % len(rejection_reasons)]
         for inspection in records.get("incoming_inspection", []):
             inspection["inspection_status"] = "Passed"
 
@@ -1243,8 +1267,9 @@ class ProcurementTransactionGenerator:
                 if role == "inspection_result" and {"RejectedQuantity", "RejectionReason"}.issubset(dataframe.columns):
                     invalid_reason_mask = (dataframe["RejectedQuantity"] > 0) & dataframe["RejectionReason"].fillna("").isin(["", "Not Applicable"])
                     replacement_index = 0
+                    rejection_reasons = self.profile_values.procurement_rejection_reasons()
                     for row_index in dataframe.index[invalid_reason_mask]:
-                        dataframe.at[row_index, "RejectionReason"] = V2_REJECTION_REASONS[replacement_index % len(V2_REJECTION_REASONS)]
+                        dataframe.at[row_index, "RejectionReason"] = rejection_reasons[replacement_index % len(rejection_reasons)]
                         replacement_index += 1
                 dataframes[table.table_name] = dataframe
 
@@ -1273,7 +1298,7 @@ class ProcurementTransactionGenerator:
         plants = master_by_role.get("plant_dimension", pd.DataFrame())
         plant_ids = self._column_values(plants, "PlantID") or [None]
         records = []
-        start_date = self._date_min(table) or date(2025, 1, 1)
+        start_date = self._date_min(table) or self.operating_scope.date_start
         for row_id in range(1, count + 1):
             req_date = start_date + timedelta(days=rng.randint(0, 240))
             plant_id = plant_ids[(row_id - 1) % len(plant_ids)]
@@ -1538,15 +1563,8 @@ class ProcurementTransactionGenerator:
     def _generate_quality_inspection_lines(self, table, plan, master_by_role, context, rng, faker, report):
         count = self._target_rows(table, plan)
         inspections = context.quality_inspection_headers
-        try:
-            tests = self.name_generator.generate_inspection_test_names(
-                min(max(count, 1), 30),
-                plan.domain_profile,
-                seed=rng.randint(1, 999999),
-            )
-        except NameGenerationError:
-            tests = ["Visual Inspection", "Dimensional Check", "Certificate Review", "Packaging Check", "Functional Test"]
-        rejection_reasons = ["Surface defect", "Dimension variance", "Packaging damage", "Supplier deviation", "Moisture issue"]
+        tests = self._profile_driven_inspection_test_names(min(max(count, 1), 30), plan, rng)
+        rejection_reasons = list(self.profile_values.procurement_rejection_reasons())
         records = []
         for row_id in range(1, count + 1):
             inspection = inspections[(row_id - 1) % len(inspections)]
@@ -2186,8 +2204,13 @@ class ProcurementTransactionGenerator:
             report.add_error(table_name="PaymentTransaction", column_name="PaymentAmount", message="PaymentAmount exceeds TotalInvoiceAmount.", suggested_fix="Cap payments by invoice total.")
 
         for table_name in ("SupplierQuotation", "PurchaseOrderHdr", "SupplierInvoice", "PaymentTransaction"):
-            if "CurrencyCode" in data[table_name].columns and set(data[table_name]["CurrencyCode"].dropna()) != {"USD"}:
-                report.add_error(table_name=table_name, column_name="CurrencyCode", message="CurrencyCode must be USD in v2 transactions.", suggested_fix="Use USD only.")
+            if "CurrencyCode" in data[table_name].columns and set(data[table_name]["CurrencyCode"].dropna()) != {self.profile_values.default_currency}:
+                report.add_error(
+                    table_name=table_name,
+                    column_name="CurrencyCode",
+                    message=f"CurrencyCode must be {self.profile_values.default_currency} in v2 transactions.",
+                    suggested_fix=f"Use {self.profile_values.default_currency} only.",
+                )
 
         warehouse_lookup = master["Warehouse"].set_index("WarehouseID")["PlantID"]
         for table_name in ("GoodsReceiptHeader", "InventoryTransaction"):
@@ -2282,7 +2305,7 @@ class ProcurementTransactionGenerator:
         return primary
 
     def _v2_add_days(self, value: date, days: int) -> date:
-        return min(value + timedelta(days=days), date(2025, 12, 31))
+        return min(value + timedelta(days=days), self.operating_scope.date_end)
 
     def _column_min_max(self, table: TableContract, column_name: str, default_min: float, default_max: float) -> tuple[float, float]:
         for column in table.columns:
@@ -2380,7 +2403,7 @@ class ProcurementTransactionGenerator:
     def _required_fallback_value(self, column: ColumnContract, index: int) -> Any:
         name = column.column_name.lower()
         if "date" in name:
-            return date(2025, 1, 1)
+            return self.operating_scope.date_start
         if "quantity" in name or name.endswith("qty") or "id" in name:
             return 1
         if "amount" in name or "price" in name or "cost" in name:

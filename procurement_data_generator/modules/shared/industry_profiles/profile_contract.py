@@ -19,6 +19,9 @@ class ProcurementProfile:
     component_cost_profiles: dict[str, tuple[float, float]] = field(default_factory=dict)
     component_financial_profiles: dict[str, dict[str, float]] = field(default_factory=dict)
     component_category_aliases: dict[str, str] = field(default_factory=dict)
+    rejection_reasons: tuple[str, ...] = field(default_factory=tuple)
+    inspection_test_names: tuple[str, ...] = field(default_factory=tuple)
+    safety_critical_category_terms: tuple[str, ...] = field(default_factory=tuple)
     plant_type_names: tuple[str, ...] = field(default_factory=tuple)
     warehouse_type_names: tuple[str, ...] = field(default_factory=tuple)
     supplier_component_relationship_rules: tuple[str, ...] = field(default_factory=tuple)
@@ -40,6 +43,7 @@ class ProductionProfile:
     bom_patterns: tuple[str, ...] = field(default_factory=tuple)
     scrap_yield_profiles: dict[str, tuple[float, float]] = field(default_factory=dict)
     quality_defect_codes: tuple[str, ...] = field(default_factory=tuple)
+    scrap_reason_codes: tuple[str, ...] = field(default_factory=tuple)
     rework_reason_codes: tuple[str, ...] = field(default_factory=tuple)
     cost_profiles: dict[str, tuple[float, float]] = field(default_factory=dict)
 
@@ -50,7 +54,9 @@ class SharedProfile:
 
     countable_uoms: tuple[str, ...]
     measurable_uoms: tuple[str, ...]
+    default_country: str = "USA"
     default_currency: str = "USD"
+    location_catalog: tuple[dict[str, str], ...] = field(default_factory=tuple)
     date_scope_notes: tuple[str, ...] = field(default_factory=tuple)
     realism_notes: tuple[str, ...] = field(default_factory=tuple)
 

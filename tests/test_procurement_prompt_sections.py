@@ -17,6 +17,8 @@ def test_procurement_prompt_sections_include_quality_location_currency_rules() -
     text = _section_text()
 
     assert "Rejection Reason Realism" in text
+    assert "EV manufacturing quality context" not in text
+    assert "selected industry profile and manufacturing quality context" in text
     assert "PlantCountry = USA." in text
     assert "CurrencyCode must be USD where the column exists." in text
     assert "POStatus = Received only" in text

@@ -154,7 +154,7 @@ def _status_quality_location_content() -> str:
             "- If RejectedQuantity > 0, RejectionReason must be populated.",
             "- RejectionReason should vary across rejected rows.",
             "- Do not use the same rejection reason for all rows.",
-            "- Choose realistic reasons based on EV manufacturing quality context.",
+            "- Choose realistic reasons based on the selected industry profile and manufacturing quality context.",
             "",
             "US-Only Location Guidance:",
             "- PlantCountry = USA.",

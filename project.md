@@ -392,4 +392,4 @@ Python reconciliation and data quality reports
 manager-facing SQL validation packs
 ```
 
-Phase 5 introduced explicit `OperatingScope` and `GenerationConfig` objects. The default operating scope remains the current simple setup: one plant, one warehouse, Shift A, and calendar year 2025. Existing constants and generation behavior remain backward compatible; this phase does not introduce multi-plant, multi-warehouse, or multi-shift behavior. The plan/profile-driven generator refactor remains scheduled for Phase 6.
+Phase 6 moved the main industry-specific generator assumptions behind `IndustryProfile` access while keeping the default EV profile backward compatible. Python still owns deterministic row generation, formulas, reconciliation, and validation; the LLM remains a planning-only component. The validation-layer split remains Phase 7, and full Production generic-runner execution remains Phase 8.

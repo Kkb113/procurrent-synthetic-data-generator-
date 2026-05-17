@@ -168,6 +168,22 @@ EV_MANUFACTURING_PROFILE = IndustryProfile(
             "thermal": "Thermal Management",
             "charging": "Charging Components",
         },
+        rejection_reasons=(
+            "Dimension Out of Tolerance",
+            "Surface Defect",
+            "Electrical Test Failure",
+            "Packaging Damage",
+            "Material Contamination",
+            "Wrong Specification",
+            "Thermal Stress Failure",
+            "Supplier Documentation Issue",
+            "Visual Defect",
+            "Functional Test Failure",
+        ),
+        safety_critical_category_terms=(
+            "safety",
+            "battery",
+        ),
         plant_type_names=(
             "EV Assembly Plant",
             "Battery Systems Plant",
@@ -330,6 +346,11 @@ EV_MANUFACTURING_PROFILE = IndustryProfile(
             "CosmeticDamage",
             "ConnectorFitmentIssue",
         ),
+        scrap_reason_codes=(
+            "Process Defect",
+            "Electrical Test Scrap",
+            "Thermal Leak Scrap",
+        ),
         rework_reason_codes=(
             "RetorqueRequired",
             "ConnectorReseat",
@@ -339,12 +360,27 @@ EV_MANUFACTURING_PROFILE = IndustryProfile(
         cost_profiles={
             "LaborRatePerHour": (35.0, 85.0),
             "OverheadPct": (8.0, 22.0),
+            "ProductionLaborCostPerOperation": (45.0, 95.0),
+            "ProductionOverheadPct": (12.0, 24.0),
+            "ScrapCostPerUnit": (75.0, 250.0),
+            "ReworkCostPerUnit": (40.0, 180.0),
         },
     ),
     shared=SharedProfile(
         countable_uoms=tuple(sorted(INTEGER_QUANTITY_UOMS)),
         measurable_uoms=tuple(sorted(DECIMAL_QUANTITY_UOMS)),
+        default_country="USA",
         default_currency="USD",
+        location_catalog=(
+            {"city": "Detroit", "state": "Michigan", "zip": "48201", "country": "USA"},
+            {"city": "Austin", "state": "Texas", "zip": "73301", "country": "USA"},
+            {"city": "Fremont", "state": "California", "zip": "94536", "country": "USA"},
+            {"city": "Phoenix", "state": "Arizona", "zip": "85001", "country": "USA"},
+            {"city": "Nashville", "state": "Tennessee", "zip": "37201", "country": "USA"},
+            {"city": "Columbus", "state": "Ohio", "zip": "43004", "country": "USA"},
+            {"city": "Reno", "state": "Nevada", "zip": "89501", "country": "USA"},
+            {"city": "Greenville", "state": "South Carolina", "zip": "29601", "country": "USA"},
+        ),
         date_scope_notes=("Current generated scenarios remain in calendar year 2025.",),
         realism_notes=(
             "EV names are current demo catalog hints only.",

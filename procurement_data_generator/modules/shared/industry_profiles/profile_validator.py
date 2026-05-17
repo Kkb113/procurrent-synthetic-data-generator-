@@ -52,6 +52,10 @@ def validate_industry_profile(profile: Any) -> IndustryProfileValidationResult:
         errors.append("shared.countable_uoms and shared.measurable_uoms must not fully overlap.")
     elif countable_set & measurable_set:
         warnings.append("shared.countable_uoms and shared.measurable_uoms contain overlapping suggestions.")
+    if not str(shared.get("default_country") or "USA").strip():
+        errors.append("shared.default_country must be non-empty when provided.")
+    if not str(shared.get("default_currency") or "USD").strip():
+        errors.append("shared.default_currency must be non-empty when provided.")
 
     return IndustryProfileValidationResult(valid=not errors, errors=errors, warnings=warnings)
 

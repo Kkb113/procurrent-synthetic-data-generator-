@@ -15,6 +15,7 @@ from faker import Faker
 from procurement_data_generator.core.contracts.llm_plan_contract import DomainProfile, LLMGenerationPlan, MaterialCategory
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.llm.plan_validator import is_date_type, is_numeric_type, is_string_type
 from procurement_data_generator.modules.procurement.financial_realism_profiles import (
     generate_contract_price,
@@ -28,6 +29,7 @@ from procurement_data_generator.modules.procurement.name_generators import (
 from procurement_data_generator.modules.procurement.role_catalog import PROCUREMENT_V1_UNSUPPORTED_MESSAGE
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
+from procurement_data_generator.modules.shared.industry_profiles.profile_value_provider import IndustryProfileValueProvider
 from procurement_data_generator.modules.shared.operating_scope import (
     get_expected_plant_count,
     get_expected_warehouse_count,
@@ -49,17 +51,6 @@ V2_MASTER_TABLES = {
     "Warehouse",
     "SupplierComponent",
 }
-
-US_MANUFACTURING_LOCATIONS = (
-    {"city": "Detroit", "state": "Michigan", "zip": "48201"},
-    {"city": "Austin", "state": "Texas", "zip": "73301"},
-    {"city": "Fremont", "state": "California", "zip": "94536"},
-    {"city": "Phoenix", "state": "Arizona", "zip": "85001"},
-    {"city": "Nashville", "state": "Tennessee", "zip": "37201"},
-    {"city": "Columbus", "state": "Ohio", "zip": "43004"},
-    {"city": "Reno", "state": "Nevada", "zip": "89501"},
-    {"city": "Greenville", "state": "South Carolina", "zip": "29601"},
-)
 
 NAME_GENERATION_TYPES = {
     "vendor_name",
@@ -100,9 +91,18 @@ GENERIC_ARTIFICIAL_NAME_SUFFIX_PATTERN = re.compile(r"^\s*(?P<base>[A-Za-z ]+?)\
 class ProcurementMasterDataGenerator:
     """Generate procurement master/reference tables as pandas DataFrames."""
 
-    def __init__(self, industry_profile: IndustryProfile | None = None, profile_id: str | None = None) -> None:
+    def __init__(
+        self,
+        industry_profile: IndustryProfile | None = None,
+        profile_id: str | None = None,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
+    ) -> None:
         self.name_generator = ProcurementNameGenerator()
         self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
+        self.profile_values = IndustryProfileValueProvider(self.industry_profile)
+        self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
+        self.generation_config = generation_config or GenerationConfig()
 
     def generate_master_data(
         self,
@@ -447,7 +447,7 @@ class ProcurementMasterDataGenerator:
             "SupplierName": names,
             "SupplierCity": [locations[index]["city"] for index in range(count)],
             "SupplierState": [locations[index]["state"] for index in range(count)],
-            "SupplierCountry": ["USA"] * count,
+            "SupplierCountry": [locations[index].get("country", self.profile_values.default_country) for index in range(count)],
             "SupplierZipCode": [locations[index]["zip"] for index in range(count)],
         }
         return self._build_v2_dataframe(table, count, plan, rng, values_by_column, status_primary="Active")
@@ -465,16 +465,19 @@ class ProcurementMasterDataGenerator:
         allowed_categories = self._profile_component_categories(table)
         component_categories = [allowed_categories[index % len(allowed_categories)] for index in range(count)]
         rng.shuffle(component_categories)
-        standard_costs = [generate_standard_cost(category, rng) for category in component_categories]
+        standard_costs = [
+            generate_standard_cost(category, rng, self.industry_profile.procurement)
+            for category in component_categories
+        ]
         values_by_column: dict[str, list[Any]] = {
             "ComponentID": list(range(1, count + 1)),
             "ComponentCode": [f"CMP-{index:05d}" for index in range(1, count + 1)],
             "ComponentName": names,
             "ComponentCategory": component_categories,
             "StandardCost": standard_costs,
-            "CurrencyCode": ["USD"] * count,
+            "CurrencyCode": [self.profile_values.default_currency] * count,
             "SafetyCriticalFlag": [
-                1 if str(category).lower() in {"safety", "battery"} or rng.random() < 0.18 else 0
+                1 if self.profile_values.is_procurement_safety_critical_category(category) or rng.random() < 0.18 else 0
                 for category in component_categories
             ],
         }
@@ -496,7 +499,7 @@ class ProcurementMasterDataGenerator:
             "PlantName": [f"{locations[index]['city']} {plant_types[index % len(plant_types)]}" for index in range(count)],
             "PlantCity": [locations[index]["city"] for index in range(count)],
             "PlantState": [locations[index]["state"] for index in range(count)],
-            "PlantCountry": ["USA"] * count,
+            "PlantCountry": [locations[index].get("country", self.profile_values.default_country) for index in range(count)],
             "PlantZipCode": [locations[index]["zip"] for index in range(count)],
         }
         return self._build_v2_dataframe(table, count, plan, rng, values_by_column, status_primary="Active")
@@ -534,7 +537,7 @@ class ProcurementMasterDataGenerator:
             "WarehouseLocation": [],
             "WarehouseCity": [],
             "WarehouseState": [],
-            "WarehouseCountry": ["USA"] * count,
+            "WarehouseCountry": [],
             "WarehouseZipCode": [],
         }
         for index in range(count):
@@ -550,6 +553,7 @@ class ProcurementMasterDataGenerator:
             values_by_column["WarehouseLocation"].append(f"Building {chr(65 + index % 26)}, {city} Manufacturing Campus")
             values_by_column["WarehouseCity"].append(city)
             values_by_column["WarehouseState"].append(state)
+            values_by_column["WarehouseCountry"].append(str(plant.get("PlantCountry", self.profile_values.default_country)))
             values_by_column["WarehouseZipCode"].append(zip_code)
         return self._build_v2_dataframe(table, count, plan, rng, values_by_column, status_primary="Active")
 
@@ -653,7 +657,7 @@ class ProcurementMasterDataGenerator:
             "MinOrderQuantity": self._generate_decimal_values(min_order_column, len(pairs), rng) if min_order_column else [1.0] * len(pairs),
             "LeadTimeDays": self._generate_integer_values(lead_time_column, len(pairs), rng) if lead_time_column else [14] * len(pairs),
             "ContractPrice": [],
-            "CurrencyCode": ["USD"] * len(pairs),
+            "CurrencyCode": [self.profile_values.default_currency] * len(pairs),
         }
         minimum = float(_parse_number(price_column.min_value if price_column else None, 1.0))
         maximum = float(_parse_number(price_column.max_value if price_column else None, 5000.0))
@@ -680,9 +684,9 @@ class ProcurementMasterDataGenerator:
             if column.key_type == "PK" or column.generation_type == "sequence_id":
                 data[column.column_name] = list(range(1, count + 1))
             elif column.column_name == "CurrencyCode":
-                data[column.column_name] = ["USD"] * count
+                data[column.column_name] = [self.profile_values.default_currency] * count
             elif column.column_name.endswith("Country"):
-                data[column.column_name] = ["USA"] * count
+                data[column.column_name] = [self.profile_values.default_country] * count
             elif column.generation_type == "category":
                 data[column.column_name] = self._generate_category_values(table, column, count, plan, rng)
             elif column.generation_type == "status":
@@ -709,11 +713,11 @@ class ProcurementMasterDataGenerator:
             if extra:
                 report.add_error(message=f"Procurement v2 master generation produced non-master tables: {', '.join(extra)}.", suggested_fix="Do not generate transaction tables in V2-5.")
 
-        self._validate_constant_value(dataframes, "SupplierMaster", "SupplierCountry", "USA", report)
-        self._validate_constant_value(dataframes, "Plant", "PlantCountry", "USA", report)
-        self._validate_constant_value(dataframes, "Warehouse", "WarehouseCountry", "USA", report)
-        self._validate_constant_value(dataframes, "ComponentMaster", "CurrencyCode", "USD", report)
-        self._validate_constant_value(dataframes, "SupplierComponent", "CurrencyCode", "USD", report)
+        self._validate_constant_value(dataframes, "SupplierMaster", "SupplierCountry", self.profile_values.default_country, report)
+        self._validate_constant_value(dataframes, "Plant", "PlantCountry", self.profile_values.default_country, report)
+        self._validate_constant_value(dataframes, "Warehouse", "WarehouseCountry", self.profile_values.default_country, report)
+        self._validate_constant_value(dataframes, "ComponentMaster", "CurrencyCode", self.profile_values.default_currency, report)
+        self._validate_constant_value(dataframes, "SupplierComponent", "CurrencyCode", self.profile_values.default_currency, report)
         self._validate_unique_column(dataframes, "SupplierMaster", "SupplierName", report)
         self._validate_unique_column(dataframes, "ComponentMaster", "ComponentName", report)
         self._validate_unique_column(dataframes, "Plant", "PlantName", report)
@@ -852,7 +856,7 @@ class ProcurementMasterDataGenerator:
         return result
 
     def _shuffled_us_locations(self, count: int, rng: random.Random) -> list[dict[str, str]]:
-        locations = list(US_MANUFACTURING_LOCATIONS)
+        locations = list(self.profile_values.location_catalog())
         rng.shuffle(locations)
         return [locations[index % len(locations)] for index in range(count)]
 
@@ -1046,8 +1050,8 @@ class ProcurementMasterDataGenerator:
         return [round(rng.uniform(minimum, maximum), scale) for _ in range(count)]
 
     def _generate_date_values(self, column: ColumnContract, count: int, rng: random.Random) -> list[date]:
-        start_date = _parse_date(column.min_value, date(2025, 1, 1))
-        end_date = _parse_date(column.max_value, date(2025, 12, 31))
+        start_date = _parse_date(column.min_value, self.operating_scope.date_start)
+        end_date = _parse_date(column.max_value, self.operating_scope.date_end)
         if end_date < start_date:
             start_date, end_date = end_date, start_date
         day_span = (end_date - start_date).days

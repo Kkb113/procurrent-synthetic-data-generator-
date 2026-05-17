@@ -70,6 +70,13 @@ GENERIC_MES_PROFILE = IndustryProfile(
             "Mechanical Components": (1.0, 500.0),
             "Consumables": (0.5, 80.0),
         },
+        rejection_reasons=(
+            "Dimension Variance",
+            "Surface Defect",
+            "Packaging Damage",
+            "Supplier Deviation",
+            "Functional Test Failure",
+        ),
         supplier_component_relationship_rules=(
             "Prefer suppliers associated with the requested component category.",
             "Use stable supplier-component pairings for repeatability.",
@@ -147,6 +154,11 @@ GENERIC_MES_PROFILE = IndustryProfile(
             "FunctionalFailure",
             "PackagingDefect",
         ),
+        scrap_reason_codes=(
+            "Process Defect",
+            "Assembly Scrap",
+            "Inspection Scrap",
+        ),
         rework_reason_codes=(
             "ReassemblyRequired",
             "CalibrationAdjustment",
@@ -156,11 +168,16 @@ GENERIC_MES_PROFILE = IndustryProfile(
         cost_profiles={
             "LaborRatePerHour": (20.0, 70.0),
             "OverheadPct": (5.0, 20.0),
+            "ProductionLaborCostPerOperation": (35.0, 80.0),
+            "ProductionOverheadPct": (8.0, 20.0),
+            "ScrapCostPerUnit": (35.0, 160.0),
+            "ReworkCostPerUnit": (25.0, 125.0),
         },
     ),
     shared=SharedProfile(
         countable_uoms=tuple(sorted(INTEGER_QUANTITY_UOMS)),
         measurable_uoms=tuple(sorted(DECIMAL_QUANTITY_UOMS)),
+        default_country="USA",
         default_currency="USD",
         date_scope_notes=("Current generated scenarios remain in calendar year 2025.",),
         realism_notes=(
