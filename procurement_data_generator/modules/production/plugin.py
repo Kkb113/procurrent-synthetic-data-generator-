@@ -11,6 +11,7 @@ from procurement_data_generator.core.contracts.validation_report import Validati
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
 from procurement_data_generator.core.modules.contracts import PromptSection, UpstreamRequirement
 from procurement_data_generator.modules.production.master_generator import ProductionMasterDataGenerator
+from procurement_data_generator.modules.production.prompt_sections import get_production_prompt_sections
 from procurement_data_generator.modules.production.reconciler_rules import UPSTREAM_TABLES
 from procurement_data_generator.modules.production.role_catalog import get_production_role_catalog
 from procurement_data_generator.modules.production.role_validator import validate_production_roles
@@ -46,13 +47,7 @@ class ProductionModulePlugin:
         relationships: Sequence[RelationshipContract] | None = None,
         scenario: str | None = None,
     ) -> tuple[PromptSection, ...]:
-        return (
-            PromptSection(
-                section_id="production_v1_prompt",
-                title="Production v1 Prompt Guidance",
-                content="Production v1 prompt guidance is currently provided by the existing production fixtures and validators.",
-            ),
-        )
+        return get_production_prompt_sections(schema=schema, relationships=relationships, scenario=scenario)
 
     def validate_plan(
         self,

@@ -46,11 +46,12 @@ def test_production_plugin_data_quality_engine_is_explicitly_unsupported() -> No
         ProductionModulePlugin().create_data_quality_engine()
 
 
-def test_production_plugin_exposes_prompt_placeholder() -> None:
+def test_production_plugin_exposes_prompt_sections() -> None:
     sections = ProductionModulePlugin().get_prompt_sections()
 
-    assert len(sections) == 1
-    assert sections[0].section_id == "production_v1_prompt"
+    assert len(sections) >= 2
+    assert sections[0].section_id == "production.v1.lifecycle"
+    assert any("ProductionGenealogy" in section.content for section in sections)
 
 
 @pytest.mark.integration
@@ -61,4 +62,3 @@ def test_production_plugin_validates_existing_metadata_roles() -> None:
     result = ProductionModulePlugin().validate_roles(schema_result.schema)
 
     assert result.report.is_valid
-

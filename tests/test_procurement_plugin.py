@@ -37,11 +37,12 @@ def test_procurement_plugin_has_no_upstream_requirements() -> None:
     assert ProcurementModulePlugin().get_upstream_requirements() == ()
 
 
-def test_procurement_plugin_exposes_prompt_placeholder() -> None:
+def test_procurement_plugin_exposes_prompt_sections() -> None:
     sections = ProcurementModulePlugin().get_prompt_sections()
 
-    assert len(sections) == 1
-    assert sections[0].section_id == "procurement_v2_prompt"
+    assert len(sections) >= 2
+    assert sections[0].section_id == "procurement.v2.model"
+    assert any("InventoryReceiptDetail" in section.content for section in sections)
 
 
 @pytest.mark.integration
@@ -52,4 +53,3 @@ def test_procurement_plugin_validates_existing_metadata_roles() -> None:
     result = ProcurementModulePlugin().validate_roles(schema_result.schema)
 
     assert result.report.is_valid
-

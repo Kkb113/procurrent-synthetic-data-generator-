@@ -12,6 +12,7 @@ from procurement_data_generator.core.llm.plan_validator import validate_generati
 from procurement_data_generator.core.modules.contracts import PromptSection, UpstreamRequirement
 from procurement_data_generator.core.validation.reconciler import ProcurementDataQualityEngine
 from procurement_data_generator.modules.procurement.master_generator import ProcurementMasterDataGenerator
+from procurement_data_generator.modules.procurement.prompt_sections import get_procurement_prompt_sections
 from procurement_data_generator.modules.procurement.role_catalog import get_procurement_role_catalog
 from procurement_data_generator.modules.procurement.role_validator import validate_procurement_roles
 from procurement_data_generator.modules.procurement.transaction_generator import ProcurementTransactionGenerator
@@ -45,13 +46,7 @@ class ProcurementModulePlugin:
         relationships: Sequence[RelationshipContract] | None = None,
         scenario: str | None = None,
     ) -> tuple[PromptSection, ...]:
-        return (
-            PromptSection(
-                section_id="procurement_v2_prompt",
-                title="Procurement v2 Prompt Guidance",
-                content="Procurement v2 prompt guidance is currently assembled by core.llm.prompt_builder.",
-            ),
-        )
+        return get_procurement_prompt_sections(schema=schema, relationships=relationships, scenario=scenario)
 
     def validate_plan(
         self,

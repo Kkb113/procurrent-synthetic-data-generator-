@@ -15,6 +15,20 @@ def test_prompt_includes_business_scenario() -> None:
     assert "EV manufacturing procurement scenario" in prompt
 
 
+def test_prompt_uses_generic_mes_system_instruction() -> None:
+    prompt = _build_prompt()
+
+    assert "You are an MES synthetic data planning assistant." in prompt
+    assert "You are a procurement data planning assistant." not in prompt
+
+
+def test_prompt_explains_llm_plans_and_python_executes() -> None:
+    prompt = _build_prompt()
+
+    assert "LLM plans. Python validates. Python generates. Python calculates. Python reconciles." in prompt
+    assert "Python owns primary key generation, foreign key consistency, formulas, reconciliation" in prompt
+
+
 def test_prompt_includes_all_table_names_from_schema() -> None:
     prompt = _build_prompt()
 
@@ -48,7 +62,12 @@ def test_prompt_includes_json_only_hard_rule() -> None:
 def test_prompt_includes_no_row_generation_hard_rule() -> None:
     prompt = _build_prompt()
 
+    assert "Do not generate raw rows." in prompt
     assert "Do not generate actual table rows." in prompt
+    assert "Do not generate CSV data." in prompt
+    assert "Do not generate SQL inserts." in prompt
+    assert "Do not generate Python code." in prompt
+    assert "Do not generate markdown." in prompt
 
 
 def test_prompt_includes_no_invented_tables_or_columns_hard_rule() -> None:
@@ -94,6 +113,39 @@ def test_prompt_includes_json_skeleton() -> None:
     assert '"module": "procurement"' in prompt
     assert '"domain_profile"' in prompt
     assert '"formula_rules"' in prompt
+
+
+def test_prompt_builder_can_assemble_multi_module_prompt() -> None:
+    prompt = build_llm_planning_prompt(
+        schema_contract=_schema(),
+        relationships=[],
+        business_scenario="Integrated MES planning scenario.",
+        module_ids=["procurement", "production"],
+    )
+
+    assert "Selected modules: procurement, production" in prompt
+    assert "Procurement v2 Exact Model" in prompt
+    assert "Production v1 Lifecycle Guidance" in prompt
+    assert prompt.index("Procurement v2 Exact Model") < prompt.index("Production v1 Lifecycle Guidance")
+
+
+def test_prompt_builder_unknown_module_fails_clearly() -> None:
+    with pytest.raises(KeyError, match="Unknown module plugin 'quality'"):
+        build_llm_planning_prompt(
+            schema_contract=_schema(),
+            relationships=[],
+            business_scenario="Unknown module.",
+            module_ids=["quality"],
+        )
+
+
+def test_core_prompt_builder_has_no_concrete_generator_imports() -> None:
+    text = (Path(__file__).resolve().parents[1] / "procurement_data_generator" / "core" / "llm" / "prompt_builder.py").read_text(encoding="utf-8")
+
+    assert "ProcurementMasterDataGenerator" not in text
+    assert "ProcurementTransactionGenerator" not in text
+    assert "ProductionMasterDataGenerator" not in text
+    assert "ProductionTransactionGenerator" not in text
 
 
 def test_prompt_can_be_saved_to_output_file(tmp_path: Path) -> None:

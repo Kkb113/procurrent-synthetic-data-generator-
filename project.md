@@ -32,6 +32,8 @@ Existing Procurement and Production entry points remain supported; full Producti
 
 Phase 3 introduces a normalized multi-module-capable LLM plan envelope while preserving legacy single-module plans. Prompt refactoring is intentionally deferred to Phase 4, and generator behavior remains unchanged.
 
+Phase 4 introduces generic MES prompt assembly. Module-specific prompt sections are provided by module plugins; legacy Procurement prompt construction remains supported, generator behavior is unchanged, and Production full generic execution remains deferred to Phase 8.
+
 Procurement v2 is the active FastAPI/backend Procurement pipeline. Production v1 has a dedicated command-line pipeline orchestration script, while the existing Procurement runner remains focused on Procurement v2.
 
 ## 2. Procurement v2 Completed State
