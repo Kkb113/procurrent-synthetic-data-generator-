@@ -10,12 +10,13 @@ from procurement_data_generator.core.contracts.schema_contract import SchemaCont
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
 from procurement_data_generator.core.modules.contracts import PromptSection, UpstreamRequirement
-from procurement_data_generator.core.validation.reconciler import ProcurementDataQualityEngine
+from procurement_data_generator.modules.procurement.data_quality import ProcurementDataQualityEngine
 from procurement_data_generator.modules.procurement.master_generator import ProcurementMasterDataGenerator
 from procurement_data_generator.modules.procurement.prompt_sections import get_procurement_prompt_sections
 from procurement_data_generator.modules.procurement.role_catalog import get_procurement_role_catalog
 from procurement_data_generator.modules.procurement.role_validator import validate_procurement_roles
 from procurement_data_generator.modules.procurement.transaction_generator import ProcurementTransactionGenerator
+from procurement_data_generator.modules.procurement.validation_rules import get_procurement_validation_rules
 
 
 class ProcurementModulePlugin:
@@ -64,6 +65,9 @@ class ProcurementModulePlugin:
 
     def create_data_quality_engine(self) -> ProcurementDataQualityEngine:
         return ProcurementDataQualityEngine()
+
+    def get_validation_rules(self) -> tuple[str, ...]:
+        return get_procurement_validation_rules()
 
     def get_upstream_requirements(self) -> tuple[UpstreamRequirement, ...]:
         return ()

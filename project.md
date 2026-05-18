@@ -392,4 +392,4 @@ Python reconciliation and data quality reports
 manager-facing SQL validation packs
 ```
 
-Phase 6 moved the main industry-specific generator assumptions behind `IndustryProfile` access while keeping the default EV profile backward compatible. Python still owns deterministic row generation, formulas, reconciliation, and validation; the LLM remains a planning-only component. The validation-layer split remains Phase 7, and full Production generic-runner execution remains Phase 8.
+Phase 7 split validation ownership without changing validation meaning. Generic validation now owns schema, PK/FK, nullability, allowed value, type/range, and metadata-level checks; Procurement owns Procurement v2 lifecycle/data-quality checks; Production owns Production v1 lifecycle, traceability, inventory, and cost reconciliation checks. Existing compatibility import paths remain supported, and full Production generic-runner execution remains Phase 8.

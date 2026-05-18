@@ -16,6 +16,7 @@ from procurement_data_generator.modules.production.reconciler_rules import UPSTR
 from procurement_data_generator.modules.production.role_catalog import get_production_role_catalog
 from procurement_data_generator.modules.production.role_validator import validate_production_roles
 from procurement_data_generator.modules.production.transaction_generator import ProductionTransactionGenerator
+from procurement_data_generator.modules.production.validation_rules import get_production_validation_rules
 
 
 class ProductionModulePlugin:
@@ -68,6 +69,9 @@ class ProductionModulePlugin:
             "Production v1 uses validate_production_generated_data instead of a reusable data quality engine. "
             "Phase 2 can introduce a common quality adapter if needed."
         )
+
+    def get_validation_rules(self) -> tuple[str, ...]:
+        return get_production_validation_rules()
 
     def get_upstream_requirements(self) -> tuple[UpstreamRequirement, ...]:
         return (

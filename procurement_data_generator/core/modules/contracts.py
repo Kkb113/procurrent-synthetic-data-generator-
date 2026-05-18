@@ -83,5 +83,8 @@ class MESModulePlugin(Protocol):
     def create_data_quality_engine(self) -> Any:
         """Create the module's data quality engine when one exists."""
 
+    def get_validation_rules(self) -> tuple[str, ...]:
+        """Return module-owned generated-data validation rule groups."""
+
     def get_upstream_requirements(self) -> tuple[UpstreamRequirement, ...]:
         """Return upstream module dependencies for integrated generation."""
