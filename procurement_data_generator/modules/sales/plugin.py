@@ -14,7 +14,7 @@ from procurement_data_generator.modules.sales.prompt_sections import get_sales_p
 from procurement_data_generator.modules.sales.role_catalog import get_sales_role_catalog
 from procurement_data_generator.modules.sales.role_validator import validate_sales_roles
 from procurement_data_generator.modules.sales.transaction_generator import SalesTransactionGenerator
-from procurement_data_generator.modules.sales.validation_rules import get_sales_validation_rules
+from procurement_data_generator.modules.sales.validation_rules import SalesDataQualityEngine, get_sales_validation_rules
 
 
 SALES_EXECUTION_NOT_IMPLEMENTED = (
@@ -67,8 +67,8 @@ class SalesModulePlugin:
     def create_transaction_generator(self, **kwargs: Any) -> SalesTransactionGenerator:
         return SalesTransactionGenerator(**kwargs)
 
-    def create_data_quality_engine(self):
-        raise NotImplementedError("Sales data quality validation is not implemented yet.")
+    def create_data_quality_engine(self) -> SalesDataQualityEngine:
+        return SalesDataQualityEngine()
 
     def get_validation_rules(self) -> tuple[str, ...]:
         return get_sales_validation_rules()

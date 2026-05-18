@@ -235,3 +235,7 @@ Sales Phase 7 implemented deterministic shipment traceability for `SalesShipment
 ## Sales Phase 8 Note
 
 Sales Phase 8 implemented post-Sales `FinishedGoodsInventory` recalculation. The update applies Production receipts, Sales shipments, restocked Sales returns, and active `Reserved` reservations while preserving inventory row identity and avoiding in-place input mutation. Sales final validation remains Phase 9, and full generic Sales runner integration remains disabled until Sales Phase 10.
+
+## Sales Phase 9 Note
+
+Sales Phase 9 implemented Sales generated-data validation rules. Validation covers master references, order/reservation/pick/shipment flow, invoice/payment reconciliation, returns, shipment traceability, and post-Sales `FinishedGoodsInventory` rollup. Sales full generic execution and frontend activation remain disabled until later phases.
