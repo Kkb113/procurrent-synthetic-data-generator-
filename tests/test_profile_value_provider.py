@@ -58,6 +58,9 @@ def test_food_profile_exposes_food_quality_vocabulary() -> None:
     assert "FOODSERVICE" in provider.sales_channels()
     assert "Net 30" in provider.sales_payment_terms()
     assert provider.sales_margin_pct_range() == (0.2, 0.45)
+    assert "UPI" in provider.sales_payment_methods()
+    assert provider.sales_tax_rate_pct() == 5.0
+    assert provider.sales_freight_amount_range() == (250.0, 950.0)
 
 
 def test_custom_profile_values_override_named_generator_policies() -> None:

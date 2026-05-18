@@ -219,3 +219,7 @@ Sales Phase 3 implemented deterministic Sales master/reference generation for `C
 ## Sales Phase 4 Note
 
 Sales Phase 4 implemented deterministic order, reservation, pick, and shipment generation for `SalesOrderHdr`, `SalesOrderLine`, `SalesInventoryReservation`, `SalesPickListHeader`, `SalesPickListLine`, `SalesShipmentHeader`, and `SalesShipmentLine`. The generator prevents overselling with internal FinishedGoodsInventory and FinishedGoodsReceipt allocation trackers, but it does not mutate or recalculate FinishedGoodsInventory yet. Invoice, payment, returns, shipment traceability, and full generic Sales execution remain disabled until later Sales phases.
+
+## Sales Phase 5 Note
+
+Sales Phase 5 implemented invoice and customer payment generation for `SalesInvoiceHeader`, `SalesInvoiceLine`, and `CustomerPaymentReceipt`. Invoices are sourced from Sales shipment lines, with deterministic COGS, gross margin, invoice totals, due dates, and fact-derived payment status. Returns, shipment traceability, FinishedGoodsInventory updates, and full generic Sales execution remain disabled until later Sales phases.

@@ -26,6 +26,12 @@ SALES_PHASE4_TRANSACTION_TABLES = (
     "SalesShipmentLine",
 )
 
+SALES_PHASE5_TRANSACTION_TABLES = (
+    "SalesInvoiceHeader",
+    "SalesInvoiceLine",
+    "CustomerPaymentReceipt",
+)
+
 SALES_PHASE4_MASTER_TABLES = (
     "CustomerMaster",
     "CustomerLocation",
@@ -72,12 +78,14 @@ class SalesTransactionGenerator:
     ) -> dict[str, pd.DataFrame]:
         """Generate Sales Phase 4 transaction tables only."""
 
+        master_source = _first_not_none(sales_master_data, kwargs.get("master_data"), self.sales_master_data)
+        upstream_source = _first_not_none(upstream_data, kwargs.get("upstream_dataframes"), self.upstream_data)
         masters = self._load_tables(
-            sales_master_data or kwargs.get("master_data") or self.sales_master_data,
+            master_source,
             SALES_PHASE4_MASTER_TABLES,
         )
         upstream = self._load_tables(
-            upstream_data or kwargs.get("upstream_dataframes") or self.upstream_data,
+            upstream_source,
             SALES_PHASE4_UPSTREAM_TABLES + ("ProductionCostSummary",),
         )
         self._validate_required_inputs(masters, upstream)
@@ -95,6 +103,154 @@ class SalesTransactionGenerator:
             "SalesShipmentHeader": pd.DataFrame(rows["SalesShipmentHeader"], columns=_SALES_SHIPMENT_HEADER_COLUMNS),
             "SalesShipmentLine": pd.DataFrame(rows["SalesShipmentLine"], columns=_SALES_SHIPMENT_LINE_COLUMNS),
         }
+
+    def generate_invoice_payment_data(
+        self,
+        seed: int | None = None,
+        sales_master_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        sales_transaction_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        """Generate Sales Phase 5 invoice and payment tables from Phase 4 outputs."""
+
+        master_source = _first_not_none(sales_master_data, kwargs.get("master_data"), self.sales_master_data)
+        transaction_source = _first_not_none(
+            sales_transaction_data,
+            kwargs.get("transaction_data"),
+            kwargs.get("phase4_data"),
+        )
+        masters = self._load_tables(
+            master_source,
+            ("CustomerMaster", "SalesPriceListLine"),
+        )
+        transactions = self._load_tables(
+            transaction_source,
+            SALES_PHASE4_TRANSACTION_TABLES,
+        )
+        self._validate_phase5_inputs(masters, transactions)
+        rng = random.Random(self.generation_config.seed if seed is None else seed)
+        rows = self._generate_invoice_payment_rows(masters, transactions, rng)
+
+        return {
+            "SalesInvoiceHeader": pd.DataFrame(rows["SalesInvoiceHeader"], columns=_SALES_INVOICE_HEADER_COLUMNS),
+            "SalesInvoiceLine": pd.DataFrame(rows["SalesInvoiceLine"], columns=_SALES_INVOICE_LINE_COLUMNS),
+            "CustomerPaymentReceipt": pd.DataFrame(rows["CustomerPaymentReceipt"], columns=_CUSTOMER_PAYMENT_RECEIPT_COLUMNS),
+        }
+
+    def generate_invoices_and_payments(self, *args: Any, **kwargs: Any) -> dict[str, pd.DataFrame]:
+        """Compatibility alias for Phase 5 invoice/payment generation."""
+
+        return self.generate_invoice_payment_data(*args, **kwargs)
+
+    def _generate_invoice_payment_rows(
+        self,
+        masters: Mapping[str, pd.DataFrame],
+        transactions: Mapping[str, pd.DataFrame],
+        rng: random.Random,
+    ) -> dict[str, list[dict[str, Any]]]:
+        customer_master = masters["CustomerMaster"]
+        order_header_by_id = _row_map(transactions["SalesOrderHdr"], "SalesOrderID")
+        order_line_by_id = _row_map(transactions["SalesOrderLine"], "SalesOrderLineID")
+        shipment_lines_by_shipment = _rows_by_key(transactions["SalesShipmentLine"], "ShipmentID")
+        payment_terms_by_customer = {
+            row.CustomerID: str(row.PaymentTerms)
+            for row in customer_master.itertuples(index=False)
+        }
+        tax_rate_pct = self.profile_values.sales_tax_rate_pct()
+        freight_low, freight_high = self.profile_values.sales_freight_amount_range()
+        partial_low, partial_high = self.profile_values.sales_partial_payment_pct_range()
+        payment_methods = self.profile_values.sales_payment_methods()
+        rows: dict[str, list[dict[str, Any]]] = {table_name: [] for table_name in SALES_PHASE5_TRANSACTION_TABLES}
+
+        for invoice_id, shipment in enumerate(
+            transactions["SalesShipmentHeader"].sort_values("ShipmentID").itertuples(index=False),
+            start=1,
+        ):
+            shipment_lines = shipment_lines_by_shipment.get(shipment.ShipmentID, [])
+            if not shipment_lines:
+                continue
+            order_header = order_header_by_id[shipment.SalesOrderID]
+            invoice_date = _as_date(shipment.ShipmentDate) + timedelta(days=1)
+            payment_terms = payment_terms_by_customer.get(shipment.CustomerID, "Net 30")
+            due_date = invoice_date + timedelta(days=_payment_term_days(payment_terms))
+
+            subtotal = 0.0
+            invoice_discount = 0.0
+            invoice_tax = 0.0
+            for shipment_line in shipment_lines:
+                order_line = order_line_by_id[shipment_line.SalesOrderLineID]
+                invoice_quantity = round(float(shipment_line.ShippedQuantity), 2)
+                unit_price = round(float(order_line.UnitPrice), 2)
+                gross_line_amount = round(invoice_quantity * unit_price, 2)
+                ordered_quantity = float(getattr(order_line, "OrderedQuantity", invoice_quantity) or invoice_quantity)
+                order_discount_amount = float(getattr(order_line, "DiscountAmount", 0.0) or 0.0)
+                discount_amount = round(order_discount_amount * (invoice_quantity / ordered_quantity), 2) if ordered_quantity > 0 else 0.0
+                net_line_amount = round(gross_line_amount - discount_amount, 2)
+                tax_amount = round(net_line_amount * tax_rate_pct / 100.0, 2)
+                cogs_value = round(invoice_quantity * float(shipment_line.UnitCost), 2)
+                gross_margin_amount = round(net_line_amount - cogs_value, 2)
+                gross_margin_pct = round(gross_margin_amount / net_line_amount, 4) if net_line_amount > 0 else 0.0
+                rows["SalesInvoiceLine"].append(
+                    {
+                        "InvoiceLineID": len(rows["SalesInvoiceLine"]) + 1,
+                        "InvoiceID": invoice_id,
+                        "ShipmentLineID": shipment_line.ShipmentLineID,
+                        "SalesOrderLineID": shipment_line.SalesOrderLineID,
+                        "ProductID": shipment_line.ProductID,
+                        "InvoiceQuantity": invoice_quantity,
+                        "UnitPrice": unit_price,
+                        "DiscountAmount": discount_amount,
+                        "TaxAmount": tax_amount,
+                        "NetLineAmount": net_line_amount,
+                        "COGSValue": cogs_value,
+                        "GrossMarginAmount": gross_margin_amount,
+                        "GrossMarginPct": gross_margin_pct,
+                        "LineStatus": "Invoiced",
+                    }
+                )
+                subtotal = round(subtotal + gross_line_amount, 2)
+                invoice_discount = round(invoice_discount + discount_amount, 2)
+                invoice_tax = round(invoice_tax + tax_amount, 2)
+
+            freight_amount = round(rng.uniform(freight_low, freight_high), 2)
+            total_invoice_amount = round(subtotal - invoice_discount + invoice_tax + freight_amount, 2)
+            paid_amount = _payment_amount(invoice_id, total_invoice_amount, partial_low, partial_high, rng)
+            invoice_status = _invoice_status(total_invoice_amount, paid_amount)
+            rows["SalesInvoiceHeader"].append(
+                {
+                    "InvoiceID": invoice_id,
+                    "InvoiceNumber": f"INV-{invoice_id:06d}",
+                    "SalesOrderID": shipment.SalesOrderID,
+                    "ShipmentID": shipment.ShipmentID,
+                    "CustomerID": shipment.CustomerID,
+                    "InvoiceDate": invoice_date,
+                    "DueDate": due_date,
+                    "CurrencyCode": str(getattr(order_header, "CurrencyCode", self.profile_values.default_currency) or self.profile_values.default_currency),
+                    "SubtotalAmount": subtotal,
+                    "DiscountAmount": invoice_discount,
+                    "TaxAmount": invoice_tax,
+                    "FreightAmount": freight_amount,
+                    "TotalInvoiceAmount": total_invoice_amount,
+                    "InvoiceStatus": invoice_status,
+                }
+            )
+            if paid_amount > 0:
+                rows["CustomerPaymentReceipt"].append(
+                    {
+                        "PaymentReceiptID": len(rows["CustomerPaymentReceipt"]) + 1,
+                        "InvoiceID": invoice_id,
+                        "CustomerID": shipment.CustomerID,
+                        "PaymentDate": _payment_date(invoice_date, due_date, invoice_id),
+                        "PaymentMethod": payment_methods[(invoice_id - 1) % len(payment_methods)],
+                        "PaidAmount": paid_amount,
+                        "CurrencyCode": str(getattr(order_header, "CurrencyCode", self.profile_values.default_currency) or self.profile_values.default_currency),
+                        "PaymentStatus": "Received" if invoice_status == "Paid" else "Partial",
+                    }
+                )
+
+        if not rows["SalesInvoiceHeader"]:
+            raise ValueError("Sales invoice generation requires shipment headers with shipment lines.")
+        return rows
 
     def _generate_rows(
         self,
@@ -397,6 +553,15 @@ class SalesTransactionGenerator:
         for table_name, columns in _REQUIRED_UPSTREAM_COLUMNS.items():
             _require_table_columns(upstream, table_name, columns, "upstream Production data")
 
+    def _validate_phase5_inputs(
+        self,
+        masters: Mapping[str, pd.DataFrame],
+        transactions: Mapping[str, pd.DataFrame],
+    ) -> None:
+        _require_table_columns(masters, "CustomerMaster", _REQUIRED_PHASE5_MASTER_COLUMNS["CustomerMaster"], "Sales master data")
+        for table_name, columns in _REQUIRED_PHASE5_TRANSACTION_COLUMNS.items():
+            _require_table_columns(transactions, table_name, columns, "Sales Phase 4 transaction data")
+
     def _load_tables(
         self,
         tables: Mapping[str, pd.DataFrame] | str | Path | None,
@@ -436,6 +601,72 @@ def _require_table_columns(
     missing = [column for column in columns if column not in dataframe.columns]
     if missing:
         raise ValueError(f"Sales transaction generation requires {table_name}.{missing[0]}.")
+
+
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _row_map(dataframe: pd.DataFrame, key_column: str) -> dict[Any, Any]:
+    return {getattr(row, key_column): row for row in dataframe.itertuples(index=False)}
+
+
+def _rows_by_key(dataframe: pd.DataFrame, key_column: str) -> dict[Any, list[Any]]:
+    output: dict[Any, list[Any]] = {}
+    for row in dataframe.itertuples(index=False):
+        output.setdefault(getattr(row, key_column), []).append(row)
+    return output
+
+
+def _payment_term_days(payment_terms: str) -> int:
+    normalized = str(payment_terms or "").strip().lower().replace(" ", "")
+    if normalized in {"dueonreceipt", "cod", "cash"}:
+        return 0
+    digits = "".join(character for character in normalized if character.isdigit())
+    if digits:
+        return max(0, int(digits))
+    return 30
+
+
+def _payment_amount(
+    invoice_id: int,
+    total_invoice_amount: float,
+    partial_low: float,
+    partial_high: float,
+    rng: random.Random,
+) -> float:
+    if total_invoice_amount <= 0:
+        return 0.0
+    if invoice_id % 10 == 0:
+        return 0.0
+    if invoice_id % 4 == 0:
+        amount = round(total_invoice_amount * rng.uniform(partial_low, partial_high), 2)
+        return min(max(0.01, amount), round(total_invoice_amount - 0.01, 2))
+    return round(total_invoice_amount, 2)
+
+
+def _invoice_status(total_invoice_amount: float, paid_amount: float) -> str:
+    if paid_amount >= round(total_invoice_amount, 2):
+        return "Paid"
+    if paid_amount > 0:
+        return "PartiallyPaid"
+    return "Open"
+
+
+def _payment_date(invoice_date: date, due_date: date, invoice_id: int) -> date:
+    window = max(0, (due_date - invoice_date).days)
+    if window == 0:
+        return invoice_date
+    return invoice_date + timedelta(days=min(window, 2 + (invoice_id % max(window, 1))))
+
+
+def _as_date(value: Any) -> date:
+    if isinstance(value, date):
+        return value
+    return pd.to_datetime(value).date()
 
 
 def _locations_by_customer(customer_location: pd.DataFrame) -> dict[Any, dict[str, Any]]:
@@ -587,6 +818,51 @@ _SALES_SHIPMENT_LINE_COLUMNS = (
     "ShipmentLineStatus",
 )
 
+_SALES_INVOICE_HEADER_COLUMNS = (
+    "InvoiceID",
+    "InvoiceNumber",
+    "SalesOrderID",
+    "ShipmentID",
+    "CustomerID",
+    "InvoiceDate",
+    "DueDate",
+    "CurrencyCode",
+    "SubtotalAmount",
+    "DiscountAmount",
+    "TaxAmount",
+    "FreightAmount",
+    "TotalInvoiceAmount",
+    "InvoiceStatus",
+)
+
+_SALES_INVOICE_LINE_COLUMNS = (
+    "InvoiceLineID",
+    "InvoiceID",
+    "ShipmentLineID",
+    "SalesOrderLineID",
+    "ProductID",
+    "InvoiceQuantity",
+    "UnitPrice",
+    "DiscountAmount",
+    "TaxAmount",
+    "NetLineAmount",
+    "COGSValue",
+    "GrossMarginAmount",
+    "GrossMarginPct",
+    "LineStatus",
+)
+
+_CUSTOMER_PAYMENT_RECEIPT_COLUMNS = (
+    "PaymentReceiptID",
+    "InvoiceID",
+    "CustomerID",
+    "PaymentDate",
+    "PaymentMethod",
+    "PaidAmount",
+    "CurrencyCode",
+    "PaymentStatus",
+)
+
 _REQUIRED_MASTER_COLUMNS = {
     "CustomerMaster": ("CustomerID", "PaymentTerms", "CustomerStatus"),
     "CustomerLocation": ("CustomerLocationID", "CustomerID", "LocationType", "IsDefault"),
@@ -616,4 +892,31 @@ _REQUIRED_UPSTREAM_COLUMNS = {
         "UnitCost",
     ),
     "ProductionBatch": ("ProductionBatchID",),
+}
+
+_REQUIRED_PHASE5_MASTER_COLUMNS = {
+    "CustomerMaster": ("CustomerID", "PaymentTerms", "CustomerStatus"),
+}
+
+_REQUIRED_PHASE5_TRANSACTION_COLUMNS = {
+    "SalesOrderHdr": ("SalesOrderID", "CustomerID", "CurrencyCode", "OrderDate"),
+    "SalesOrderLine": (
+        "SalesOrderLineID",
+        "SalesOrderID",
+        "ProductID",
+        "UnitPrice",
+        "DiscountPct",
+        "DiscountAmount",
+        "NetLineAmount",
+    ),
+    "SalesShipmentHeader": ("ShipmentID", "SalesOrderID", "CustomerID", "ShipmentDate", "ShipmentStatus"),
+    "SalesShipmentLine": (
+        "ShipmentLineID",
+        "ShipmentID",
+        "SalesOrderLineID",
+        "ProductID",
+        "ShippedQuantity",
+        "UnitCost",
+        "COGSValue",
+    ),
 }

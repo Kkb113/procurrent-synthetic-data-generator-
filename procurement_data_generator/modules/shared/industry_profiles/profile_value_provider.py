@@ -84,6 +84,14 @@ DEFAULT_SALES_CARRIER_NAMES: tuple[str, ...] = (
     "Express Distribution",
 )
 
+DEFAULT_SALES_PAYMENT_METHODS: tuple[str, ...] = (
+    "BankTransfer",
+    "Card",
+    "UPI",
+    "Cheque",
+    "OnlineTransfer",
+)
+
 
 class IndustryProfileValueProvider:
     """Expose profile values with stable defaults for existing generators."""
@@ -179,6 +187,22 @@ class IndustryProfileValueProvider:
     def sales_carrier_names(self) -> tuple[str, ...]:
         values = tuple(str(value).strip() for value in self.profile.sales.carrier_names if str(value).strip())
         return values or DEFAULT_SALES_CARRIER_NAMES
+
+    def sales_payment_methods(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.payment_methods if str(value).strip())
+        return values or DEFAULT_SALES_PAYMENT_METHODS
+
+    def sales_tax_rate_pct(self) -> float:
+        value = float(self.profile.sales.tax_rate_pct)
+        if 0 < value <= 1:
+            value *= 100.0
+        return max(0.0, value)
+
+    def sales_freight_amount_range(self) -> tuple[float, float]:
+        return _normalize_numeric_range(self.profile.sales.freight_amount_range, (0.0, 250.0), minimum=0.0)
+
+    def sales_partial_payment_pct_range(self) -> tuple[float, float]:
+        return _normalize_percentage_range(self.profile.sales.partial_payment_pct_range, (0.25, 0.75))
 
     def sales_margin_pct_range(self) -> tuple[float, float]:
         return _normalize_percentage_range(self.profile.sales.price_margin_pct_range, (0.20, 0.45))
