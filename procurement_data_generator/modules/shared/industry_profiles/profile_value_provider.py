@@ -92,6 +92,13 @@ DEFAULT_SALES_PAYMENT_METHODS: tuple[str, ...] = (
     "OnlineTransfer",
 )
 
+DEFAULT_SALES_RETURN_REASONS: tuple[str, ...] = (
+    "Damaged Packaging",
+    "Wrong Item",
+    "Quality Complaint",
+    "Short Shipment",
+)
+
 
 class IndustryProfileValueProvider:
     """Expose profile values with stable defaults for existing generators."""
@@ -203,6 +210,16 @@ class IndustryProfileValueProvider:
 
     def sales_partial_payment_pct_range(self) -> tuple[float, float]:
         return _normalize_percentage_range(self.profile.sales.partial_payment_pct_range, (0.25, 0.75))
+
+    def sales_return_reasons(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.return_reasons if str(value).strip())
+        return values or DEFAULT_SALES_RETURN_REASONS
+
+    def sales_return_rate_range(self) -> tuple[float, float]:
+        return _normalize_percentage_range(self.profile.sales.return_rate_range, (0.02, 0.05))
+
+    def sales_restock_pct_range(self) -> tuple[float, float]:
+        return _normalize_percentage_range(self.profile.sales.restock_pct_range, (0.60, 0.90))
 
     def sales_margin_pct_range(self) -> tuple[float, float]:
         return _normalize_percentage_range(self.profile.sales.price_margin_pct_range, (0.20, 0.45))

@@ -32,6 +32,11 @@ SALES_PHASE5_TRANSACTION_TABLES = (
     "CustomerPaymentReceipt",
 )
 
+SALES_PHASE6_TRANSACTION_TABLES = (
+    "SalesReturnHeader",
+    "SalesReturnLine",
+)
+
 SALES_PHASE4_MASTER_TABLES = (
     "CustomerMaster",
     "CustomerLocation",
@@ -141,6 +146,120 @@ class SalesTransactionGenerator:
         """Compatibility alias for Phase 5 invoice/payment generation."""
 
         return self.generate_invoice_payment_data(*args, **kwargs)
+
+    def generate_returns_data(
+        self,
+        seed: int | None = None,
+        sales_master_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        sales_transaction_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        sales_invoice_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        """Generate low-volume Sales Phase 6 return tables from shipment outputs."""
+
+        master_source = _first_not_none(sales_master_data, kwargs.get("master_data"), self.sales_master_data)
+        transaction_source = _first_not_none(
+            sales_transaction_data,
+            kwargs.get("transaction_data"),
+            kwargs.get("phase4_data"),
+        )
+        invoice_source = _first_not_none(
+            sales_invoice_data,
+            kwargs.get("invoice_data"),
+            kwargs.get("phase5_data"),
+        )
+        masters = self._load_tables(master_source, ("CustomerMaster",))
+        transactions = self._load_tables(transaction_source, SALES_PHASE4_TRANSACTION_TABLES + SALES_PHASE5_TRANSACTION_TABLES)
+        if invoice_source is not None:
+            transactions.update(self._load_tables(invoice_source, SALES_PHASE5_TRANSACTION_TABLES))
+        self._validate_phase6_inputs(masters, transactions)
+        rng = random.Random(self.generation_config.seed if seed is None else seed)
+        rows = self._generate_return_rows(masters, transactions, rng)
+
+        return {
+            "SalesReturnHeader": pd.DataFrame(rows["SalesReturnHeader"], columns=_SALES_RETURN_HEADER_COLUMNS),
+            "SalesReturnLine": pd.DataFrame(rows["SalesReturnLine"], columns=_SALES_RETURN_LINE_COLUMNS),
+        }
+
+    def generate_sales_returns(self, *args: Any, **kwargs: Any) -> dict[str, pd.DataFrame]:
+        """Compatibility alias for Phase 6 return generation."""
+
+        return self.generate_returns_data(*args, **kwargs)
+
+    def _generate_return_rows(
+        self,
+        masters: Mapping[str, pd.DataFrame],
+        transactions: Mapping[str, pd.DataFrame],
+        rng: random.Random,
+    ) -> dict[str, list[dict[str, Any]]]:
+        customer_ids = set(masters["CustomerMaster"]["CustomerID"])
+        order_ids = set(transactions["SalesOrderHdr"]["SalesOrderID"])
+        shipment_header_by_id = _row_map(transactions["SalesShipmentHeader"], "ShipmentID")
+        invoice_line_by_shipment_line = (
+            _row_map(transactions["SalesInvoiceLine"], "ShipmentLineID")
+            if "SalesInvoiceLine" in transactions and not transactions["SalesInvoiceLine"].empty
+            else {}
+        )
+        eligible_lines = []
+        for line in transactions["SalesShipmentLine"].sort_values("ShipmentLineID").itertuples(index=False):
+            shipment = shipment_header_by_id.get(line.ShipmentID)
+            if shipment is None:
+                continue
+            if str(shipment.ShipmentStatus).lower() == "cancelled":
+                continue
+            if shipment.CustomerID not in customer_ids or shipment.SalesOrderID not in order_ids:
+                continue
+            if float(line.ShippedQuantity) > 0:
+                eligible_lines.append((shipment, line))
+
+        rows: dict[str, list[dict[str, Any]]] = {table_name: [] for table_name in SALES_PHASE6_TRANSACTION_TABLES}
+        if not eligible_lines:
+            return rows
+
+        return_low, return_high = self.profile_values.sales_return_rate_range()
+        return_rate = rng.uniform(return_low, return_high)
+        return_count = max(1, round(len(eligible_lines) * return_rate))
+        return_count = min(return_count, len(eligible_lines))
+        step = max(1, len(eligible_lines) // return_count)
+        selected = [eligible_lines[index] for index in range(0, len(eligible_lines), step)][:return_count]
+        return_reasons = self.profile_values.sales_return_reasons()
+        restock_low, restock_high = self.profile_values.sales_restock_pct_range()
+
+        for return_id, (shipment, shipment_line) in enumerate(selected, start=1):
+            returned_quantity = _return_quantity(float(shipment_line.ShippedQuantity), rng)
+            restock_pct = rng.uniform(restock_low, restock_high)
+            restocked_quantity = round(returned_quantity * restock_pct, 2)
+            scrapped_quantity = round(returned_quantity - restocked_quantity, 2)
+            if scrapped_quantity < 0:
+                scrapped_quantity = 0.0
+                restocked_quantity = returned_quantity
+            invoice_line = invoice_line_by_shipment_line.get(shipment_line.ShipmentLineID)
+            rows["SalesReturnHeader"].append(
+                {
+                    "SalesReturnID": return_id,
+                    "ReturnNumber": f"RTN-{return_id:06d}",
+                    "CustomerID": shipment.CustomerID,
+                    "SalesOrderID": shipment.SalesOrderID,
+                    "ShipmentID": shipment.ShipmentID,
+                    "ReturnDate": _as_date(shipment.ShipmentDate) + timedelta(days=3 + return_id),
+                    "ReturnReason": return_reasons[(return_id - 1) % len(return_reasons)],
+                    "ReturnStatus": "Received",
+                }
+            )
+            rows["SalesReturnLine"].append(
+                {
+                    "SalesReturnLineID": return_id,
+                    "SalesReturnID": return_id,
+                    "ShipmentLineID": shipment_line.ShipmentLineID,
+                    "ProductID": shipment_line.ProductID,
+                    "ReturnedQuantity": returned_quantity,
+                    "RestockedQuantity": restocked_quantity,
+                    "ScrappedQuantity": scrapped_quantity,
+                    "ReturnUnitValue": _return_unit_value(shipment_line, invoice_line),
+                    "ReturnLineStatus": _return_line_status(restocked_quantity, scrapped_quantity),
+                }
+            )
+        return rows
 
     def _generate_invoice_payment_rows(
         self,
@@ -562,6 +681,23 @@ class SalesTransactionGenerator:
         for table_name, columns in _REQUIRED_PHASE5_TRANSACTION_COLUMNS.items():
             _require_table_columns(transactions, table_name, columns, "Sales Phase 4 transaction data")
 
+    def _validate_phase6_inputs(
+        self,
+        masters: Mapping[str, pd.DataFrame],
+        transactions: Mapping[str, pd.DataFrame],
+    ) -> None:
+        _require_table_columns(masters, "CustomerMaster", _REQUIRED_PHASE6_MASTER_COLUMNS["CustomerMaster"], "Sales master data")
+        for table_name, columns in _REQUIRED_PHASE6_TRANSACTION_COLUMNS.items():
+            _require_table_columns(transactions, table_name, columns, "Sales Phase 4 transaction data")
+        if "SalesInvoiceLine" in transactions and not transactions["SalesInvoiceLine"].empty:
+            missing = [
+                column
+                for column in _OPTIONAL_PHASE6_INVOICE_COLUMNS["SalesInvoiceLine"]
+                if column not in transactions["SalesInvoiceLine"].columns
+            ]
+            if missing:
+                raise ValueError(f"Sales transaction generation requires SalesInvoiceLine.{missing[0]}.")
+
     def _load_tables(
         self,
         tables: Mapping[str, pd.DataFrame] | str | Path | None,
@@ -661,6 +797,32 @@ def _payment_date(invoice_date: date, due_date: date, invoice_id: int) -> date:
     if window == 0:
         return invoice_date
     return invoice_date + timedelta(days=min(window, 2 + (invoice_id % max(window, 1))))
+
+
+def _return_quantity(shipped_quantity: float, rng: random.Random) -> float:
+    quantity = round(max(0.01, shipped_quantity * rng.uniform(0.10, 0.35)), 2)
+    return min(round(shipped_quantity, 2), quantity)
+
+
+def _return_unit_value(shipment_line: Any, invoice_line: Any | None) -> float:
+    if invoice_line is not None:
+        unit_price = float(getattr(invoice_line, "UnitPrice", 0.0) or 0.0)
+        if unit_price > 0:
+            return round(unit_price, 2)
+        invoice_quantity = float(getattr(invoice_line, "InvoiceQuantity", 0.0) or 0.0)
+        net_line_amount = float(getattr(invoice_line, "NetLineAmount", 0.0) or 0.0)
+        if invoice_quantity > 0 and net_line_amount > 0:
+            return round(net_line_amount / invoice_quantity, 2)
+    unit_cost = float(getattr(shipment_line, "UnitCost", 0.0) or 0.0)
+    return round(max(0.01, unit_cost), 2)
+
+
+def _return_line_status(restocked_quantity: float, scrapped_quantity: float) -> str:
+    if restocked_quantity > 0 and scrapped_quantity == 0:
+        return "Restocked"
+    if scrapped_quantity > 0 and restocked_quantity == 0:
+        return "Scrapped"
+    return "Received"
 
 
 def _as_date(value: Any) -> date:
@@ -863,6 +1025,29 @@ _CUSTOMER_PAYMENT_RECEIPT_COLUMNS = (
     "PaymentStatus",
 )
 
+_SALES_RETURN_HEADER_COLUMNS = (
+    "SalesReturnID",
+    "ReturnNumber",
+    "CustomerID",
+    "SalesOrderID",
+    "ShipmentID",
+    "ReturnDate",
+    "ReturnReason",
+    "ReturnStatus",
+)
+
+_SALES_RETURN_LINE_COLUMNS = (
+    "SalesReturnLineID",
+    "SalesReturnID",
+    "ShipmentLineID",
+    "ProductID",
+    "ReturnedQuantity",
+    "RestockedQuantity",
+    "ScrappedQuantity",
+    "ReturnUnitValue",
+    "ReturnLineStatus",
+)
+
 _REQUIRED_MASTER_COLUMNS = {
     "CustomerMaster": ("CustomerID", "PaymentTerms", "CustomerStatus"),
     "CustomerLocation": ("CustomerLocationID", "CustomerID", "LocationType", "IsDefault"),
@@ -919,4 +1104,26 @@ _REQUIRED_PHASE5_TRANSACTION_COLUMNS = {
         "UnitCost",
         "COGSValue",
     ),
+}
+
+_REQUIRED_PHASE6_MASTER_COLUMNS = {
+    "CustomerMaster": ("CustomerID",),
+}
+
+_REQUIRED_PHASE6_TRANSACTION_COLUMNS = {
+    "SalesOrderHdr": ("SalesOrderID", "CustomerID"),
+    "SalesShipmentHeader": ("ShipmentID", "SalesOrderID", "CustomerID", "ShipmentDate", "ShipmentStatus"),
+    "SalesShipmentLine": (
+        "ShipmentLineID",
+        "ShipmentID",
+        "SalesOrderLineID",
+        "ProductID",
+        "ShippedQuantity",
+        "UnitCost",
+        "COGSValue",
+    ),
+}
+
+_OPTIONAL_PHASE6_INVOICE_COLUMNS = {
+    "SalesInvoiceLine": ("ShipmentLineID", "UnitPrice", "NetLineAmount", "InvoiceQuantity"),
 }

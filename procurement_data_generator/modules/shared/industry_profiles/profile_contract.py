@@ -63,6 +63,9 @@ class SalesProfile:
     tax_rate_pct: float = 8.0
     freight_amount_range: tuple[float, float] = (0.0, 250.0)
     partial_payment_pct_range: tuple[float, float] = (25.0, 75.0)
+    return_reasons: tuple[str, ...] = field(default_factory=tuple)
+    return_rate_range: tuple[float, float] = (2.0, 5.0)
+    restock_pct_range: tuple[float, float] = (60.0, 90.0)
     price_margin_pct_range: tuple[float, float] = (20.0, 45.0)
     minimum_order_quantity_range: tuple[float, float] = (1.0, 100.0)
     fallback_price_range: tuple[float, float] = (10.0, 100.0)

@@ -7,6 +7,7 @@ from procurement_data_generator.modules.shared.industry_profiles.profile_contrac
     IndustryProfile,
     ProcurementProfile,
     ProductionProfile,
+    SalesProfile,
     SharedProfile,
 )
 from procurement_data_generator.modules.shared.industry_profiles.profile_validator import (
@@ -41,6 +42,7 @@ __all__ = [
     "LEGACY_MANUFACTURING_LOCATIONS",
     "ProcurementProfile",
     "ProductionProfile",
+    "SalesProfile",
     "SharedProfile",
     "DEFAULT_PROCUREMENT_REJECTION_REASONS",
     "DEFAULT_PROCUREMENT_INSPECTION_TEST_NAMES",

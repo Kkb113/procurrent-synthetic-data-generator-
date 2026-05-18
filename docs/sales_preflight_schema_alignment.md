@@ -223,3 +223,7 @@ Sales Phase 4 implemented deterministic order, reservation, pick, and shipment g
 ## Sales Phase 5 Note
 
 Sales Phase 5 implemented invoice and customer payment generation for `SalesInvoiceHeader`, `SalesInvoiceLine`, and `CustomerPaymentReceipt`. Invoices are sourced from Sales shipment lines, with deterministic COGS, gross margin, invoice totals, due dates, and fact-derived payment status. Returns, shipment traceability, FinishedGoodsInventory updates, and full generic Sales execution remain disabled until later Sales phases.
+
+## Sales Phase 6 Note
+
+Sales Phase 6 implemented deterministic low-volume customer returns for `SalesReturnHeader` and `SalesReturnLine`. Returns are generated from shipped Sales shipment lines, include food-profile return reasons, and split returned quantity into restocked and scrapped quantities for later inventory rollup. `SalesCreditMemo`, shipment traceability, FinishedGoodsInventory updates, and full generic Sales execution remain disabled until later Sales phases.
