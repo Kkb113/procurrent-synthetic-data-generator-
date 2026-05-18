@@ -86,5 +86,8 @@ class MESModulePlugin(Protocol):
     def get_validation_rules(self) -> tuple[str, ...]:
         """Return module-owned generated-data validation rule groups."""
 
+    def run_pipeline(self, **kwargs: Any) -> Any:
+        """Run the module through its existing pipeline adapter when supported."""
+
     def get_upstream_requirements(self) -> tuple[UpstreamRequirement, ...]:
         """Return upstream module dependencies for integrated generation."""

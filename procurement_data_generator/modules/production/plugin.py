@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
 from typing import Any, Sequence
+
+import pandas as pd
 
 from procurement_data_generator.core.contracts.erd_contract import RelationshipContract
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.config import GenerationConfig, OperatingScope
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
 from procurement_data_generator.core.modules.contracts import PromptSection, UpstreamRequirement
 from procurement_data_generator.modules.production.master_generator import ProductionMasterDataGenerator
@@ -73,6 +78,56 @@ class ProductionModulePlugin:
     def get_validation_rules(self) -> tuple[str, ...]:
         return get_production_validation_rules()
 
+    def run_pipeline(
+        self,
+        *,
+        metadata_path: str,
+        erd_path: str,
+        scenario_path: str,
+        plan_path: str,
+        output_folder: str,
+        seed: int | None = None,
+        upstream_data_path: str | None = None,
+        run_id: str | None = None,
+        allow_demo_fallback: bool = False,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
+    ):
+        """Run Production v1 through the existing Production pipeline implementation."""
+
+        from scripts.run_production_pipeline import run_production_pipeline
+
+        effective_upstream = Path(upstream_data_path) if upstream_data_path else None
+        fallback_used = False
+        if effective_upstream is None and allow_demo_fallback:
+            effective_upstream = self._write_demo_upstream_data(Path(output_folder), operating_scope, generation_config)
+            fallback_used = True
+        if effective_upstream is None:
+            raise ValueError(
+                "Production requires Procurement upstream data. Run modules=['procurement','production'] "
+                "or provide upstream_data / allow_demo_fallback=True."
+            )
+
+        result = run_production_pipeline(
+            metadata_path=metadata_path,
+            erd_path=erd_path,
+            scenario_path=scenario_path,
+            plan_path=plan_path,
+            upstream_data_path=effective_upstream,
+            output_root=output_folder,
+            seed=seed,
+            run_id=run_id,
+        )
+        if fallback_used:
+            return replace(
+                result,
+                warnings=[
+                    *result.warnings,
+                    "Production generic pipeline used explicit demo fallback upstream data.",
+                ],
+            )
+        return result
+
     def get_upstream_requirements(self) -> tuple[UpstreamRequirement, ...]:
         return (
             UpstreamRequirement(
@@ -82,3 +137,28 @@ class ProductionModulePlugin:
                 description="Production v1 consumes Procurement inventory and receipt lineage tables.",
             ),
         )
+
+    def _write_demo_upstream_data(
+        self,
+        output_folder: Path,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
+    ) -> Path:
+        output_path = output_folder / "_demo_upstream"
+        output_path.mkdir(parents=True, exist_ok=True)
+        context = self.create_transaction_generator(
+            operating_scope=operating_scope,
+            generation_config=generation_config,
+        ).load_upstream_data(None, None)
+        frames: dict[str, pd.DataFrame] = {
+            "ComponentMaster": context.component_master,
+            "Plant": context.plant,
+            "Warehouse": context.warehouse,
+            "Inventory": context.inventory,
+            "InventoryTransaction": context.inventory_transaction,
+            "InventoryReceiptDetail": context.inventory_receipt_detail,
+            "SupplierMaster": context.supplier_master,
+        }
+        for table_name, dataframe in frames.items():
+            dataframe.to_csv(output_path / f"{table_name}.csv", index=False)
+        return output_path

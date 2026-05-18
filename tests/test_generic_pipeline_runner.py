@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from procurement_data_generator.core.pipeline.generic_runner import (
-    ModuleExecutionNotSupportedError,
+    ModuleDependencyError,
     PipelineConfigurationError,
     PipelineRunSpec,
     SyntheticDataPipelineRunner,
@@ -58,7 +58,7 @@ def test_generic_runner_duplicate_modules_fail_clearly() -> None:
         SyntheticDataPipelineRunner().resolve_modules(("procurement", "Procurement"))
 
 
-def test_generic_runner_rejects_production_execution_until_later_phase(tmp_path: Path) -> None:
+def test_generic_runner_rejects_production_without_upstream_by_default(tmp_path: Path) -> None:
     spec = PipelineRunSpec(
         module_ids=("production",),
         metadata_path=str(METADATA),
@@ -68,13 +68,13 @@ def test_generic_runner_rejects_production_execution_until_later_phase(tmp_path:
         output_folder=str(tmp_path),
     )
 
-    with pytest.raises(ModuleExecutionNotSupportedError, match="production"):
+    with pytest.raises(ModuleDependencyError, match="requires Procurement upstream data"):
         SyntheticDataPipelineRunner().run(spec)
 
 
-def test_generic_runner_rejects_multi_module_execution_until_later_phase(tmp_path: Path) -> None:
+def test_generic_runner_rejects_wrong_dependency_order(tmp_path: Path) -> None:
     spec = PipelineRunSpec(
-        module_ids=("procurement", "production"),
+        module_ids=("production", "procurement"),
         metadata_path=str(METADATA),
         erd_path=str(ERD),
         scenario_path=str(SCENARIO),
@@ -82,7 +82,7 @@ def test_generic_runner_rejects_multi_module_execution_until_later_phase(tmp_pat
         output_folder=str(tmp_path),
     )
 
-    with pytest.raises(ModuleExecutionNotSupportedError, match="Multi-module"):
+    with pytest.raises(ModuleDependencyError, match="before Production"):
         SyntheticDataPipelineRunner().run(spec)
 
 

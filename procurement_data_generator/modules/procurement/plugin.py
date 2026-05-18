@@ -69,5 +69,8 @@ class ProcurementModulePlugin:
     def get_validation_rules(self) -> tuple[str, ...]:
         return get_procurement_validation_rules()
 
+    def run_pipeline(self, **kwargs: Any):
+        raise NotImplementedError("Procurement generic execution is handled by ProcurementPipelineRunner compatibility orchestration.")
+
     def get_upstream_requirements(self) -> tuple[UpstreamRequirement, ...]:
         return ()

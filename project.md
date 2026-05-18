@@ -392,4 +392,4 @@ Python reconciliation and data quality reports
 manager-facing SQL validation packs
 ```
 
-Phase 7 split validation ownership without changing validation meaning. Generic validation now owns schema, PK/FK, nullability, allowed value, type/range, and metadata-level checks; Procurement owns Procurement v2 lifecycle/data-quality checks; Production owns Production v1 lifecycle, traceability, inventory, and cost reconciliation checks. Existing compatibility import paths remain supported, and full Production generic-runner execution remains Phase 8.
+Phase 8 makes Production a first-class generic pipeline module. The generic runner now supports Procurement-only and Procurement -> Production execution, passes Procurement final data into Production, and requires explicit upstream data or `allow_demo_fallback=True` for Production-only runs. Existing standalone Procurement and Production entry points remain supported; broader API/CLI hardening and future module templates remain Phase 9.
