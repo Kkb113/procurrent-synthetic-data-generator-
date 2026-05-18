@@ -6,6 +6,7 @@ from procurement_data_generator.modules.shared.industry_profiles.profile_contrac
     IndustryProfile,
     ProcurementProfile,
     ProductionProfile,
+    SalesProfile,
     SharedProfile,
 )
 from procurement_data_generator.modules.shared.quantity_precision import DECIMAL_QUANTITY_UOMS, INTEGER_QUANTITY_UOMS
@@ -15,7 +16,7 @@ FOOD_MANUFACTURING_PROFILE = IndustryProfile(
     industry_id="food_manufacturing",
     industry_name="Food Manufacturing",
     industry_description="Catalog and realism hints for packaged food and snack manufacturing.",
-    supported_domains=("procurement", "production"),
+    supported_domains=("procurement", "production", "sales"),
     procurement=ProcurementProfile(
         supplier_name_patterns=(
             "Ingredient Supplier",
@@ -329,5 +330,48 @@ FOOD_MANUFACTURING_PROFILE = IndustryProfile(
             "Food profile catalog content is used by deterministic Python generation.",
             "LLM output remains planning guidance only.",
         ),
+    ),
+    sales=SalesProfile(
+        customer_types=(
+            "Grocery Retailer",
+            "Distributor",
+            "Foodservice",
+            "Convenience Store",
+            "E-commerce",
+            "Regional Wholesaler",
+        ),
+        customer_industries=(
+            "Food Retail",
+            "Grocery Distribution",
+            "Foodservice",
+            "Convenience Retail",
+            "Online Grocery",
+            "Wholesale Distribution",
+        ),
+        customer_name_terms=(
+            "FreshMart",
+            "DailyBasket",
+            "SpiceRoute",
+            "SnackHub",
+            "QuickGrocery",
+            "CityFoods",
+            "PantryPlus",
+            "RetailKart",
+            "FoodLine",
+            "GrocerPoint",
+        ),
+        sales_channels=(
+            "DIRECT",
+            "DISTRIBUTOR",
+            "RETAIL",
+            "FOODSERVICE",
+            "ONLINE",
+            "EXPORT",
+        ),
+        payment_terms=("Net 15", "Net 30", "Net 45", "Net 60"),
+        regions=("West", "South", "North", "East", "Central"),
+        price_margin_pct_range=(20.0, 45.0),
+        minimum_order_quantity_range=(1.0, 24.0),
+        fallback_price_range=(20.0, 150.0),
     ),
 )

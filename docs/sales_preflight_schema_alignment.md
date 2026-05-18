@@ -211,3 +211,7 @@ Sales Phase 1 added the Sales module skeleton, Sales v1 role catalog, Sales plug
 ## Sales Phase 2 Note
 
 Sales Phase 2 added Sales v1 metadata and Mermaid ERD support. The metadata fixture contains exactly the 18 approved Sales v1 tables, excludes `SalesCreditMemo`, and can be validated against the Sales role catalog. Module-aware metadata and ERD filtering can now prepare Sales subsets with allowed upstream links for future Procurement -> Production -> Sales execution. Sales execution is still not implemented; the next phase is Sales Phase 3: Sales master data generator.
+
+## Sales Phase 3 Note
+
+Sales Phase 3 implemented deterministic Sales master/reference generation for `CustomerMaster`, `CustomerLocation`, `SalesChannel`, `SalesPriceListHeader`, and `SalesPriceListLine`. Price list lines require upstream Production `ProductMaster`; costs are used when available to price above unit cost. Customer, channel, payment, currency, and pricing hints are profile-driven. Sales transaction generation and full Sales pipeline execution remain disabled until later Sales phases.

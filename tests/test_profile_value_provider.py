@@ -54,6 +54,10 @@ def test_food_profile_exposes_food_quality_vocabulary() -> None:
     assert "Moisture Check" in provider.procurement_inspection_test_names()
     assert "Foreign Material Detected" in provider.procurement_rejection_reasons()
     assert provider.is_procurement_safety_critical_category("Battery") is False
+    assert "Grocery Retailer" in provider.sales_customer_types()
+    assert "FOODSERVICE" in provider.sales_channels()
+    assert "Net 30" in provider.sales_payment_terms()
+    assert provider.sales_margin_pct_range() == (0.2, 0.45)
 
 
 def test_custom_profile_values_override_named_generator_policies() -> None:

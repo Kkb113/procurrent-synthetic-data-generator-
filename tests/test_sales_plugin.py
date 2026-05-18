@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from procurement_data_generator.core.pipeline.generic_runner import (
@@ -67,15 +68,23 @@ def test_sales_plugin_role_validation_passes_for_sales_metadata() -> None:
 
 
 @pytest.mark.unit
-def test_sales_generator_factories_return_skeletons_that_do_not_generate_data() -> None:
+def test_sales_generator_factories_return_master_generator_and_transaction_skeleton() -> None:
     plugin = SalesModulePlugin()
     master = plugin.create_master_generator()
     transaction = plugin.create_transaction_generator()
 
     assert isinstance(master, SalesMasterDataGenerator)
     assert isinstance(transaction, SalesTransactionGenerator)
-    with pytest.raises(NotImplementedError, match="Sales master data generation is not implemented yet"):
-        master.generate_master_data()
+    dataframes = master.generate_master_data(
+        upstream_data={"ProductMaster": pd.DataFrame({"ProductID": [1], "ProductName": ["Finished Product"]})}
+    )
+    assert set(dataframes) == {
+        "CustomerMaster",
+        "CustomerLocation",
+        "SalesChannel",
+        "SalesPriceListHeader",
+        "SalesPriceListLine",
+    }
     with pytest.raises(NotImplementedError, match="Sales transaction data generation is not implemented yet"):
         transaction.generate_transaction_data()
 

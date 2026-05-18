@@ -49,6 +49,21 @@ class ProductionProfile:
 
 
 @dataclass(frozen=True)
+class SalesProfile:
+    """Sales / Order-to-Cash catalog and pricing hints for an industry."""
+
+    customer_types: tuple[str, ...] = field(default_factory=tuple)
+    customer_industries: tuple[str, ...] = field(default_factory=tuple)
+    customer_name_terms: tuple[str, ...] = field(default_factory=tuple)
+    sales_channels: tuple[str, ...] = field(default_factory=tuple)
+    payment_terms: tuple[str, ...] = field(default_factory=tuple)
+    regions: tuple[str, ...] = field(default_factory=tuple)
+    price_margin_pct_range: tuple[float, float] = (20.0, 45.0)
+    minimum_order_quantity_range: tuple[float, float] = (1.0, 100.0)
+    fallback_price_range: tuple[float, float] = (10.0, 100.0)
+
+
+@dataclass(frozen=True)
 class SharedProfile:
     """Shared industry-neutral settings that are not operating-scope rules."""
 
@@ -76,3 +91,4 @@ class IndustryProfile:
     procurement: ProcurementProfile
     production: ProductionProfile
     shared: SharedProfile
+    sales: SalesProfile = field(default_factory=SalesProfile)

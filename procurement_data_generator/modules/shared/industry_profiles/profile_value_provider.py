@@ -38,6 +38,45 @@ DEFAULT_PROCUREMENT_INSPECTION_TEST_NAMES: tuple[str, ...] = (
     "Functional Test",
 )
 
+DEFAULT_SALES_CUSTOMER_TYPES: tuple[str, ...] = (
+    "Direct Customer",
+    "Distributor",
+    "Retailer",
+    "Wholesale Customer",
+    "E-commerce",
+)
+
+DEFAULT_SALES_CUSTOMER_INDUSTRIES: tuple[str, ...] = (
+    "Manufacturing",
+    "Distribution",
+    "Retail",
+    "Wholesale",
+    "Online Commerce",
+)
+
+DEFAULT_SALES_CUSTOMER_NAME_TERMS: tuple[str, ...] = (
+    "Apex",
+    "Metro",
+    "Summit",
+    "Prime",
+    "Pioneer",
+    "CityLine",
+    "Northstar",
+    "Meridian",
+)
+
+DEFAULT_SALES_CHANNELS: tuple[str, ...] = (
+    "DIRECT",
+    "DISTRIBUTOR",
+    "RETAIL",
+    "ONLINE",
+    "EXPORT",
+)
+
+DEFAULT_SALES_PAYMENT_TERMS: tuple[str, ...] = ("Net 15", "Net 30", "Net 45", "Net 60")
+
+DEFAULT_SALES_REGIONS: tuple[str, ...] = ("North", "South", "East", "West", "Central")
+
 
 class IndustryProfileValueProvider:
     """Expose profile values with stable defaults for existing generators."""
@@ -106,6 +145,39 @@ class IndustryProfileValueProvider:
             return low / 100.0, high / 100.0
         return low, high
 
+    def sales_customer_types(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.customer_types if str(value).strip())
+        return values or DEFAULT_SALES_CUSTOMER_TYPES
+
+    def sales_customer_industries(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.customer_industries if str(value).strip())
+        return values or DEFAULT_SALES_CUSTOMER_INDUSTRIES
+
+    def sales_customer_name_terms(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.customer_name_terms if str(value).strip())
+        return values or DEFAULT_SALES_CUSTOMER_NAME_TERMS
+
+    def sales_channels(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip().upper() for value in self.profile.sales.sales_channels if str(value).strip())
+        return values or DEFAULT_SALES_CHANNELS
+
+    def sales_payment_terms(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.payment_terms if str(value).strip())
+        return values or DEFAULT_SALES_PAYMENT_TERMS
+
+    def sales_regions(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.regions if str(value).strip())
+        return values or DEFAULT_SALES_REGIONS
+
+    def sales_margin_pct_range(self) -> tuple[float, float]:
+        return _normalize_percentage_range(self.profile.sales.price_margin_pct_range, (0.20, 0.45))
+
+    def sales_minimum_order_quantity_range(self) -> tuple[float, float]:
+        return _normalize_numeric_range(self.profile.sales.minimum_order_quantity_range, (1.0, 100.0), minimum=0.0)
+
+    def sales_fallback_price_range(self) -> tuple[float, float]:
+        return _normalize_numeric_range(self.profile.sales.fallback_price_range, (10.0, 100.0), minimum=0.01)
+
 
 def _normalize_location(location: dict[str, Any], default_country: str) -> dict[str, str]:
     return {
@@ -114,3 +186,27 @@ def _normalize_location(location: dict[str, Any], default_country: str) -> dict[
         "zip": str(location.get("zip") or location.get("zip_code") or location.get("ZipCode") or "").strip(),
         "country": str(location.get("country") or location.get("Country") or default_country).strip() or default_country,
     }
+
+
+def _normalize_numeric_range(
+    value: tuple[float, float],
+    default: tuple[float, float],
+    minimum: float | None = None,
+) -> tuple[float, float]:
+    if len(value) < 2:
+        low, high = default
+    else:
+        low, high = float(value[0]), float(value[1])
+    if high < low:
+        low, high = high, low
+    if minimum is not None:
+        low = max(minimum, low)
+        high = max(low, high)
+    return low, high
+
+
+def _normalize_percentage_range(value: tuple[float, float], default: tuple[float, float]) -> tuple[float, float]:
+    low, high = _normalize_numeric_range(value, default, minimum=0.0)
+    if low > 1 or high > 1:
+        low, high = low / 100.0, high / 100.0
+    return low, high

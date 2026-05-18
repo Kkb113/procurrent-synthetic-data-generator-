@@ -13,6 +13,7 @@ from procurement_data_generator.modules.shared.industry_profiles.profile_contrac
     IndustryProfile,
     ProcurementProfile,
     ProductionProfile,
+    SalesProfile,
     SharedProfile,
 )
 from procurement_data_generator.modules.shared.industry_profiles.profile_validator import validate_industry_profile
@@ -79,6 +80,7 @@ def load_industry_profile_from_dict(data: Mapping[str, Any]) -> IndustryProfile:
         procurement=_load_procurement_profile(_mapping(data.get("procurement"))),
         production=_load_production_profile(_mapping(data.get("production"))),
         shared=_load_shared_profile(_mapping(data.get("shared"))),
+        sales=_load_sales_profile(_mapping(data.get("sales"))),
     )
     result = validate_industry_profile(profile)
     if not result.valid:
@@ -138,6 +140,17 @@ def industry_profile_to_dict(profile: IndustryProfile) -> dict[str, Any]:
             "date_scope_notes": list(profile.shared.date_scope_notes),
             "realism_notes": list(profile.shared.realism_notes),
         },
+        "sales": {
+            "customer_types": list(profile.sales.customer_types),
+            "customer_industries": list(profile.sales.customer_industries),
+            "customer_name_terms": list(profile.sales.customer_name_terms),
+            "sales_channels": list(profile.sales.sales_channels),
+            "payment_terms": list(profile.sales.payment_terms),
+            "regions": list(profile.sales.regions),
+            "price_margin_pct_range": list(profile.sales.price_margin_pct_range),
+            "minimum_order_quantity_range": list(profile.sales.minimum_order_quantity_range),
+            "fallback_price_range": list(profile.sales.fallback_price_range),
+        },
     }
 
 
@@ -194,6 +207,20 @@ def _load_shared_profile(data: Mapping[str, Any]) -> SharedProfile:
     )
 
 
+def _load_sales_profile(data: Mapping[str, Any]) -> SalesProfile:
+    return SalesProfile(
+        customer_types=_tuple_of_str(data.get("customer_types")),
+        customer_industries=_tuple_of_str(data.get("customer_industries")),
+        customer_name_terms=_tuple_of_str(data.get("customer_name_terms")),
+        sales_channels=_tuple_of_str(data.get("sales_channels")),
+        payment_terms=_tuple_of_str(data.get("payment_terms")),
+        regions=_tuple_of_str(data.get("regions")),
+        price_margin_pct_range=_tuple_of_float_pair(data.get("price_margin_pct_range"), (20.0, 45.0)),
+        minimum_order_quantity_range=_tuple_of_float_pair(data.get("minimum_order_quantity_range"), (1.0, 100.0)),
+        fallback_price_range=_tuple_of_float_pair(data.get("fallback_price_range"), (10.0, 100.0)),
+    )
+
+
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
@@ -227,6 +254,15 @@ def _dict_of_float_pairs(value: Any) -> dict[str, tuple[float, float]]:
         if len(pair) >= 2:
             output[str(key)] = (float(pair[0]), float(pair[1]))
     return output
+
+
+def _tuple_of_float_pair(value: Any, default: tuple[float, float]) -> tuple[float, float]:
+    if isinstance(value, str) or value is None or not hasattr(value, "__iter__"):
+        return default
+    pair = list(value)
+    if len(pair) < 2:
+        return default
+    return float(pair[0]), float(pair[1])
 
 
 def _dict_of_float_dicts(value: Any) -> dict[str, dict[str, float]]:
