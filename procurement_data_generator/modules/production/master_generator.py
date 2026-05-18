@@ -13,6 +13,7 @@ import pandas as pd
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.modules.shared.quantity_precision import (
     apply_quantity_precision,
     is_whole_quantity,
@@ -25,7 +26,6 @@ from procurement_data_generator.modules.shared.operating_scope import (
     get_expected_warehouse_count,
     is_allowed_shift_code,
 )
-from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_default_industry_profile
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
 
@@ -39,39 +39,6 @@ PRODUCTION_MASTER_TABLES = (
     "RoutingOperation",
     "ProductionShift",
 )
-_DEFAULT_INDUSTRY_PROFILE = get_default_industry_profile()
-FALLBACK_COMPONENTS = tuple(
-    (int(component["ComponentID"]), str(component["ComponentName"]), str(component["UOM"]))
-    for component in _DEFAULT_INDUSTRY_PROFILE.production.fallback_components
-)
-FALLBACK_PLANTS = tuple(
-    (int(plant["PlantID"]), str(plant["PlantName"]))
-    for plant in _DEFAULT_INDUSTRY_PROFILE.production.fallback_plants
-)
-FALLBACK_WAREHOUSES = tuple(
-    (int(warehouse["WarehouseID"]), int(warehouse["PlantID"]), str(warehouse["WarehouseName"]))
-    for warehouse in _DEFAULT_INDUSTRY_PROFILE.production.fallback_warehouses
-)
-PRODUCT_NAMES = tuple(
-    (
-        str(product["name"]),
-        str(product["category"]),
-        str(product["product_type"]),
-        str(product["uom"]),
-        float(product["base_cost"]),
-        float(product["base_hours"]),
-    )
-    for product in _DEFAULT_INDUSTRY_PROFILE.production.product_catalog
-)
-WORK_CENTER_NAMES = tuple(
-    (str(work_center["name"]), str(work_center["line_name"]))
-    for work_center in _DEFAULT_INDUSTRY_PROFILE.production.work_center_catalog
-)
-OPERATION_NAMES = tuple(
-    _DEFAULT_INDUSTRY_PROFILE.production.routing_operation_names
-)
-
-
 def _fallback_components_from_profile(profile: IndustryProfile) -> tuple[tuple[int, str, str], ...]:
     return tuple(
         (int(component["ComponentID"]), str(component["ComponentName"]), str(component["UOM"]))
@@ -127,8 +94,16 @@ class UpstreamProductionContext:
 class ProductionMasterDataGenerator:
     """Generate the seven Production Execution module within MES context v1 master/setup tables."""
 
-    def __init__(self, industry_profile: IndustryProfile | None = None, profile_id: str | None = None) -> None:
+    def __init__(
+        self,
+        industry_profile: IndustryProfile | None = None,
+        profile_id: str | None = None,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
+    ) -> None:
         self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
+        self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
+        self.generation_config = generation_config or GenerationConfig()
         self.fallback_components = _fallback_components_from_profile(self.industry_profile)
         self.fallback_plants = _fallback_plants_from_profile(self.industry_profile)
         self.fallback_warehouses = _fallback_warehouses_from_profile(self.industry_profile)
@@ -309,8 +284,8 @@ class ProductionMasterDataGenerator:
         for index in range(1, count + 1):
             product_id = int(products.iloc[(index - 1) % len(products)]["ProductID"])
             plant_id = int(plant_ids[(index - 1) % len(plant_ids)])
-            effective_from = date(2025, 1, 1) + timedelta(days=rng.randint(0, 45))
-            effective_to = date(2025, 12, 31) - timedelta(days=rng.randint(0, 30))
+            effective_from = self.operating_scope.date_start + timedelta(days=rng.randint(0, 45))
+            effective_to = self.operating_scope.date_end - timedelta(days=rng.randint(0, 30))
             rows.append(
                 {
                     "BOMID": index,
@@ -441,7 +416,7 @@ class ProductionMasterDataGenerator:
         rows = []
         for index in range(1, count + 1):
             work_center = work_centers.iloc[(index - 1) % len(work_centers)]
-            shift_date = date(2025, 1, 1) + timedelta(days=(index - 1) % 365)
+            shift_date = self.operating_scope.date_start + timedelta(days=(index - 1) % 365)
             rows.append(
                 {
                     "ShiftID": index,
@@ -545,12 +520,12 @@ class ProductionMasterDataGenerator:
                 if not column.data_type.lower().startswith("date"):
                     continue
                 values = pd.to_datetime(dataframe[column.column_name], errors="coerce")
-                if values.isna().any() or (values.dt.date < date(2025, 1, 1)).any() or (values.dt.date > date(2025, 12, 31)).any():
+                if values.isna().any() or (values.dt.date < self.operating_scope.date_start).any() or (values.dt.date > self.operating_scope.date_end).any():
                     report.add_error(
                         table_name=table_name,
                         column_name=column.column_name,
-                        message="Generated date is outside the 2025 Production v1 scope.",
-                        suggested_fix="Generate all Production v1 dates between 2025-01-01 and 2025-12-31.",
+                        message=f"Generated date is outside the {self.operating_scope.calendar_year} Production v1 scope.",
+                        suggested_fix=f"Generate all Production v1 dates between {self.operating_scope.date_start.isoformat()} and {self.operating_scope.date_end.isoformat()}.",
                     )
 
 

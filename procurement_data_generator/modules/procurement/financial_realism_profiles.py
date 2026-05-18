@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from typing import TypedDict, cast
 
+from procurement_data_generator.modules.shared.industry_profiles.profile_contract import ProcurementProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_default_industry_profile
 
 
@@ -30,19 +31,25 @@ _DEFAULT_PROFILE_NAME = _CATEGORY_ALIASES.get("mechanical", next(iter(CATEGORY_F
 DEFAULT_FINANCIAL_PROFILE: FinancialProfile = CATEGORY_FINANCIAL_PROFILES[_DEFAULT_PROFILE_NAME]
 
 
-def get_financial_profile(component_category: object) -> FinancialProfile:
+def get_financial_profile(component_category: object, procurement_profile: ProcurementProfile | None = None) -> FinancialProfile:
+    profiles = _financial_profiles_for(procurement_profile)
+    aliases = _category_aliases_for(procurement_profile)
     category = str(component_category or "").strip()
-    if category in CATEGORY_FINANCIAL_PROFILES:
-        return CATEGORY_FINANCIAL_PROFILES[category]
+    if category in profiles:
+        return profiles[category]
     normalized = category.lower()
-    for token, profile_name in _CATEGORY_ALIASES.items():
-        if token in normalized:
-            return CATEGORY_FINANCIAL_PROFILES[profile_name]
-    return DEFAULT_FINANCIAL_PROFILE
+    for token, profile_name in aliases.items():
+        if token in normalized and profile_name in profiles:
+            return profiles[profile_name]
+    return _default_financial_profile(profiles, procurement_profile)
 
 
-def generate_standard_cost(component_category: object, rng: random.Random) -> float:
-    profile = get_financial_profile(component_category)
+def generate_standard_cost(
+    component_category: object,
+    rng: random.Random,
+    procurement_profile: ProcurementProfile | None = None,
+) -> float:
+    profile = get_financial_profile(component_category, procurement_profile)
     low = profile["unit_price_min"]
     high = profile["unit_price_max"]
     mode = low + (high - low) * 0.28
@@ -63,8 +70,9 @@ def generate_order_quantity(
     rng: random.Random,
     quantity_min: float | None = None,
     quantity_max: float | None = None,
+    procurement_profile: ProcurementProfile | None = None,
 ) -> float:
-    profile = get_financial_profile(component_category)
+    profile = get_financial_profile(component_category, procurement_profile)
     low = max(profile["quantity_min"], float(quantity_min)) if quantity_min is not None else profile["quantity_min"]
     high = min(profile["quantity_max"], float(quantity_max)) if quantity_max is not None else profile["quantity_max"]
     if high < low:
@@ -81,3 +89,53 @@ def generate_order_quantity(
     quantity = min(quantity, amount_cap / safe_unit_price)
     quantity = max(low, min(high, quantity))
     return round(quantity, 2)
+
+
+def _financial_profiles_for(procurement_profile: ProcurementProfile | None) -> dict[str, FinancialProfile]:
+    if procurement_profile is None:
+        return CATEGORY_FINANCIAL_PROFILES
+    if procurement_profile.component_financial_profiles:
+        return {
+            category: cast(FinancialProfile, dict(profile))
+            for category, profile in procurement_profile.component_financial_profiles.items()
+        }
+    if procurement_profile.component_cost_profiles:
+        return {
+            category: _financial_profile_from_cost_range(cost_range)
+            for category, cost_range in procurement_profile.component_cost_profiles.items()
+        }
+    return CATEGORY_FINANCIAL_PROFILES
+
+
+def _category_aliases_for(procurement_profile: ProcurementProfile | None) -> dict[str, str]:
+    if procurement_profile is None:
+        return _CATEGORY_ALIASES
+    return dict(procurement_profile.component_category_aliases)
+
+
+def _default_financial_profile(
+    profiles: dict[str, FinancialProfile],
+    procurement_profile: ProcurementProfile | None,
+) -> FinancialProfile:
+    if procurement_profile is None or profiles is CATEGORY_FINANCIAL_PROFILES:
+        return DEFAULT_FINANCIAL_PROFILE
+    for category in procurement_profile.component_categories:
+        if category in profiles:
+            return profiles[category]
+    if profiles:
+        return next(iter(profiles.values()))
+    return DEFAULT_FINANCIAL_PROFILE
+
+
+def _financial_profile_from_cost_range(cost_range: tuple[float, float]) -> FinancialProfile:
+    low, high = float(cost_range[0]), float(cost_range[1])
+    if high < low:
+        low, high = high, low
+    return {
+        "unit_price_min": low,
+        "unit_price_max": high,
+        "quantity_min": 10.0,
+        "quantity_max": 1000.0,
+        "line_amount_soft_max": max(high * 500.0, 50000.0),
+        "high_value_probability": 0.0,
+    }

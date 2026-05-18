@@ -13,6 +13,7 @@ import pandas as pd
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.modules.shared.quantity_precision import (
     apply_quantity_precision,
     is_whole_quantity,
@@ -20,6 +21,7 @@ from procurement_data_generator.modules.shared.quantity_precision import (
 )
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
+from procurement_data_generator.modules.shared.industry_profiles.profile_value_provider import IndustryProfileValueProvider
 
 
 PRODUCTION_TRANSACTION_TABLES = (
@@ -79,8 +81,17 @@ class ProcurementExecutionContext:
 class ProductionTransactionGenerator:
     """Generate the fourteen Production Execution module within MES context v1 transaction/execution tables."""
 
-    def __init__(self, industry_profile: IndustryProfile | None = None, profile_id: str | None = None) -> None:
+    def __init__(
+        self,
+        industry_profile: IndustryProfile | None = None,
+        profile_id: str | None = None,
+        operating_scope: OperatingScope | None = None,
+        generation_config: GenerationConfig | None = None,
+    ) -> None:
         self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
+        self.profile_values = IndustryProfileValueProvider(self.industry_profile)
+        self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
+        self.generation_config = generation_config or GenerationConfig()
 
     def generate_transaction_data(
         self,
@@ -316,9 +327,9 @@ class ProductionTransactionGenerator:
             if allocations is None:
                 continue
 
-            order_date = date(2025, 1, 1) + timedelta(days=rng.randint(0, 300))
+            order_date = self.operating_scope.date_start + timedelta(days=rng.randint(0, 300))
             actual_start = order_date + timedelta(days=rng.randint(0, 5))
-            actual_end = min(actual_start + timedelta(days=rng.randint(0, 7)), date(2025, 12, 31))
+            actual_end = min(actual_start + timedelta(days=rng.randint(0, 7)), self.operating_scope.date_end)
             planned_start = actual_start
             planned_end = actual_end
             plant_id = int(bom.PlantID)
@@ -520,7 +531,7 @@ class ProductionTransactionGenerator:
                 {
                     "ProductionBatchID": index,
                     "ProductionOrderLineID": int(line.ProductionOrderLineID),
-                    "BatchNumber": f"PB-2025-{index:06d}",
+                    "BatchNumber": f"PB-{self.operating_scope.calendar_year}-{index:06d}",
                     "ProductID": int(line.ProductID),
                     "PlantID": int(order.PlantID),
                     "PlannedBatchQuantity": float(line.PlannedQuantity),
@@ -653,6 +664,14 @@ class ProductionTransactionGenerator:
     def _quality_defect_severity(self, rng: random.Random) -> str:
         return rng.choices(("Low", "Medium", "High", "Critical"), weights=(0.65, 0.25, 0.08, 0.02), k=1)[0]
 
+    def _scrap_reason_code(self, rng: random.Random) -> str:
+        reasons = self.profile_values.production_scrap_reason_codes()
+        return reasons[rng.randrange(len(reasons))]
+
+    def _rework_reason_code(self, rng: random.Random) -> str:
+        reasons = self.profile_values.production_rework_reason_codes()
+        return reasons[rng.randrange(len(reasons))]
+
     def _generate_scrap_rework(self, table: TableContract, plan: LLMGenerationPlan, batches: pd.DataFrame, operations: pd.DataFrame, rng: random.Random) -> pd.DataFrame:
         product_by_batch = dict(zip(batches["ProductionBatchID"], batches["ProductID"]))
         rows = []
@@ -668,8 +687,8 @@ class ProductionTransactionGenerator:
                         "ProductID": int(product_by_batch[operation.ProductionBatchID]),
                         "EventType": "Scrap",
                         "Quantity": float(operation.ScrapQuantity),
-                        "ReasonCode": "Process Defect",
-                        "CostImpact": round(float(operation.ScrapQuantity) * rng.uniform(75, 250), 2),
+                        "ReasonCode": self._scrap_reason_code(rng),
+                        "CostImpact": round(float(operation.ScrapQuantity) * rng.uniform(*self.profile_values.production_cost_range("ScrapCostPerUnit", (75.0, 250.0))), 2),
                         "EventDate": event_date,
                     }
                 )
@@ -683,8 +702,8 @@ class ProductionTransactionGenerator:
                         "ProductID": int(product_by_batch[operation.ProductionBatchID]),
                         "EventType": "Rework",
                         "Quantity": float(operation.ReworkQuantity),
-                        "ReasonCode": "Rework Hold",
-                        "CostImpact": round(float(operation.ReworkQuantity) * rng.uniform(40, 180), 2),
+                        "ReasonCode": self._rework_reason_code(rng),
+                        "CostImpact": round(float(operation.ReworkQuantity) * rng.uniform(*self.profile_values.production_cost_range("ReworkCostPerUnit", (40.0, 180.0))), 2),
                         "EventDate": event_date,
                     }
                 )
@@ -704,7 +723,7 @@ class ProductionTransactionGenerator:
                 generated["MaterialIssueHeader"]["ProductionOrderID"] == line.ProductionOrderID
             ]
             warehouse_id = int(issue_headers_for_order.iloc[0]["WarehouseID"]) if not issue_headers_for_order.empty else int(batch.PlantID)
-            receipt_date = min(pd.to_datetime(batch.ActualEndDate).date() + timedelta(days=1), date(2025, 12, 31))
+            receipt_date = min(pd.to_datetime(batch.ActualEndDate).date() + timedelta(days=1), self.operating_scope.date_end)
             rows.append(
                 {
                     "FinishedGoodsReceiptID": index,
@@ -788,8 +807,16 @@ class ProductionTransactionGenerator:
         rows = []
         for index, batch in enumerate(batches.itertuples(index=False), start=1):
             material_cost = round(float(material_cost_by_line.get(batch.ProductionOrderLineID, 0.0)), 2)
-            labor_cost = round(float(op_count_by_batch.get(batch.ProductionBatchID, 1)) * rng.uniform(45, 95), 2)
-            overhead_cost = round((material_cost + labor_cost) * rng.uniform(0.12, 0.24), 2)
+            labor_cost = round(
+                float(op_count_by_batch.get(batch.ProductionBatchID, 1))
+                * rng.uniform(*self.profile_values.production_cost_range("ProductionLaborCostPerOperation", (45.0, 95.0))),
+                2,
+            )
+            overhead_cost = round(
+                (material_cost + labor_cost)
+                * rng.uniform(*self.profile_values.production_percentage_range("ProductionOverheadPct", (0.12, 0.24))),
+                2,
+            )
             scrap_cost = round(float(scrap_cost_by_batch.get(batch.ProductionBatchID, 0.0)), 2)
             total = round(material_cost + labor_cost + overhead_cost + scrap_cost, 2)
             good_quantity = max(float(receipt_good_by_batch.get(batch.ProductionBatchID, batch.PlannedBatchQuantity)), 1.0)
@@ -856,8 +883,13 @@ class ProductionTransactionGenerator:
                 continue
             for column in columns:
                 values = pd.to_datetime(dataframe[column], errors="coerce")
-                if values.isna().any() or (values.dt.date < date(2025, 1, 1)).any() or (values.dt.date > date(2025, 12, 31)).any():
-                    report.add_error(table_name=table_name, column_name=column, message="Generated date is outside 2025.", suggested_fix="Keep all Production v1 dates in calendar year 2025.")
+                if values.isna().any() or (values.dt.date < self.operating_scope.date_start).any() or (values.dt.date > self.operating_scope.date_end).any():
+                    report.add_error(
+                        table_name=table_name,
+                        column_name=column,
+                        message=f"Generated date is outside {self.operating_scope.calendar_year}.",
+                        suggested_fix=f"Keep all Production v1 dates in calendar year {self.operating_scope.calendar_year}.",
+                    )
 
     def _validate_genealogy(self, dataframes: dict[str, pd.DataFrame], upstream: ProcurementExecutionContext, report: ValidationReport) -> None:
         genealogy = dataframes["ProductionGenealogy"]
