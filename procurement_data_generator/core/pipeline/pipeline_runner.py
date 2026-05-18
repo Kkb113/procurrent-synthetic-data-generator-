@@ -337,7 +337,7 @@ class ProcurementPipelineRunner:
                 (
                     f"Table: {warning.table_name}\n"
                     f"Column: {warning.column_name}\n"
-                    f"Removed dependency: {warning.removed_dependency}\n"
+                    f"Removed: {warning.removed_dependency or warning.removed_rule_id or warning.normalization_type}\n"
                     f"Message: {warning.message}"
                 )
                 for warning in result.warnings
@@ -345,7 +345,7 @@ class ProcurementPipelineRunner:
             report.warnings.extend(warning_text)
         stage.finish(
             "passed_with_warnings" if result.warnings else "passed",
-            f"Plan normalization removed {len(result.warnings)} invalid depends_on_columns references.",
+            f"Plan normalization removed {len(result.warnings)} non-executable live-plan aliases.",
             errors_count=0,
             warnings_count=len(result.warnings),
             output_paths=[str(normalized_path), str(report_path)],

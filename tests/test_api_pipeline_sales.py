@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routes import pipeline_routes
 from app.services.pipeline_service import PipelineService
+from procurement_data_generator.core.metadata.metadata_reader import METADATA_SHEET_NAME, read_metadata_schema
 from procurement_data_generator.core.pipeline.generic_runner import GenericPipelineRunResult, ModulePipelineRunResult
 
 
@@ -134,6 +136,36 @@ def test_generic_sales_api_response_includes_sales_counts_validation_and_adjuste
     assert payload["adjusted_finished_goods_inventory"]["path"] == str(adjusted_path)
 
 
+def test_generic_sales_metadata_split_normalizes_generation_type_aliases(tmp_path) -> None:
+    metadata_path = tmp_path / "combined_metadata.xlsx"
+    metadata = pd.DataFrame(
+        [
+            _metadata_row("CustomerID", "sequence_id", key_type="PK"),
+            _metadata_row("CustomerCode", "business_key"),
+            _metadata_row("CustomerName", "customer_name"),
+            _metadata_row("CreditLimit", "numeric_range", data_type="decimal(18,2)"),
+            _metadata_row("CreatedDate", "date", data_type="date"),
+            _metadata_row("CalculatedValue", "formula", data_type="decimal(18,2)"),
+        ]
+    )
+    with pd.ExcelWriter(metadata_path, engine="openpyxl") as writer:
+        metadata.to_excel(writer, sheet_name=METADATA_SHEET_NAME, index=False)
+
+    service = PipelineService(base_folder=tmp_path)
+    split = service._split_combined_metadata_by_module(metadata_path, tmp_path, ("procurement", "production", "sales"))
+
+    schema = read_metadata_schema(split["sales"])
+    generation_types = {
+        column.column_name: column.generation_type
+        for column in schema.tables["CustomerMaster"].columns
+    }
+    assert generation_types["CustomerCode"] == "category"
+    assert generation_types["CustomerName"] == "faker_company"
+    assert generation_types["CreditLimit"] == "decimal_range"
+    assert generation_types["CreatedDate"] == "date_range"
+    assert generation_types["CalculatedValue"] == "calculated"
+
+
 def test_generic_sales_api_enriches_azure_openai_plan_failure(tmp_path, monkeypatch) -> None:
     class FakeGenericRunner:
         def run(self, spec):
@@ -219,3 +251,30 @@ def test_legacy_pipeline_run_route_remains_available(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["tables_generated"] == 25
+
+
+def _metadata_row(
+    column_name: str,
+    generation_type: str,
+    *,
+    data_type: str = "nvarchar(100)",
+    key_type: str | None = None,
+) -> dict[str, object]:
+    return {
+        "TableName": "CustomerMaster",
+        "ProcessOrder": 1,
+        "Area": "Sales",
+        "TableRole": "customer_master",
+        "TargetRows": 10,
+        "ColumnName": column_name,
+        "DataType": data_type,
+        "KeyType": key_type,
+        "RelatedTable": None,
+        "RelatedColumn": None,
+        "Nullable": "No",
+        "GenerationType": generation_type,
+        "AllowedValues": None,
+        "MinValue": None,
+        "MaxValue": None,
+        "Formula": None,
+    }

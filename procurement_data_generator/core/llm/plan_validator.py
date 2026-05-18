@@ -279,6 +279,10 @@ def column_exists(schema: SchemaContract, table_name: str, column_name: str) -> 
     return table is not None and any(column.column_name == column_name for column in table.columns)
 
 
+def _column_exists_anywhere(schema: SchemaContract, column_name: str) -> bool:
+    return any(column.column_name == column_name for table in schema.tables.values() for column in table.columns)
+
+
 def get_column(schema: SchemaContract, table_name: str, column_name: str) -> ColumnContract | None:
     table = get_table(schema, table_name)
     if table is None:
@@ -573,12 +577,23 @@ def _validate_column_generation_rules(plan: LLMGenerationPlan, schema: SchemaCon
             )
         for dependency in rule.depends_on_columns:
             if not column_exists(schema, rule.table_name, dependency):
-                report.add_error(
-                    table_name=rule.table_name,
-                    column_name=rule.column_name,
-                    message=f"depends_on_columns references unknown same-table column {dependency}.",
-                    suggested_fix="Use dependencies that exist in the same metadata table.",
-                )
+                if _column_exists_anywhere(schema, dependency):
+                    report.add_warning(
+                        table_name=rule.table_name,
+                        column_name=rule.column_name,
+                        message=f"depends_on_columns references cross-table column {dependency}; treating it as guidance only.",
+                        suggested_fix=(
+                            "Keep depends_on_columns limited to same-table columns; put cross-table "
+                            "dependencies in date_rules, quantity_rules, formula_rules, or validation_rules."
+                        ),
+                    )
+                else:
+                    report.add_error(
+                        table_name=rule.table_name,
+                        column_name=rule.column_name,
+                        message=f"depends_on_columns references unknown same-table column {dependency}.",
+                        suggested_fix="Use dependencies that exist in the same metadata table.",
+                    )
         if rule.allowed_values and rule.generation_type not in {"category", "status"}:
             report.add_warning(
                 table_name=rule.table_name,

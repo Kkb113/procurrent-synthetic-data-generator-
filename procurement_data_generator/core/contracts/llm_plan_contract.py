@@ -47,6 +47,7 @@ PlanValidationRuleType = Literal[
     "formula_check",
     "reconciliation",
     "status_check",
+    "validation",
 ]
 RuleSeverity = Literal["error", "warning"]
 

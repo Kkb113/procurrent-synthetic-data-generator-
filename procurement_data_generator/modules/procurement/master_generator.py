@@ -171,8 +171,7 @@ class ProcurementMasterDataGenerator:
                 report=report,
             )
 
-        original_column_order = [column.column_name for column in table.columns]
-        return pd.DataFrame(data)[original_column_order]
+        return self._dataframe_with_metadata_numeric_bounds(table, data)
 
     def generate_column_values(
         self,
@@ -704,7 +703,35 @@ class ProcurementMasterDataGenerator:
                 data[column.column_name] = self._generate_decimal_values(column, count, rng)
             else:
                 data[column.column_name] = [None] * count if column.nullable == "Yes" else self._generate_category_values(table, column, count, plan, rng)
-        return pd.DataFrame(data)[[column.column_name for column in table.columns]]
+        return self._dataframe_with_metadata_numeric_bounds(table, data)
+
+    def _dataframe_with_metadata_numeric_bounds(self, table: TableContract, data: dict[str, list[Any]]) -> pd.DataFrame:
+        dataframe = pd.DataFrame(data)[[column.column_name for column in table.columns]]
+        for column in table.columns:
+            if column.column_name not in dataframe.columns:
+                continue
+            dataframe[column.column_name] = self._clamp_numeric_values_to_metadata(column, dataframe[column.column_name])
+        return dataframe
+
+    def _clamp_numeric_values_to_metadata(self, column: ColumnContract, series: pd.Series) -> pd.Series:
+        if not is_numeric_type(column.data_type):
+            return series
+        minimum = _parse_number(column.min_value, None)
+        maximum = _parse_number(column.max_value, None)
+        if minimum is None and maximum is None:
+            return series
+
+        numeric = pd.to_numeric(series, errors="coerce")
+        if minimum is not None:
+            numeric = numeric.mask(numeric < float(minimum), float(minimum))
+        if maximum is not None:
+            numeric = numeric.mask(numeric > float(maximum), float(maximum))
+        numeric = numeric.where(pd.notna(numeric), series)
+
+        if _is_integer_type(column.data_type):
+            return numeric.map(lambda value: int(round(float(value))) if pd.notna(value) else value)
+        scale = _decimal_scale(column.data_type)
+        return numeric.map(lambda value: round(float(value), scale) if pd.notna(value) else value)
 
     def _validate_v2_master_business_rules(
         self,
@@ -1303,6 +1330,11 @@ def _decimal_scale(data_type: str) -> int:
     if match:
         return int(match.group(1))
     return 2
+
+
+def _is_integer_type(data_type: str) -> bool:
+    normalized = str(data_type or "").strip().lower()
+    return normalized in {"int", "bigint", "smallint", "tinyint", "integer"}
 
 
 def _plant_base_name(plant_name: str) -> str:

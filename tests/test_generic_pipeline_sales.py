@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from procurement_data_generator.core.contracts.sql_load_report import SQLLoadReport
 from procurement_data_generator.core.config import GenerationConfig
 from procurement_data_generator.core.pipeline.generic_runner import (
     ModuleDependencyError,
@@ -143,7 +144,66 @@ def test_food_profile_full_chain_sales_data_has_no_ev_vocabulary(full_chain_resu
     assert re.search(r"(?<![a-z])ev(?![a-z])", text, flags=re.IGNORECASE) is None
 
 
-def _full_chain_spec(tmp_path: Path, module_ids: tuple[str, ...] = ("procurement", "production", "sales")) -> PipelineRunSpec:
+@pytest.mark.pipeline
+def test_full_chain_sql_load_includes_sales_tables(tmp_path: Path) -> None:
+    loaded_tables: list[set[str]] = []
+    loaded_frames: list[dict[str, pd.DataFrame]] = []
+
+    class RecordingSQLLoader:
+        def __init__(self, _config) -> None:
+            pass
+
+        def load_dataset(self, dataframes, schema, validation_report_path=None, allow_unvalidated_load=False):
+            report = SQLLoadReport()
+            report.tables_loaded = [table.table_name for table in schema.ordered_tables]
+            report.rows_inserted_by_table = {
+                table_name: len(dataframes[table_name])
+                for table_name in report.tables_loaded
+            }
+            report.complete()
+            loaded_tables.append(set(report.tables_loaded))
+            loaded_frames.append({table_name: dataframes[table_name].copy() for table_name in report.tables_loaded})
+            return report
+
+    result = SyntheticDataPipelineRunner(sql_loader_factory=RecordingSQLLoader).run(
+        _full_chain_spec(tmp_path, load_sql=True)
+    )
+
+    assert result.status in {"passed", "passed_with_warnings"}
+    assert len(loaded_tables) == 4
+    assert len(loaded_tables[0]) == 25
+    assert len(loaded_tables[1]) == 21
+    assert loaded_tables[2] == set(SALES_V1_EXPECTED_TABLES)
+    assert "SalesCreditMemo" not in loaded_tables[2]
+    assert loaded_tables[3] == {"FinishedGoodsInventory"}
+
+    adjusted_loaded = loaded_frames[3]["FinishedGoodsInventory"].reset_index(drop=True)
+    adjusted_artifact = pd.read_csv(
+        result.module_results["sales"].report.adjusted_finished_goods_inventory_path
+    ).reset_index(drop=True)
+    pd.testing.assert_frame_equal(adjusted_loaded, adjusted_artifact, check_dtype=False)
+
+    production_inventory = pd.read_csv(
+        Path(result.module_results["production"].output_folder) / "final_data" / "FinishedGoodsInventory.csv"
+    )
+    merged = adjusted_loaded.merge(
+        production_inventory,
+        on="FinishedGoodsInventoryID",
+        suffixes=("_adjusted", "_production"),
+    )
+    assert (
+        (merged["OnHandQuantity_adjusted"].round(2) != merged["OnHandQuantity_production"].round(2))
+        | (merged["ReservedQuantity_adjusted"].round(2) != merged["ReservedQuantity_production"].round(2))
+        | (merged["AvailableQuantity_adjusted"].round(2) != merged["AvailableQuantity_production"].round(2))
+    ).any()
+    assert result.module_results["sales"].sql_load_status == "passed"
+
+
+def _full_chain_spec(
+    tmp_path: Path,
+    module_ids: tuple[str, ...] = ("procurement", "production", "sales"),
+    load_sql: bool = False,
+) -> PipelineRunSpec:
     return PipelineRunSpec(
         module_ids=module_ids,
         metadata_path=str(PROC_METADATA),
@@ -152,7 +212,7 @@ def _full_chain_spec(tmp_path: Path, module_ids: tuple[str, ...] = ("procurement
         plan_path=str(PROC_PLAN),
         output_folder=str(tmp_path),
         seed=42,
-        load_sql=False,
+        load_sql=load_sql,
         build_prompt=False,
         model_version="v2",
         generation_config=GenerationConfig(seed=42, profile_id="food_manufacturing"),

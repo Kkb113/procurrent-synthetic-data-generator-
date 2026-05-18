@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -11,7 +12,7 @@ from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 from procurement_data_generator.modules.procurement.financial_realism_profiles import get_financial_profile
 from procurement_data_generator.modules.procurement.master_generator import ProcurementMasterDataGenerator
-from procurement_data_generator.modules.shared.industry_profiles import get_default_industry_profile
+from procurement_data_generator.modules.shared.industry_profiles import EV_MANUFACTURING_PROFILE, get_default_industry_profile
 from procurement_data_generator.modules.shared.operating_scope import (
     get_expected_plant_count,
     get_expected_warehouse_count,
@@ -188,6 +189,83 @@ def test_component_standard_cost_respects_category_financial_profiles(generated_
         assert profile["unit_price_min"] <= float(row.StandardCost) <= profile["unit_price_max"]
 
 
+def test_ev_component_standard_cost_respects_metadata_numeric_bounds(generated_v2_master) -> None:
+    minimum, maximum = _metadata_numeric_bounds("ComponentMaster", "StandardCost")
+    standard_cost = generated_v2_master["ComponentMaster"]["StandardCost"].astype(float)
+
+    assert standard_cost.ge(minimum).all()
+    assert standard_cost.le(maximum).all()
+
+
+def test_low_cost_ev_component_categories_are_clamped_to_metadata_bounds(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "low_cost_ev_procurement_metadata.xlsx"
+    metadata = pd.read_excel(METADATA_PATH, sheet_name="Metadata", engine="openpyxl", dtype=object)
+    metadata.loc[
+        (metadata["TableName"] == "ComponentMaster") & (metadata["ColumnName"] == "ComponentCategory"),
+        "AllowedValues",
+    ] = "Fasteners,Packaging"
+    with pd.ExcelWriter(metadata_path, engine="openpyxl") as writer:
+        metadata.to_excel(writer, sheet_name="Metadata", index=False)
+
+    low_cost_profile = replace(
+        EV_MANUFACTURING_PROFILE,
+        procurement=replace(
+            EV_MANUFACTURING_PROFILE.procurement,
+            component_categories=("Fasteners", "Packaging"),
+            component_category_codes=("Fasteners", "Packaging"),
+            component_material_examples={
+                "Fasteners": ("M4 Bolt", "Panel Clip", "Retaining Washer", "Harness Screw"),
+                "Packaging": ("Protective Sleeve", "Carton Insert", "Foam Separator", "Label Pack"),
+            },
+            component_specification_patterns={
+                "Fasteners": ("Zinc Plated", "Grade 8.8", "M6", "M8"),
+                "Packaging": ("Reusable", "Printed", "Standard Pack", "ESD Safe"),
+            },
+            component_financial_profiles={
+                "Fasteners": {
+                    "unit_price_min": 0.05,
+                    "unit_price_max": 0.75,
+                    "quantity_min": 100.0,
+                    "quantity_max": 5000.0,
+                    "line_amount_soft_max": 50000.0,
+                    "high_value_probability": 0.0,
+                },
+                "Packaging": {
+                    "unit_price_min": 0.10,
+                    "unit_price_max": 0.90,
+                    "quantity_min": 100.0,
+                    "quantity_max": 5000.0,
+                    "line_amount_soft_max": 50000.0,
+                    "high_value_probability": 0.0,
+                },
+            },
+            component_category_aliases={
+                **EV_MANUFACTURING_PROFILE.procurement.component_category_aliases,
+                "fastener": "Fasteners",
+                "packaging": "Packaging",
+            },
+        ),
+    )
+    schema, plan = _schema_and_plan(metadata_path, PLAN_PATH)
+
+    dataframes, report = ProcurementMasterDataGenerator(industry_profile=low_cost_profile).generate_master_data(
+        schema,
+        plan,
+        seed=42,
+        model_version="v2",
+    )
+
+    assert report.is_valid, [(error.table_name, error.column_name, error.message) for error in report.errors]
+    components = dataframes["ComponentMaster"]
+    standard_cost = components["StandardCost"].astype(float)
+    minimum, maximum = _metadata_numeric_bounds("ComponentMaster", "StandardCost", metadata_path=metadata_path)
+
+    assert {"Fasteners", "Packaging"}.issubset(set(components["ComponentCategory"]))
+    assert standard_cost.ge(minimum).all()
+    assert standard_cost.le(maximum).all()
+    assert standard_cost.min() == minimum
+
+
 def test_low_value_component_categories_have_lower_average_standard_cost(generated_v2_master) -> None:
     components = generated_v2_master["ComponentMaster"].copy()
     components["StandardCost"] = components["StandardCost"].astype(float)
@@ -236,3 +314,17 @@ def _generate(seed: int):
     )
     assert report.is_valid, [issue.message for issue in report.errors]
     return dataframes
+
+
+def _schema_and_plan(metadata_path: Path, plan_path: Path):
+    schema_result = load_metadata_schema(metadata_path)
+    plan_result = load_llm_plan_json(plan_path)
+    assert schema_result.schema is not None
+    assert plan_result.plan is not None
+    return schema_result.schema, plan_result.plan
+
+
+def _metadata_numeric_bounds(table_name: str, column_name: str, metadata_path: Path = METADATA_PATH) -> tuple[float, float]:
+    metadata = pd.read_excel(metadata_path, sheet_name="Metadata", engine="openpyxl", dtype=object)
+    row = metadata[(metadata["TableName"] == table_name) & (metadata["ColumnName"] == column_name)].iloc[0]
+    return float(row["MinValue"]), float(row["MaxValue"])

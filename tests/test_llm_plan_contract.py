@@ -122,6 +122,45 @@ def test_live_plan_drops_non_date_table_local_date_aliases() -> None:
     assert [rule.rule_id for rule in result.plan.date_rules] == ["date_req_before_order"]
 
 
+def test_live_plan_drops_global_all_date_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_global_2025_scope",
+            "rule_type": "date_order",
+            "table_name": "All",
+            "date_columns": ["RequisitionDate", "RequiredDate", "OrderDate", "PaymentDate"],
+            "operator": "less_than_or_equal",
+            "description": "All generated dates must remain within calendar year 2025 where applicable.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.date_rules] == ["date_req_before_order"]
+
+
+def test_live_plan_drops_conceptual_date_guidance_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "procurement_date_sequence",
+            "description": "Enforce procurement lifecycle dates in order within 2025.",
+            "severity": "error",
+            "confidence": "high",
+            "applies_to_tables": ["PurchaseRequisition", "RFQHeader", "SupplierQuotation"],
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.date_rules] == ["date_req_before_order"]
+
+
 def test_live_plan_normalizes_target_table_date_aliases() -> None:
     plan = _valid_plan()
     plan["date_rules"].append(
@@ -146,6 +185,117 @@ def test_live_plan_normalizes_target_table_date_aliases() -> None:
     assert normalized.earlier_column == "OrderDate"
     assert normalized.later_table == "PurchaseOrderHdr"
     assert normalized.later_column == "ExpectedDeliveryDate"
+
+
+def test_live_plan_normalizes_target_columns_date_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_rfq_date_sequence",
+            "target_table": "RFQHeader",
+            "target_columns": ["RFQDate", "RFQDueDate"],
+            "rule_type": "date_order",
+            "operation": "less_than_or_equal",
+            "tolerance_type": "absolute",
+            "tolerance_value": 0,
+            "source_table": None,
+            "source_column": None,
+            "description": "Live Azure alias; normalize to strict date rule fields.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    normalized = result.plan.date_rules[-1]
+    assert normalized.rule_id == "live_rfq_date_sequence"
+    assert normalized.earlier_table == "RFQHeader"
+    assert normalized.earlier_column == "RFQDate"
+    assert normalized.later_table == "RFQHeader"
+    assert normalized.later_column == "RFQDueDate"
+
+
+def test_live_plan_normalizes_source_target_date_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_receipt_after_shipment",
+            "target_table": "GoodsReceiptHeader",
+            "target_columns": ["ReceiptDate"],
+            "rule_type": "date_order",
+            "operation": "greater_than_or_equal",
+            "source_table": "ShipmentHdr",
+            "source_column": "ShipmentDate",
+            "description": "Live Azure alias; normalize cross-table date order.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    normalized = result.plan.date_rules[-1]
+    assert normalized.rule_id == "live_receipt_after_shipment"
+    assert normalized.earlier_table == "ShipmentHdr"
+    assert normalized.earlier_column == "ShipmentDate"
+    assert normalized.later_table == "GoodsReceiptHeader"
+    assert normalized.later_column == "ReceiptDate"
+
+
+def test_live_plan_normalizes_source_target_column_date_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_payment_after_invoice",
+            "rule_type": "date_diff",
+            "source_table": "SupplierInvoice",
+            "target_table": "PaymentTransaction",
+            "source_column": "InvoiceDate",
+            "target_column": "PaymentDate",
+            "relationship_key": "SupplierInvoiceID",
+            "allowed_sequence": ["InvoiceDate", "PaymentDate"],
+            "min_offset_days": 0,
+            "max_offset_days": 60,
+            "tolerance_days": 0,
+            "severity": "error",
+            "confidence": "high",
+            "description": "Live Azure alias uses source/target date columns.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    normalized = result.plan.date_rules[-1]
+    assert normalized.rule_id == "live_payment_after_invoice"
+    assert normalized.earlier_table == "SupplierInvoice"
+    assert normalized.earlier_column == "InvoiceDate"
+    assert normalized.later_table == "PaymentTransaction"
+    assert normalized.later_column == "PaymentDate"
+
+
+def test_live_plan_drops_source_target_date_alias_when_source_is_not_date() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_transaction_after_inspection_id",
+            "target_table": "InventoryTransaction",
+            "target_columns": ["TransactionDate"],
+            "rule_type": "date_order",
+            "operation": "greater_than_or_equal",
+            "source_table": "InspectionResult",
+            "source_column": "InspectionID",
+            "description": "Live Azure alias uses an ID as a date source; drop it.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.date_rules] == ["date_req_before_order"]
 
 
 def test_live_plan_normalizes_start_end_date_aliases() -> None:
@@ -214,6 +364,25 @@ def test_live_plan_drops_flag_columns_from_status_aliases() -> None:
     assert [rule.rule_id for rule in result.plan.status_rules] == ["status_po"]
 
 
+def test_live_plan_drops_conceptual_status_guidance_aliases() -> None:
+    plan = _valid_plan()
+    plan["status_rules"].append(
+        {
+            "rule_id": "inventory_transaction_stockin_only",
+            "description": "InventoryTransaction.TransactionType must be StockIn only.",
+            "severity": "error",
+            "confidence": "high",
+            "applies_to_tables": ["InventoryTransaction"],
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.status_rules] == ["status_po"]
+
+
 def test_live_plan_normalizes_target_table_status_aliases() -> None:
     plan = _valid_plan()
     plan["status_rules"][0] = {
@@ -232,6 +401,26 @@ def test_live_plan_normalizes_target_table_status_aliases() -> None:
     assert normalized.table_name == "PurchaseOrderHdr"
     assert normalized.status_values == ["Received"]
     assert normalized.derivation_logic == "Live plan alias; normalize to the strict status rule contract."
+
+
+def test_live_plan_normalizes_target_column_status_aliases() -> None:
+    plan = _valid_plan()
+    plan["status_rules"][0] = {
+        "rule_id": "live_po_status",
+        "target_table": "PurchaseOrderHdr",
+        "target_column": "POStatus",
+        "allowed_values": ["Received"],
+        "description": "Live Azure alias uses target_column for the status field.",
+    }
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    normalized = result.plan.status_rules[0]
+    assert normalized.table_name == "PurchaseOrderHdr"
+    assert normalized.status_column == "POStatus"
+    assert normalized.status_values == ["Received"]
 
 
 def test_invalid_confidence_fails() -> None:
@@ -262,6 +451,51 @@ def test_invalid_validation_severity_fails() -> None:
 
     assert not result.report.is_valid
     assert any("validation_rules[0].severity" in (issue.table_name or "") for issue in result.report.errors)
+
+
+def test_live_plan_accepts_generic_validation_rule_type() -> None:
+    plan = _valid_plan()
+    plan["validation_rules"].append(
+        {
+            "rule_id": "live_supplier_component_eligibility",
+            "rule_type": "validation",
+            "severity": "error",
+            "table_name": "SupplierComponent",
+            "column_name": "ComponentID",
+            "related_table": "SupplierMaster",
+            "related_column": "SupplierCategory",
+            "description": "Supplier-component mapping must respect supplier category and component category compatibility.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    generic_rule = result.plan.validation_rules[-1]
+    assert generic_rule.rule_type == "validation"
+    assert "Supplier-component mapping must respect supplier category" in generic_rule.condition
+
+
+def test_live_plan_normalizes_validation_type_alias() -> None:
+    plan = _valid_plan()
+    plan["validation_rules"].append(
+        {
+            "rule_id": "live_pk_presence",
+            "validation_type": "pk_check",
+            "severity": "error",
+            "confidence": "high",
+            "description": "All primary keys must be present and unique across each table.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    generic_rule = result.plan.validation_rules[-1]
+    assert generic_rule.rule_type == "pk_check"
+    assert "All primary keys" in generic_rule.condition
 
 
 def test_empty_generation_order_fails() -> None:

@@ -15,18 +15,25 @@ class PlanNormalizationWarning:
 
     table_name: str
     column_name: str
-    removed_dependency: str
     message: str
     suggested_fix: str
+    removed_dependency: str | None = None
+    removed_rule_id: str | None = None
+    normalization_type: str = "depends_on_columns"
 
     def to_dict(self) -> dict[str, str]:
-        return {
+        payload = {
             "table_name": self.table_name,
             "column_name": self.column_name,
-            "removed_dependency": self.removed_dependency,
             "message": self.message,
             "suggested_fix": self.suggested_fix,
+            "normalization_type": self.normalization_type,
         }
+        if self.removed_dependency is not None:
+            payload["removed_dependency"] = self.removed_dependency
+        if self.removed_rule_id is not None:
+            payload["removed_rule_id"] = self.removed_rule_id
+        return payload
 
 
 @dataclass(frozen=True)
@@ -45,11 +52,13 @@ def normalize_column_generation_dependencies(
     plan: LLMGenerationPlan,
     schema: SchemaContract,
 ) -> PlanNormalizationResult:
-    """Remove invalid same-table dependencies from ColumnGenerationRule entries.
+    """Remove harmless live-LLM aliases before semantic validation.
 
-    Only column_generation_rules.depends_on_columns is normalized. Unknown tables,
-    formula rules, date rules, quantity rules, status rules, and validation rules
-    are left untouched for Phase 6 semantic validation.
+    The semantic validator remains strict for executable rules. This normalizer
+    only removes known non-executable Azure aliases:
+    - cross-table ``depends_on_columns`` entries,
+    - aggregate date formulas over date columns,
+    - date rules that attach cross-table lifecycle dates to the wrong table.
     """
 
     plan_data = plan.model_dump(mode="json")
@@ -74,7 +83,6 @@ def normalize_column_generation_dependencies(
                     PlanNormalizationWarning(
                         table_name=table_name,
                         column_name=column_name,
-                        removed_dependency=dependency,
                         message=(
                             f"Removed invalid depends_on_columns reference {dependency!r} from "
                             f"{table_name}.{column_name}; dependencies must exist in the same table."
@@ -83,12 +91,114 @@ def normalize_column_generation_dependencies(
                             "Put cross-table lifecycle dependencies in date_rules, quantity_rules, "
                             "formula_rules, or validation_rules."
                         ),
+                        removed_dependency=dependency,
                     )
                 )
 
         rule["depends_on_columns"] = kept_dependencies
 
+    plan_data["formula_rules"] = _normalize_formula_rules(plan_data.get("formula_rules", []), schema, warnings)
+    plan_data["date_rules"] = _normalize_date_rules(plan_data.get("date_rules", []), schema, warnings)
+
     return PlanNormalizationResult(plan=LLMGenerationPlan.model_validate(plan_data), warnings=warnings)
+
+
+def _normalize_formula_rules(
+    rules: list[dict[str, Any]],
+    schema: SchemaContract,
+    warnings: list[PlanNormalizationWarning],
+) -> list[dict[str, Any]]:
+    kept_rules: list[dict[str, Any]] = []
+    for rule in rules:
+        if _is_date_aggregate_formula_alias(rule, schema):
+            warnings.append(
+                PlanNormalizationWarning(
+                    table_name=str(rule.get("target_table") or ""),
+                    column_name=str(rule.get("target_column") or ""),
+                    message=(
+                        f"Removed date aggregate FormulaRule {rule.get('rule_id')!r}; "
+                        "date rollups are deterministic generator guidance, not numeric formula rules."
+                    ),
+                    suggested_fix="Keep date rollup guidance in validation_rules or assumptions, not formula_rules.",
+                    removed_rule_id=str(rule.get("rule_id") or ""),
+                    normalization_type="formula_rules",
+                )
+            )
+            continue
+        kept_rules.append(rule)
+    return kept_rules
+
+
+def _is_date_aggregate_formula_alias(rule: dict[str, Any], schema: SchemaContract) -> bool:
+    if rule.get("rule_type") != "aggregate" or rule.get("operation") not in {"min", "max"}:
+        return False
+    target_column = _get_column(schema, rule.get("target_table"), rule.get("target_column"))
+    source_column = _get_column(schema, rule.get("source_table"), rule.get("source_column"))
+    return _is_date_column(target_column) or _is_date_column(source_column)
+
+
+def _normalize_date_rules(
+    rules: list[dict[str, Any]],
+    schema: SchemaContract,
+    warnings: list[PlanNormalizationWarning],
+) -> list[dict[str, Any]]:
+    kept_rules: list[dict[str, Any]] = []
+    for rule in rules:
+        if _has_cross_table_date_alias(rule, schema):
+            warnings.append(
+                PlanNormalizationWarning(
+                    table_name=str(rule.get("later_table") or rule.get("earlier_table") or ""),
+                    column_name=str(rule.get("later_column") or rule.get("earlier_column") or ""),
+                    message=(
+                        f"Removed DateRule {rule.get('rule_id')!r}; it references a date column "
+                        "on the wrong table and is treated as lifecycle guidance only."
+                    ),
+                    suggested_fix=(
+                        "Use earlier_table/earlier_column and later_table/later_column with concrete "
+                        "metadata columns, or keep broad lifecycle guidance in validation_rules."
+                    ),
+                    removed_rule_id=str(rule.get("rule_id") or ""),
+                    normalization_type="date_rules",
+                )
+            )
+            continue
+        kept_rules.append(rule)
+    return kept_rules
+
+
+def _has_cross_table_date_alias(rule: dict[str, Any], schema: SchemaContract) -> bool:
+    checks = (
+        (rule.get("earlier_table"), rule.get("earlier_column")),
+        (rule.get("later_table"), rule.get("later_column")),
+    )
+    for table_name, column_name in checks:
+        if not table_name or not column_name:
+            continue
+        if _get_column(schema, table_name, column_name) is not None:
+            continue
+        if _column_exists_anywhere(schema, str(column_name)):
+            return True
+    return False
+
+
+def _get_column(schema: SchemaContract, table_name: Any, column_name: Any):
+    if not isinstance(table_name, str) or not isinstance(column_name, str):
+        return None
+    table = schema.tables.get(table_name)
+    if table is None:
+        return None
+    return next((column for column in table.columns if column.column_name == column_name), None)
+
+
+def _column_exists_anywhere(schema: SchemaContract, column_name: str) -> bool:
+    return any(column.column_name == column_name for table in schema.tables.values() for column in table.columns)
+
+
+def _is_date_column(column: Any) -> bool:
+    if column is None:
+        return False
+    data_type = str(column.data_type).strip().lower()
+    return any(data_type.startswith(type_name) for type_name in ("date", "datetime", "smalldatetime", "timestamp"))
 
 
 def normalize_llm_generation_plan(plan_or_data: LLMGenerationPlan | NormalizedLLMGenerationPlan | dict[str, Any]) -> NormalizedLLMGenerationPlan:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.erd.mermaid_parser import parse_mermaid_erd_file
-from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json
+from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json, validate_llm_plan_data
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 
@@ -60,6 +60,17 @@ def test_valid_v2_plan_has_25_roles() -> None:
     assert len({mapping.table_role for mapping in plan.table_role_mapping}) == 25
     assert any(mapping.table_role == "inventory" for mapping in plan.table_role_mapping)
     assert any(mapping.table_role == "inventory_receipt_detail" for mapping in plan.table_role_mapping)
+
+
+def test_v2_cross_table_depends_on_columns_warns_instead_of_failing() -> None:
+    data = _valid_plan_data()
+    rule = _column_rule(data, "SupplierQuotationLn", "LeadTimeDays")
+    rule["depends_on_columns"] = ["SupplierID"]
+
+    result = _validate_data(data)
+
+    assert result.report.is_valid
+    assert _has_warning(result, "depends_on_columns references cross-table column SupplierID")
 
 
 def test_inventory_balance_in_generation_order_fails() -> None:
@@ -477,6 +488,31 @@ def test_v2_global_country_validation_rule_is_allowed() -> None:
     result = _validate_data(data)
 
     assert result.report.is_valid
+
+
+def test_live_date_rule_columns_alias_is_loaded() -> None:
+    data = _valid_plan_data()
+    data["date_rules"] = [
+        {
+            "rule_id": "live_requisition_required_date",
+            "rule_type": "date_diff",
+            "table_name": "PurchaseRequisition",
+            "description": "RequisitionDate must be on or before RequiredDate.",
+            "columns": ["RequisitionDate", "RequiredDate"],
+            "operator": "less_than_or_equal",
+            "min_offset_days": 0,
+            "max_offset_days": None,
+            "confidence": "high",
+        }
+    ]
+
+    load_result = validate_llm_plan_data(data)
+
+    assert load_result.report.is_valid
+    assert load_result.plan is not None
+    assert load_result.plan.date_rules[0].earlier_table == "PurchaseRequisition"
+    assert load_result.plan.date_rules[0].earlier_column == "RequisitionDate"
+    assert load_result.plan.date_rules[0].later_column == "RequiredDate"
 
 
 def test_invalid_v2_sample_plan_fails() -> None:

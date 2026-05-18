@@ -109,6 +109,27 @@ def _normalize_date_rule(rule: Any) -> Any:
         return rule
     table_name = rule.get("table_name") or rule.get("target_table")
     date_columns = rule.get("date_columns")
+    target_columns = rule.get("target_columns")
+    if date_columns is None and isinstance(rule.get("columns"), list):
+        date_columns = rule.get("columns")
+    if rule.get("applies_to_tables") and not any(
+        rule.get(field)
+        for field in (
+            "earlier_table",
+            "earlier_column",
+            "later_table",
+            "later_column",
+            "table_name",
+            "target_table",
+            "date_columns",
+            "target_columns",
+            "start_column",
+            "end_column",
+        )
+    ):
+        return None
+    if str(table_name or "").strip().lower() in {"all", "all_tables"}:
+        return None
     if table_name and rule.get("column_name") and rule.get("related_table") and rule.get("related_column"):
         if not _looks_like_date_column(str(rule.get("column_name"))) or not _looks_like_date_column(str(rule.get("related_column"))):
             return None
@@ -122,6 +143,64 @@ def _normalize_date_rule(rule: Any) -> Any:
             "max_offset_days": rule.get("max_offset_days"),
             "description": rule.get("description"),
         }
+    if rule.get("source_table") and rule.get("target_table") and rule.get("source_column") and rule.get("target_column"):
+        source_column = str(rule.get("source_column"))
+        target_column = str(rule.get("target_column"))
+        if not _looks_like_date_column(source_column) or not _looks_like_date_column(target_column):
+            return None
+        return {
+            "rule_id": rule.get("rule_id") or f"{rule.get('source_table')}_{source_column}_before_{rule.get('target_table')}_{target_column}",
+            "earlier_table": rule.get("source_table"),
+            "earlier_column": source_column,
+            "later_table": rule.get("target_table"),
+            "later_column": target_column,
+            "min_offset_days": rule.get("min_offset_days") or rule.get("offset_days"),
+            "max_offset_days": rule.get("max_offset_days"),
+            "description": rule.get("description"),
+        }
+    if table_name and isinstance(target_columns, list) and target_columns:
+        date_columns = [column for column in target_columns if _looks_like_date_column(str(column))]
+        if not date_columns:
+            return None
+        operation = str(rule.get("operation") or "").strip().lower()
+        if len(date_columns) >= 2 and operation in {"less_than_or_equal", "<=", "before", ""}:
+            return {
+                "rule_id": rule.get("rule_id") or f"{table_name}_{date_columns[0]}_before_{date_columns[1]}",
+                "earlier_table": table_name,
+                "earlier_column": date_columns[0],
+                "later_table": table_name,
+                "later_column": date_columns[1],
+                "min_offset_days": rule.get("min_offset_days"),
+                "max_offset_days": rule.get("max_offset_days"),
+                "description": rule.get("description"),
+            }
+        source_table = rule.get("source_table")
+        source_column = rule.get("source_column")
+        if source_table and source_column and _looks_like_date_column(str(source_column)):
+            if operation in {"greater_than_or_equal", ">=", "after", ""}:
+                return {
+                    "rule_id": rule.get("rule_id") or f"{source_table}_{source_column}_before_{table_name}_{date_columns[0]}",
+                    "earlier_table": source_table,
+                    "earlier_column": source_column,
+                    "later_table": table_name,
+                    "later_column": date_columns[0],
+                    "min_offset_days": rule.get("min_offset_days") or rule.get("offset_days"),
+                    "max_offset_days": rule.get("max_offset_days"),
+                    "description": rule.get("description"),
+                }
+            if operation in {"less_than_or_equal", "<=", "before"}:
+                return {
+                    "rule_id": rule.get("rule_id") or f"{table_name}_{date_columns[0]}_before_{source_table}_{source_column}",
+                    "earlier_table": table_name,
+                    "earlier_column": date_columns[0],
+                    "later_table": source_table,
+                    "later_column": source_column,
+                    "min_offset_days": rule.get("min_offset_days") or rule.get("offset_days"),
+                    "max_offset_days": rule.get("max_offset_days"),
+                    "description": rule.get("description"),
+                }
+        if source_table or source_column:
+            return None
     if not table_name or not isinstance(date_columns, list) or not date_columns:
         start_column = rule.get("start_column")
         end_column = rule.get("end_column")
@@ -181,7 +260,7 @@ def _normalize_validation_rule(rule: Any) -> Any:
         return rule
     normalized = {
         "rule_id": rule.get("rule_id"),
-        "rule_type": rule.get("rule_type"),
+        "rule_type": rule.get("rule_type") or rule.get("validation_type"),
         "table_name": rule.get("table_name"),
         "column_name": rule.get("column_name"),
         "condition": rule.get("condition"),
@@ -248,8 +327,10 @@ def _normalize_status_rule(rule: Any) -> Any:
         if _looks_like_non_status_flag_column(rule.get("status_column"), rule.get("status_values")):
             return None
         return rule
-    status_column = rule.get("status_column") or rule.get("column_name")
+    status_column = rule.get("status_column") or rule.get("column_name") or rule.get("target_column")
     status_values = rule.get("status_values") or rule.get("allowed_values") or []
+    if not status_column and not status_values and rule.get("applies_to_tables"):
+        return None
     if _looks_like_non_status_flag_column(status_column, status_values):
         return None
     return {

@@ -48,6 +48,18 @@ DEFAULT_GENERIC_INPUTS = {
     ),
 }
 
+GENERATION_TYPE_ALIASES = {
+    "address": "category",
+    "boolean": "category",
+    "business_key": "category",
+    "business_name": "faker_company",
+    "customer_name": "faker_company",
+    "date": "date_range",
+    "formula": "calculated",
+    "numeric_range": "decimal_range",
+    "postal_code": "category",
+}
+
 AZURE_OPENAI_PLAN_HINT = (
     "For local deterministic runs, leave 'Generate plan using Azure OpenAI' unchecked. "
     "To use live planning, configure AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT."
@@ -272,11 +284,19 @@ class PipelineService:
             subset = metadata.loc[normalized_roles.isin(supported_roles)].copy()
             if subset.empty:
                 continue
+            subset = self._normalize_metadata_generation_type_aliases(subset)
             target = uploads / f"{module_id}_metadata.xlsx"
             with pd.ExcelWriter(target, engine="openpyxl") as writer:
                 subset.to_excel(writer, sheet_name=METADATA_SHEET_NAME, index=False)
             split_paths[module_id] = target
         return split_paths
+
+    def _normalize_metadata_generation_type_aliases(self, metadata: pd.DataFrame) -> pd.DataFrame:
+        if "GenerationType" not in metadata.columns:
+            return metadata
+        normalized = metadata.copy()
+        normalized["GenerationType"] = normalized["GenerationType"].map(_metadata_generation_type_alias)
+        return normalized
 
     def _split_combined_erd_by_module(
         self,
@@ -523,3 +543,10 @@ class PipelineService:
                 message = f"{message} {AZURE_OPENAI_PLAN_HINT}"
             enhanced.append(message)
         return enhanced
+
+
+def _metadata_generation_type_alias(value):
+    if value is None:
+        return value
+    text = str(value).strip()
+    return GENERATION_TYPE_ALIASES.get(text.lower(), value)

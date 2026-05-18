@@ -12,13 +12,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import pandas as pd
+
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
+from procurement_data_generator.core.contracts.schema_contract import SchemaContract
 from procurement_data_generator.core.contracts.pipeline_report import PipelineRunReport
 from procurement_data_generator.core.llm.llm_client_base import LLMClientBase
+from procurement_data_generator.core.metadata.metadata_reader import read_metadata_schema
 from procurement_data_generator.core.modules.contracts import MESModulePlugin
 from procurement_data_generator.core.modules.registry import ModuleRegistry, create_default_module_registry
 from procurement_data_generator.core.sql.db_config import DatabaseConfig
-from procurement_data_generator.core.sql.sql_loader import SQLServerLoader
+from procurement_data_generator.core.sql.sql_loader import SQLServerLoader, save_sql_load_report
 
 
 SQLLoaderFactory = Callable[[DatabaseConfig], SQLServerLoader]
@@ -305,9 +309,14 @@ class SyntheticDataPipelineRunner:
             if plugin.module_id == "sales":
                 sales_upstream_paths = self._resolve_sales_upstream_paths(plugin, upstream_paths)
                 sales_result = plugin.run_pipeline(
+                    metadata_path=module_input.metadata_path,
                     output_folder=str(module_output_root),
                     seed=spec.seed,
                     upstream_data_paths={module_id: str(path) for module_id, path in sales_upstream_paths.items()},
+                    load_sql=spec.load_sql,
+                    allow_unvalidated_sql_load=spec.allow_unvalidated_sql_load,
+                    if_table_exists=spec.if_table_exists,
+                    sql_loader_factory=self.sql_loader_factory,
                     operating_scope=spec.operating_scope or self.operating_scope,
                     generation_config=spec.generation_config or self.generation_config,
                 )
@@ -329,6 +338,31 @@ class SyntheticDataPipelineRunner:
                 if sales_run_folder:
                     upstream_paths["sales"] = Path(sales_run_folder) / "final_data"
                 self._write_combined_final_data(root_output, upstream_paths, sales_result)
+                if spec.load_sql:
+                    inventory_sql_status, inventory_sql_warnings, inventory_sql_errors = (
+                        self._load_sales_adjusted_finished_goods_inventory_to_sql(spec, sales_result)
+                    )
+                    warnings.extend(inventory_sql_warnings)
+                    errors.extend(inventory_sql_errors)
+                    current_sales_result = module_results["sales"]
+                    sales_status = current_sales_result.status
+                    if inventory_sql_errors:
+                        sales_status = "failed"
+                    elif sales_status == "passed" and inventory_sql_warnings:
+                        sales_status = "passed_with_warnings"
+                    module_results["sales"] = ModulePipelineRunResult(
+                        module_id=current_sales_result.module_id,
+                        status=sales_status,
+                        output_folder=current_sales_result.output_folder,
+                        tables_generated=current_sales_result.tables_generated,
+                        total_rows_generated=current_sales_result.total_rows_generated,
+                        data_quality_status=current_sales_result.data_quality_status,
+                        sql_load_status=_combined_sql_load_status(
+                            current_sales_result.sql_load_status,
+                            inventory_sql_status,
+                        ),
+                        report=current_sales_result.report,
+                    )
                 continue
 
             raise ModuleExecutionNotSupportedError(
@@ -433,6 +467,67 @@ class SyntheticDataPipelineRunner:
         if adjusted_inventory_path:
             shutil.copy2(Path(adjusted_inventory_path), final_output / "FinishedGoodsInventory.csv")
 
+    def _load_sales_adjusted_finished_goods_inventory_to_sql(
+        self,
+        spec: PipelineRunSpec,
+        sales_result,
+    ) -> tuple[str, list[str], list[str]]:
+        adjusted_inventory_path = getattr(sales_result, "adjusted_finished_goods_inventory_path", None)
+        if not adjusted_inventory_path:
+            return (
+                "failed",
+                [],
+                ["Adjusted FinishedGoodsInventory SQL load requires the Sales-adjusted inventory artifact."],
+            )
+        inventory_path = Path(adjusted_inventory_path)
+        if not inventory_path.exists():
+            return (
+                "failed",
+                [],
+                [f"Adjusted FinishedGoodsInventory SQL load artifact not found: {inventory_path}."],
+            )
+
+        production_input = self._module_input(spec, "production")
+        try:
+            production_schema = read_metadata_schema(production_input.metadata_path)
+        except ValueError as exc:
+            return (
+                "failed",
+                [],
+                [f"Adjusted FinishedGoodsInventory SQL load metadata validation failed: {exc}"],
+            )
+        inventory_table = production_schema.tables.get("FinishedGoodsInventory")
+        if inventory_table is None:
+            return (
+                "failed",
+                [],
+                ["Adjusted FinishedGoodsInventory SQL load requires Production metadata for FinishedGoodsInventory."],
+            )
+
+        adjusted_inventory = pd.read_csv(inventory_path)
+        inventory_schema = SchemaContract(tables={"FinishedGoodsInventory": inventory_table})
+        reports_folder_value = getattr(sales_result, "output_folders", {}).get("reports")
+        reports_folder = Path(reports_folder_value) if reports_folder_value else None
+        validation_report_path = (
+            reports_folder / "data_quality_report.json"
+            if reports_folder is not None and (reports_folder / "data_quality_report.json").exists()
+            else None
+        )
+        config = DatabaseConfig.from_env(if_table_exists_override="replace")
+        loader_factory = self.sql_loader_factory or (lambda loader_config: SQLServerLoader(loader_config))
+        sql_report = loader_factory(config).load_dataset(
+            {"FinishedGoodsInventory": adjusted_inventory},
+            inventory_schema,
+            validation_report_path=validation_report_path,
+            allow_unvalidated_load=spec.allow_unvalidated_sql_load,
+        )
+        if reports_folder is not None:
+            save_sql_load_report(sql_report, reports_folder / "adjusted_finished_goods_inventory_sql_load")
+
+        warnings = [f"Adjusted FinishedGoodsInventory SQL load warning: {warning}" for warning in sql_report.warnings]
+        errors = [f"Adjusted FinishedGoodsInventory SQL load error: {error}" for error in sql_report.errors]
+        return sql_report.status, warnings, errors
+
     def _validate_supported_execution_order(self, resolution: ModuleResolution) -> None:
         module_ids = resolution.module_ids
         if module_ids in {
@@ -503,5 +598,18 @@ def _combined_status(
     if errors or any(result.status == "failed" for result in module_results.values()):
         return "failed"
     if warnings or any(result.status == "passed_with_warnings" for result in module_results.values()):
+        return "passed_with_warnings"
+    return "passed"
+
+
+def _combined_sql_load_status(*statuses: str) -> str:
+    normalized = tuple(status for status in statuses if status)
+    if any(status == "failed" for status in normalized):
+        return "failed"
+    if any(status == "passed_with_warnings" for status in normalized):
+        return "passed_with_warnings"
+    if normalized and all(status == "not_run" for status in normalized):
+        return "not_run"
+    if any(status == "not_run" for status in normalized):
         return "passed_with_warnings"
     return "passed"

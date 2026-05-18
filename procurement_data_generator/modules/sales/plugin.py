@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import pandas as pd
 
@@ -16,7 +16,10 @@ from procurement_data_generator.core.contracts.erd_contract import RelationshipC
 from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.metadata.metadata_reader import read_metadata_schema
 from procurement_data_generator.core.modules.contracts import PromptSection, UpstreamRequirement
+from procurement_data_generator.core.sql.db_config import DatabaseConfig
+from procurement_data_generator.core.sql.sql_loader import SQLServerLoader, save_sql_load_report
 from procurement_data_generator.modules.sales.master_generator import SALES_MASTER_TABLES, SalesMasterDataGenerator
 from procurement_data_generator.modules.sales.prompt_sections import get_sales_prompt_sections
 from procurement_data_generator.modules.sales.role_catalog import SALES_V1_EXPECTED_TABLES, get_sales_role_catalog
@@ -31,6 +34,7 @@ from procurement_data_generator.modules.sales.transaction_generator import (
 from procurement_data_generator.modules.sales.validation_rules import SalesDataQualityEngine, get_sales_validation_rules
 
 
+SQLLoaderFactory = Callable[[DatabaseConfig], SQLServerLoader]
 SALES_REQUIRES_UPSTREAM_CHAIN = (
     "Sales requires upstream Procurement and Production data. "
     "Run modules=['procurement','production','sales']."
@@ -142,6 +146,11 @@ class SalesModulePlugin:
         operating_scope = _coerce_operating_scope(kwargs.get("operating_scope"))
         generation_config = _coerce_generation_config(kwargs.get("generation_config"), seed)
         run_id = str(kwargs.get("run_id") or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}")
+        metadata_path = kwargs.get("metadata_path")
+        load_sql = bool(kwargs.get("load_sql", False))
+        allow_unvalidated_sql_load = bool(kwargs.get("allow_unvalidated_sql_load", False))
+        if_table_exists = str(kwargs.get("if_table_exists") or "replace")
+        sql_loader_factory = kwargs.get("sql_loader_factory")
 
         if output_folder is None:
             raise ValueError("Sales pipeline execution requires output_folder.")
@@ -222,6 +231,24 @@ class SalesModulePlugin:
         errors = [issue.message for issue in validation_report.errors]
         warnings = [issue.message for issue in validation_report.warnings]
         status = validation_report.overall_status
+        validation_report_path = _write_validation_report(validation_report, reports_folder)
+        sql_load_status = "not_run"
+        if load_sql:
+            sql_load_status, sql_warnings, sql_errors = _run_sql_load(
+                sales_data=sales_data,
+                metadata_path=metadata_path,
+                validation_report_path=validation_report_path,
+                allow_unvalidated_sql_load=allow_unvalidated_sql_load,
+                if_table_exists=if_table_exists,
+                reports_folder=reports_folder,
+                sql_loader_factory=sql_loader_factory,
+            )
+            warnings.extend(sql_warnings)
+            errors.extend(sql_errors)
+            if sql_errors:
+                status = "failed"
+            elif status == "passed" and sql_warnings:
+                status = "passed_with_warnings"
         result = SalesPipelineRunResult(
             run_id=run_id,
             status=status,
@@ -249,6 +276,7 @@ class SalesModulePlugin:
             errors=errors,
             warnings=warnings,
             validation_report=validation_report,
+            sql_load_status=sql_load_status,
         )
         _write_pipeline_reports(result, reports_folder)
         return result
@@ -381,6 +409,61 @@ def _write_dataframes(output_folder: Path, dataframes: dict[str, pd.DataFrame], 
     output_folder.mkdir(parents=True, exist_ok=True)
     for table_name in table_order:
         dataframes[table_name].to_csv(output_folder / f"{table_name}.csv", index=False)
+
+
+def _write_validation_report(validation_report: DataQualityReport, reports_folder: Path) -> Path:
+    reports_folder.mkdir(parents=True, exist_ok=True)
+    json_path = reports_folder / "data_quality_report.json"
+    json_path.write_text(json.dumps(validation_report.to_dict(), indent=2, default=str), encoding="utf-8")
+    return json_path
+
+
+def _run_sql_load(
+    *,
+    sales_data: dict[str, pd.DataFrame],
+    metadata_path: Any,
+    validation_report_path: Path,
+    allow_unvalidated_sql_load: bool,
+    if_table_exists: str,
+    reports_folder: Path,
+    sql_loader_factory: SQLLoaderFactory | None,
+) -> tuple[str, list[str], list[str]]:
+    if metadata_path is None:
+        return (
+            "failed",
+            [],
+            ["Sales SQL load requires Sales metadata_path so only Sales v1 tables are loaded."],
+        )
+
+    try:
+        schema = read_metadata_schema(metadata_path)
+    except ValueError as exc:
+        return "failed", [], [f"Sales SQL load metadata validation failed: {exc}"]
+    schema_tables = tuple(table.table_name for table in schema.ordered_tables)
+    if schema_tables != SALES_V1_EXPECTED_TABLES:
+        missing = sorted(set(SALES_V1_EXPECTED_TABLES) - set(schema_tables))
+        extra = sorted(set(schema_tables) - set(SALES_V1_EXPECTED_TABLES))
+        return (
+            "failed",
+            [],
+            [
+                "Sales SQL load requires Sales v1 metadata with exactly the 18 approved Sales tables. "
+                f"Missing: {', '.join(missing) or 'none'}; extra: {', '.join(extra) or 'none'}."
+            ],
+        )
+
+    config = DatabaseConfig.from_env(if_table_exists_override=if_table_exists)
+    loader_factory = sql_loader_factory or (lambda loader_config: SQLServerLoader(loader_config))
+    sql_report = loader_factory(config).load_dataset(
+        sales_data,
+        schema,
+        validation_report_path=validation_report_path,
+        allow_unvalidated_load=allow_unvalidated_sql_load,
+    )
+    save_sql_load_report(sql_report, reports_folder)
+    warnings = [f"SQL load warning: {warning}" for warning in sql_report.warnings]
+    errors = [f"SQL load error: {error}" for error in sql_report.errors]
+    return sql_report.status, warnings, errors
 
 
 def _write_pipeline_reports(result: SalesPipelineRunResult, reports_folder: Path) -> None:

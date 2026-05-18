@@ -39,6 +39,58 @@ def test_formula_rules_are_not_normalized() -> None:
     assert result.plan.formula_rules[0].input_columns == ["MissingFormulaColumn"]
 
 
+def test_date_aggregate_formula_alias_gets_normalized() -> None:
+    plan_data = _plan_data()
+    plan_data["formula_rules"].append(
+        {
+            "rule_id": "inventory_last_txn_date",
+            "rule_type": "aggregate",
+            "target_table": "Inventory",
+            "target_column": "LastTransactionDate",
+            "operation": "max",
+            "input_columns": ["TransactionDate"],
+            "source_table": "InventoryTransaction",
+            "source_column": "TransactionDate",
+            "relationship_key": None,
+            "group_by_columns": ["ComponentID", "PlantID", "WarehouseID"],
+            "formula": "MAX(InventoryTransaction.TransactionDate)",
+            "denominator_column": None,
+            "denominator_guard": True,
+            "tolerance_type": "absolute",
+            "tolerance_value": 0.0,
+            "description": "Set last transaction date to the latest transaction date in the inventory group.",
+        }
+    )
+    plan = LLMGenerationPlan.model_validate(plan_data)
+
+    result = normalize_column_generation_dependencies(plan, _schema_with_live_aliases())
+
+    assert [rule.rule_id for rule in result.plan.formula_rules] == ["inspection_id_echo"]
+    assert any(warning.normalization_type == "formula_rules" for warning in result.warnings)
+
+
+def test_cross_table_date_rule_alias_gets_normalized() -> None:
+    plan_data = _plan_data()
+    plan_data["date_rules"].append(
+        {
+            "rule_id": "rfq_after_requisition",
+            "earlier_table": "RFQHeader",
+            "earlier_column": "RequisitionDate",
+            "later_table": "RFQHeader",
+            "later_column": "RFQDate",
+            "min_offset_days": 0,
+            "max_offset_days": 30,
+            "description": "RFQ date must follow requisition date.",
+        }
+    )
+    plan = LLMGenerationPlan.model_validate(plan_data)
+
+    result = normalize_column_generation_dependencies(plan, _schema_with_live_aliases())
+
+    assert result.plan.date_rules == []
+    assert any(warning.normalization_type == "date_rules" for warning in result.warnings)
+
+
 def test_semantic_validation_uses_normalized_depends_on_columns() -> None:
     normalized = normalize_column_generation_dependencies(_plan(), _schema())
     validation = validate_generation_plan(normalized.plan, _schema(), [], model_version="v2")
@@ -161,3 +213,72 @@ def _schema() -> SchemaContract:
             )
         }
     )
+
+
+def _schema_with_live_aliases() -> SchemaContract:
+    tables = dict(_schema().tables)
+    tables["Inventory"] = TableContract(
+        table_name="Inventory",
+        process_order=2,
+        area="Inventory",
+        table_role="inventory",
+        target_rows=1,
+        columns=[
+            ColumnContract(
+                column_name="LastTransactionDate",
+                data_type="date",
+                key_type=None,
+                nullable="No",
+                generation_type="calculated",
+            ),
+        ],
+    )
+    tables["InventoryTransaction"] = TableContract(
+        table_name="InventoryTransaction",
+        process_order=3,
+        area="Inventory",
+        table_role="inventory_transaction",
+        target_rows=1,
+        columns=[
+            ColumnContract(
+                column_name="TransactionDate",
+                data_type="date",
+                key_type=None,
+                nullable="No",
+                generation_type="date_range",
+            ),
+        ],
+    )
+    tables["PurchaseRequisition"] = TableContract(
+        table_name="PurchaseRequisition",
+        process_order=4,
+        area="Procurement",
+        table_role="purchase_requisition",
+        target_rows=1,
+        columns=[
+            ColumnContract(
+                column_name="RequisitionDate",
+                data_type="date",
+                key_type=None,
+                nullable="No",
+                generation_type="date_range",
+            ),
+        ],
+    )
+    tables["RFQHeader"] = TableContract(
+        table_name="RFQHeader",
+        process_order=5,
+        area="Procurement",
+        table_role="rfq_header",
+        target_rows=1,
+        columns=[
+            ColumnContract(
+                column_name="RFQDate",
+                data_type="date",
+                key_type=None,
+                nullable="No",
+                generation_type="date_range",
+            ),
+        ],
+    )
+    return SchemaContract(tables=tables)
