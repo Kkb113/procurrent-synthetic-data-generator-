@@ -68,7 +68,7 @@ def test_sales_plugin_role_validation_passes_for_sales_metadata() -> None:
 
 
 @pytest.mark.unit
-def test_sales_generator_factories_return_master_generator_and_transaction_skeleton() -> None:
+def test_sales_generator_factories_return_master_and_transaction_generators() -> None:
     plugin = SalesModulePlugin()
     master = plugin.create_master_generator()
     transaction = plugin.create_transaction_generator()
@@ -85,7 +85,7 @@ def test_sales_generator_factories_return_master_generator_and_transaction_skele
         "SalesPriceListHeader",
         "SalesPriceListLine",
     }
-    with pytest.raises(NotImplementedError, match="Sales transaction data generation is not implemented yet"):
+    with pytest.raises(ValueError, match="Sales transaction generation requires Sales master data CustomerMaster"):
         transaction.generate_transaction_data()
 
 

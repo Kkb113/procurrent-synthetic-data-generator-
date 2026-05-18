@@ -370,6 +370,12 @@ FOOD_MANUFACTURING_PROFILE = IndustryProfile(
         ),
         payment_terms=("Net 15", "Net 30", "Net 45", "Net 60"),
         regions=("West", "South", "North", "East", "Central"),
+        carrier_names=(
+            "FreshRoute Logistics",
+            "SnackLine Freight",
+            "Cold Chain Express",
+            "Regional Food Transport",
+        ),
         price_margin_pct_range=(20.0, 45.0),
         minimum_order_quantity_range=(1.0, 24.0),
         fallback_price_range=(20.0, 150.0),

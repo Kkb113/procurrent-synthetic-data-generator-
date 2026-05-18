@@ -215,3 +215,7 @@ Sales Phase 2 added Sales v1 metadata and Mermaid ERD support. The metadata fixt
 ## Sales Phase 3 Note
 
 Sales Phase 3 implemented deterministic Sales master/reference generation for `CustomerMaster`, `CustomerLocation`, `SalesChannel`, `SalesPriceListHeader`, and `SalesPriceListLine`. Price list lines require upstream Production `ProductMaster`; costs are used when available to price above unit cost. Customer, channel, payment, currency, and pricing hints are profile-driven. Sales transaction generation and full Sales pipeline execution remain disabled until later Sales phases.
+
+## Sales Phase 4 Note
+
+Sales Phase 4 implemented deterministic order, reservation, pick, and shipment generation for `SalesOrderHdr`, `SalesOrderLine`, `SalesInventoryReservation`, `SalesPickListHeader`, `SalesPickListLine`, `SalesShipmentHeader`, and `SalesShipmentLine`. The generator prevents overselling with internal FinishedGoodsInventory and FinishedGoodsReceipt allocation trackers, but it does not mutate or recalculate FinishedGoodsInventory yet. Invoice, payment, returns, shipment traceability, and full generic Sales execution remain disabled until later Sales phases.

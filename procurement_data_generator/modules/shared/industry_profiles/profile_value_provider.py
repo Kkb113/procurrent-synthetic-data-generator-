@@ -77,6 +77,13 @@ DEFAULT_SALES_PAYMENT_TERMS: tuple[str, ...] = ("Net 15", "Net 30", "Net 45", "N
 
 DEFAULT_SALES_REGIONS: tuple[str, ...] = ("North", "South", "East", "West", "Central")
 
+DEFAULT_SALES_CARRIER_NAMES: tuple[str, ...] = (
+    "Regional Logistics",
+    "Metro Freight",
+    "Reliable Transport",
+    "Express Distribution",
+)
+
 
 class IndustryProfileValueProvider:
     """Expose profile values with stable defaults for existing generators."""
@@ -168,6 +175,10 @@ class IndustryProfileValueProvider:
     def sales_regions(self) -> tuple[str, ...]:
         values = tuple(str(value).strip() for value in self.profile.sales.regions if str(value).strip())
         return values or DEFAULT_SALES_REGIONS
+
+    def sales_carrier_names(self) -> tuple[str, ...]:
+        values = tuple(str(value).strip() for value in self.profile.sales.carrier_names if str(value).strip())
+        return values or DEFAULT_SALES_CARRIER_NAMES
 
     def sales_margin_pct_range(self) -> tuple[float, float]:
         return _normalize_percentage_range(self.profile.sales.price_margin_pct_range, (0.20, 0.45))
