@@ -246,4 +246,8 @@ Sales Phase 10 enabled generic backend execution for `procurement,production,sal
 
 ## Sales Phase 11 Note
 
-Sales Phase 11 activated Sales in the browser/API generic workflow. The frontend now defaults to `procurement,production,sales`, keeps Sales selectable, auto-selects Procurement and Production dependencies, passes `profile_id` through the API, and reports Sales table count, validation status, and adjusted `FinishedGoodsInventory` availability. Run without SQL first; final SQL validation remains Sales Phase 12.
+Sales Phase 11 activated Sales in the browser/API generic workflow. The frontend now defaults to `procurement,production,sales`, keeps Sales selectable, auto-selects Procurement and Production dependencies, passes `profile_id` through the API, and reports Sales table count, validation status, and adjusted `FinishedGoodsInventory` availability. Run without SQL first, then use the Phase 12 SQL validation pack after SQL load.
+
+## Sales Phase 12 Note
+
+Sales Phase 12 added the final SQL validation pack and E2E validation guide for the full `procurement,production,sales` flow. The SQL pack validates Procurement lifecycle, Production consumption and genealogy, Sales lifecycle, invoice/payment, returns, shipment traceability, post-Sales `FinishedGoodsInventory`, and food-profile EV leakage. After SQL load, run `sql/mes_procurement_production_sales_validation.sql`; the expected final readiness status is `SALES_E2E_VALIDATED`. `SalesCreditMemo` remains excluded from Sales v1.

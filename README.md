@@ -24,7 +24,9 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 Open `http://127.0.0.1:8000` and run the default team flow:
 Procurement + Production + Sales. Sales depends on Production finished goods and
 Procurement/Production lineage, so the UI auto-selects those dependencies.
-Run without SQL first, then test SQL load separately.
+Run without SQL first, then test SQL load separately. After loading the full
+chain to SQL Server, run `sql/mes_procurement_production_sales_validation.sql`;
+the final readiness status should be `SALES_E2E_VALIDATED`.
 
 Run Procurement only:
 
@@ -111,4 +113,5 @@ Frontend acceptance checks:
 - Production only without fallback: expect a clear dependency error.
 - Production only with demo fallback: enable demo fallback and expect a fallback warning.
 - Food manufacturing: use `profile_id=food_manufacturing` for packaged food/snack scenarios.
-- SQL validation for the full Sales chain remains a later phase.
+- SQL validation for the full Sales chain: run `sql/mes_procurement_production_sales_validation.sql` after SQL load.
+- Sales v1 excludes `SalesCreditMemo`.

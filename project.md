@@ -273,6 +273,18 @@ Production SQL validation pack:
 docs/production_v1_sql_checks.sql
 ```
 
+Full Procurement -> Production -> Sales SQL validation pack:
+
+```text
+sql/mes_procurement_production_sales_validation.sql
+```
+
+Expected final readiness status after SQL load:
+
+```text
+SALES_E2E_VALIDATED
+```
+
 The Production SQL pack validates:
 
 ```text
@@ -349,7 +361,7 @@ The default team flow is `procurement,production,sales`. Production requires
 Procurement output, and Sales requires Production finished goods plus
 Procurement/Production lineage. The browser auto-selects dependencies and keeps
 Sales active. Use `food_manufacturing` for food test runs. Run without SQL first;
-full Sales SQL validation remains Phase 12.
+then test SQL load and run `sql/mes_procurement_production_sales_validation.sql`.
 
 ## 9. Current Regression Commands
 
@@ -402,4 +414,4 @@ Python reconciliation and data quality reports
 manager-facing SQL validation packs
 ```
 
-Phase 11 activates Sales in the frontend/API. The UI can trigger `/api/pipeline/run-generic` for `procurement`, `procurement,production`, and `procurement,production,sales`, shows Sales and Production dependency behavior, and reports module table counts plus Sales validation status. The legacy upload-based Procurement route remains backward compatible. Known non-blocking warnings remain limited to existing pandas deprecation/future warnings.
+Phase 12 adds the final SQL validation pack and E2E checklist for `procurement,production,sales`. The pack validates Procurement lifecycle, Production lifecycle, Sales lifecycle, invoice/payment, returns, shipment traceability, post-Sales `FinishedGoodsInventory`, and food-profile EV leakage. `SalesCreditMemo` remains excluded from v1, and the expected SQL readiness status is `SALES_E2E_VALIDATED`. Known non-blocking warnings remain limited to existing pandas deprecation/future warnings.

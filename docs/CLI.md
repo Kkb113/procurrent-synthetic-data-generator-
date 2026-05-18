@@ -29,5 +29,10 @@ The browser UI defaults to the full `procurement,production,sales` team flow at
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Run without SQL first, then test SQL load separately. Final SQL validation for
-Sales remains a later phase.
+Run without SQL first, then test SQL load separately. After SQL load, run:
+
+```text
+sql/mes_procurement_production_sales_validation.sql
+```
+
+Expected final readiness status: `SALES_E2E_VALIDATED`.
