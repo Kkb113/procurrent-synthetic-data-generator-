@@ -227,3 +227,7 @@ Sales Phase 5 implemented invoice and customer payment generation for `SalesInvo
 ## Sales Phase 6 Note
 
 Sales Phase 6 implemented deterministic low-volume customer returns for `SalesReturnHeader` and `SalesReturnLine`. Returns are generated from shipped Sales shipment lines, include food-profile return reasons, and split returned quantity into restocked and scrapped quantities for later inventory rollup. `SalesCreditMemo`, shipment traceability, FinishedGoodsInventory updates, and full generic Sales execution remain disabled until later Sales phases.
+
+## Sales Phase 7 Note
+
+Sales Phase 7 implemented deterministic shipment traceability for `SalesShipmentTraceability`. It links Sales shipment lines to `FinishedGoodsReceipt`, `ProductionBatch`, `ProductionGenealogy`, `MaterialIssueLine`, `InventoryReceiptDetail`, `SupplierMaster`, and `ComponentMaster`, and calculates `AllocatedConsumedQuantity` as `ProductionGenealogy.ConsumedQuantity * SalesShipmentLine.ShippedQuantity / FinishedGoodsReceipt.GoodQuantity`. FinishedGoodsInventory updates and full generic Sales execution remain disabled until later Sales phases.

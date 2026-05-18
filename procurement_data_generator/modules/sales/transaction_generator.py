@@ -37,6 +37,10 @@ SALES_PHASE6_TRANSACTION_TABLES = (
     "SalesReturnLine",
 )
 
+SALES_PHASE7_TRANSACTION_TABLES = (
+    "SalesShipmentTraceability",
+)
+
 SALES_PHASE4_MASTER_TABLES = (
     "CustomerMaster",
     "CustomerLocation",
@@ -50,6 +54,17 @@ SALES_PHASE4_UPSTREAM_TABLES = (
     "FinishedGoodsInventory",
     "FinishedGoodsReceipt",
     "ProductionBatch",
+)
+
+SALES_PHASE7_UPSTREAM_TABLES = (
+    "ProductMaster",
+    "FinishedGoodsReceipt",
+    "ProductionBatch",
+    "ProductionGenealogy",
+    "MaterialIssueLine",
+    "InventoryReceiptDetail",
+    "SupplierMaster",
+    "ComponentMaster",
 )
 
 
@@ -185,6 +200,186 @@ class SalesTransactionGenerator:
         """Compatibility alias for Phase 6 return generation."""
 
         return self.generate_returns_data(*args, **kwargs)
+
+    def generate_shipment_traceability_data(
+        self,
+        sales_transaction_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        upstream_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        **kwargs: Any,
+    ) -> dict[str, pd.DataFrame]:
+        """Generate Sales Phase 7 shipment traceability from shipment and lineage inputs."""
+
+        transaction_source = _first_not_none(
+            sales_transaction_data,
+            kwargs.get("transaction_data"),
+            kwargs.get("phase4_data"),
+        )
+        upstream_source = _first_not_none(upstream_data, kwargs.get("upstream_dataframes"), self.upstream_data)
+        transactions = self._load_tables(
+            transaction_source,
+            SALES_PHASE4_TRANSACTION_TABLES + SALES_PHASE5_TRANSACTION_TABLES + SALES_PHASE6_TRANSACTION_TABLES,
+        )
+        upstream = self._load_tables(upstream_source, SALES_PHASE7_UPSTREAM_TABLES)
+        self._validate_phase7_inputs(transactions, upstream)
+        rows = self._generate_shipment_traceability_rows(transactions, upstream)
+
+        return {
+            "SalesShipmentTraceability": pd.DataFrame(rows, columns=_SALES_SHIPMENT_TRACEABILITY_COLUMNS),
+        }
+
+    def generate_sales_shipment_traceability(self, *args: Any, **kwargs: Any) -> dict[str, pd.DataFrame]:
+        """Compatibility alias for Phase 7 shipment traceability generation."""
+
+        return self.generate_shipment_traceability_data(*args, **kwargs)
+
+    def _generate_shipment_traceability_rows(
+        self,
+        transactions: Mapping[str, pd.DataFrame],
+        upstream: Mapping[str, pd.DataFrame],
+    ) -> list[dict[str, Any]]:
+        shipment_lines = transactions["SalesShipmentLine"].sort_values("ShipmentLineID")
+        receipt_by_id = _row_map(upstream["FinishedGoodsReceipt"], "FinishedGoodsReceiptID")
+        material_issue_by_id = _row_map(upstream["MaterialIssueLine"], "MaterialIssueLineID")
+        receipt_detail_by_id = _row_map(upstream["InventoryReceiptDetail"], "InventoryReceiptDetailID")
+        batch_ids = {_id_value(value) for value in upstream["ProductionBatch"]["ProductionBatchID"]}
+        supplier_ids = {_id_value(value) for value in upstream["SupplierMaster"]["SupplierID"]}
+        component_ids = {_id_value(value) for value in upstream["ComponentMaster"]["ComponentID"]}
+        product_ids = {_id_value(value) for value in upstream["ProductMaster"]["ProductID"]}
+        rows: list[dict[str, Any]] = []
+
+        for shipment_line in shipment_lines.itertuples(index=False):
+            receipt_id = _id_value(shipment_line.FinishedGoodsReceiptID)
+            receipt = receipt_by_id.get(receipt_id)
+            if receipt is None:
+                raise ValueError(
+                    f"Sales shipment traceability requires FinishedGoodsReceiptID {receipt_id} "
+                    f"for ShipmentLineID {shipment_line.ShipmentLineID}."
+                )
+
+            product_id = _id_value(_coalesce_values(shipment_line.ProductID, getattr(receipt, "ProductID", None)))
+            receipt_product_id = _id_value(receipt.ProductID)
+            if product_id != receipt_product_id:
+                raise ValueError(
+                    f"Sales shipment traceability ProductID mismatch for ShipmentLineID {shipment_line.ShipmentLineID}."
+                )
+            if product_id not in product_ids:
+                raise ValueError(f"Sales shipment traceability requires ProductMaster.ProductID {product_id}.")
+
+            production_batch_id = _id_value(_coalesce_values(shipment_line.ProductionBatchID, getattr(receipt, "ProductionBatchID", None)))
+            receipt_batch_id = _id_value(receipt.ProductionBatchID)
+            if production_batch_id != receipt_batch_id:
+                raise ValueError(
+                    f"Sales shipment traceability ProductionBatchID mismatch for ShipmentLineID {shipment_line.ShipmentLineID}."
+                )
+            if production_batch_id not in batch_ids:
+                raise ValueError(f"Sales shipment traceability requires ProductionBatchID {production_batch_id}.")
+
+            good_quantity = float(receipt.GoodQuantity)
+            if good_quantity <= 0:
+                raise ValueError(
+                    f"Sales shipment traceability requires FinishedGoodsReceipt.GoodQuantity > 0 for receipt {receipt_id}."
+                )
+            shipped_quantity = round(float(shipment_line.ShippedQuantity), 2)
+            matching_genealogy = self._matching_genealogy_rows(
+                upstream["ProductionGenealogy"],
+                receipt_id=receipt_id,
+                production_batch_id=production_batch_id,
+                product_id=product_id,
+            )
+
+            for genealogy in matching_genealogy.itertuples(index=False):
+                production_genealogy_id = _id_value(genealogy.ProductionGenealogyID)
+                material_issue_line_id = _id_value(genealogy.MaterialIssueLineID)
+                material_issue = material_issue_by_id.get(material_issue_line_id)
+                if material_issue is None:
+                    raise ValueError(
+                        "Sales shipment traceability requires MaterialIssueLine "
+                        f"{material_issue_line_id} for ProductionGenealogyID {production_genealogy_id}."
+                    )
+
+                inventory_receipt_detail_id = _id_value(
+                    _coalesce_values(
+                        getattr(genealogy, "InventoryReceiptDetailID", None),
+                        getattr(material_issue, "InventoryReceiptDetailID", None),
+                    )
+                )
+                receipt_detail = receipt_detail_by_id.get(inventory_receipt_detail_id)
+                if receipt_detail is None:
+                    raise ValueError(
+                        "Sales shipment traceability requires InventoryReceiptDetail "
+                        f"{inventory_receipt_detail_id} for ProductionGenealogyID {production_genealogy_id}."
+                    )
+
+                supplier_id = _id_value(
+                    _coalesce_values(getattr(genealogy, "SupplierID", None), getattr(receipt_detail, "SupplierID", None))
+                )
+                if supplier_id not in supplier_ids:
+                    raise ValueError(
+                        f"Sales shipment traceability requires SupplierMaster.SupplierID {supplier_id}."
+                    )
+                component_id = _id_value(
+                    _coalesce_values(
+                        getattr(genealogy, "ComponentID", None),
+                        getattr(receipt_detail, "ComponentID", None),
+                        getattr(material_issue, "ComponentID", None),
+                    )
+                )
+                if component_id not in component_ids:
+                    raise ValueError(
+                        f"Sales shipment traceability requires ComponentMaster.ComponentID {component_id}."
+                    )
+
+                consumed_quantity = float(genealogy.ConsumedQuantity)
+                allocated_consumed_quantity = round(consumed_quantity * (shipped_quantity / good_quantity), 2)
+                if allocated_consumed_quantity < 0:
+                    raise ValueError(
+                        f"Sales shipment traceability allocated quantity is negative for ShipmentLineID {shipment_line.ShipmentLineID}."
+                    )
+                rows.append(
+                    {
+                        "SalesTraceabilityID": len(rows) + 1,
+                        "ShipmentLineID": shipment_line.ShipmentLineID,
+                        "FinishedGoodsReceiptID": receipt_id,
+                        "ProductionBatchID": production_batch_id,
+                        "ProductionGenealogyID": production_genealogy_id,
+                        "MaterialIssueLineID": material_issue_line_id,
+                        "InventoryReceiptDetailID": inventory_receipt_detail_id,
+                        "SupplierID": supplier_id,
+                        "ComponentID": component_id,
+                        "ProductID": product_id,
+                        "ShippedQuantity": shipped_quantity,
+                        "AllocatedConsumedQuantity": allocated_consumed_quantity,
+                        "TraceabilityStatus": "Traced",
+                    }
+                )
+
+        if shipment_lines.empty:
+            raise ValueError("Sales shipment traceability generation requires SalesShipmentLine.")
+        if not rows:
+            raise ValueError("Sales shipment traceability could not resolve any complete lineage rows.")
+        return rows
+
+    def _matching_genealogy_rows(
+        self,
+        genealogy: pd.DataFrame,
+        receipt_id: Any,
+        production_batch_id: Any,
+        product_id: Any,
+    ) -> pd.DataFrame:
+        matches = genealogy[
+            (genealogy["FinishedGoodsReceiptID"].map(_id_value) == receipt_id)
+            & (genealogy["ProductionBatchID"].map(_id_value) == production_batch_id)
+        ].copy()
+        if "ProductID" in matches.columns:
+            product_values = matches["ProductID"].map(_present_value)
+            if product_values.notna().any():
+                matches = matches[matches["ProductID"].map(_id_value) == product_id].copy()
+        if matches.empty:
+            raise ValueError(
+                "Sales shipment traceability requires ProductionGenealogy rows for "
+                f"FinishedGoodsReceiptID {receipt_id} and ProductionBatchID {production_batch_id}."
+            )
+        return matches.sort_values("ProductionGenealogyID")
 
     def _generate_return_rows(
         self,
@@ -698,6 +893,16 @@ class SalesTransactionGenerator:
             if missing:
                 raise ValueError(f"Sales transaction generation requires SalesInvoiceLine.{missing[0]}.")
 
+    def _validate_phase7_inputs(
+        self,
+        transactions: Mapping[str, pd.DataFrame],
+        upstream: Mapping[str, pd.DataFrame],
+    ) -> None:
+        for table_name, columns in _REQUIRED_PHASE7_TRANSACTION_COLUMNS.items():
+            _require_table_columns(transactions, table_name, columns, "Sales Phase 4 transaction data")
+        for table_name, columns in _REQUIRED_PHASE7_UPSTREAM_COLUMNS.items():
+            _require_table_columns(upstream, table_name, columns, "upstream Production/Procurement lineage data")
+
     def _load_tables(
         self,
         tables: Mapping[str, pd.DataFrame] | str | Path | None,
@@ -747,7 +952,7 @@ def _first_not_none(*values: Any) -> Any:
 
 
 def _row_map(dataframe: pd.DataFrame, key_column: str) -> dict[Any, Any]:
-    return {getattr(row, key_column): row for row in dataframe.itertuples(index=False)}
+    return {_id_value(getattr(row, key_column)): row for row in dataframe.itertuples(index=False)}
 
 
 def _rows_by_key(dataframe: pd.DataFrame, key_column: str) -> dict[Any, list[Any]]:
@@ -755,6 +960,35 @@ def _rows_by_key(dataframe: pd.DataFrame, key_column: str) -> dict[Any, list[Any
     for row in dataframe.itertuples(index=False):
         output.setdefault(getattr(row, key_column), []).append(row)
     return output
+
+
+def _coalesce_values(*values: Any) -> Any:
+    for value in values:
+        present = _present_value(value)
+        if present is not None:
+            return present
+    return None
+
+
+def _present_value(value: Any) -> Any | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        return value
+    return value
+
+
+def _id_value(value: Any) -> Any:
+    present = _present_value(value)
+    if present is None:
+        return None
+    try:
+        return int(present)
+    except (TypeError, ValueError):
+        return present
 
 
 def _payment_term_days(payment_terms: str) -> int:
@@ -1048,6 +1282,22 @@ _SALES_RETURN_LINE_COLUMNS = (
     "ReturnLineStatus",
 )
 
+_SALES_SHIPMENT_TRACEABILITY_COLUMNS = (
+    "SalesTraceabilityID",
+    "ShipmentLineID",
+    "FinishedGoodsReceiptID",
+    "ProductionBatchID",
+    "ProductionGenealogyID",
+    "MaterialIssueLineID",
+    "InventoryReceiptDetailID",
+    "SupplierID",
+    "ComponentID",
+    "ProductID",
+    "ShippedQuantity",
+    "AllocatedConsumedQuantity",
+    "TraceabilityStatus",
+)
+
 _REQUIRED_MASTER_COLUMNS = {
     "CustomerMaster": ("CustomerID", "PaymentTerms", "CustomerStatus"),
     "CustomerLocation": ("CustomerLocationID", "CustomerID", "LocationType", "IsDefault"),
@@ -1126,4 +1376,36 @@ _REQUIRED_PHASE6_TRANSACTION_COLUMNS = {
 
 _OPTIONAL_PHASE6_INVOICE_COLUMNS = {
     "SalesInvoiceLine": ("ShipmentLineID", "UnitPrice", "NetLineAmount", "InvoiceQuantity"),
+}
+
+_REQUIRED_PHASE7_TRANSACTION_COLUMNS = {
+    "SalesShipmentLine": (
+        "ShipmentLineID",
+        "FinishedGoodsReceiptID",
+        "ProductionBatchID",
+        "ProductID",
+        "ShippedQuantity",
+    ),
+}
+
+_REQUIRED_PHASE7_UPSTREAM_COLUMNS = {
+    "ProductMaster": ("ProductID",),
+    "FinishedGoodsReceipt": (
+        "FinishedGoodsReceiptID",
+        "ProductionBatchID",
+        "ProductID",
+        "GoodQuantity",
+    ),
+    "ProductionBatch": ("ProductionBatchID",),
+    "ProductionGenealogy": (
+        "ProductionGenealogyID",
+        "FinishedGoodsReceiptID",
+        "ProductionBatchID",
+        "MaterialIssueLineID",
+        "ConsumedQuantity",
+    ),
+    "MaterialIssueLine": ("MaterialIssueLineID", "ComponentID"),
+    "InventoryReceiptDetail": ("InventoryReceiptDetailID", "SupplierID", "ComponentID"),
+    "SupplierMaster": ("SupplierID",),
+    "ComponentMaster": ("ComponentID",),
 }
