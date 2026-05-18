@@ -349,6 +349,11 @@ class SyntheticDataPipelineRunner:
 
     def _validate_supported_execution_order(self, resolution: ModuleResolution) -> None:
         module_ids = resolution.module_ids
+        if "sales" in module_ids:
+            raise ModuleExecutionNotSupportedError(
+                "Sales module is registered but execution is not implemented yet. "
+                "Sales execution starts in a later Sales phase."
+            )
         if module_ids in {("procurement",), ("production",), ("procurement", "production")}:
             return
         if "production" in module_ids and "procurement" in module_ids:

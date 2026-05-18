@@ -9,6 +9,7 @@ from procurement_data_generator.core.contracts.sql_load_report import SQLLoadRep
 from procurement_data_generator.core.config import GenerationConfig
 from procurement_data_generator.core.pipeline.generic_runner import (
     ModuleDependencyError,
+    ModuleExecutionNotSupportedError,
     ModulePipelineInput,
     PipelineRunSpec,
     SyntheticDataPipelineRunner,
@@ -124,6 +125,26 @@ def test_generic_runner_uses_production_plugin_upstream_requirements() -> None:
     assert requirements[0].module_id == "procurement"
     assert "InventoryReceiptDetail" in requirements[0].table_names
     assert "InventoryTransaction" in requirements[0].table_names
+
+
+def test_generic_runner_rejects_sales_in_multimodule_flow(tmp_path: Path) -> None:
+    spec = _multi_module_spec(tmp_path)
+    spec = PipelineRunSpec(
+        module_ids=("procurement", "production", "sales"),
+        metadata_path=spec.metadata_path,
+        erd_path=spec.erd_path,
+        scenario_path=spec.scenario_path,
+        plan_path=spec.plan_path,
+        output_folder=spec.output_folder,
+        seed=spec.seed,
+        load_sql=spec.load_sql,
+        build_prompt=spec.build_prompt,
+        model_version=spec.model_version,
+        module_inputs=spec.module_inputs,
+    )
+
+    with pytest.raises(ModuleExecutionNotSupportedError, match="Sales module is registered but execution is not implemented yet"):
+        SyntheticDataPipelineRunner().run(spec)
 
 
 def _multi_module_spec(tmp_path: Path, load_sql: bool = False) -> PipelineRunSpec:

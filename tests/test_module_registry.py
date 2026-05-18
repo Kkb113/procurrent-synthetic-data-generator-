@@ -10,6 +10,7 @@ from procurement_data_generator.core.modules.registry import (
 )
 from procurement_data_generator.modules.procurement.plugin import ProcurementModulePlugin
 from procurement_data_generator.modules.production.plugin import ProductionModulePlugin
+from procurement_data_generator.modules.sales.plugin import SalesModulePlugin
 
 
 class DummyPlugin:
@@ -35,6 +36,15 @@ def test_registry_registers_and_retrieves_production_plugin() -> None:
     registry.register(plugin)
 
     assert registry.get("production") is plugin
+
+
+def test_registry_registers_and_retrieves_sales_plugin() -> None:
+    registry = ModuleRegistry()
+    plugin = SalesModulePlugin()
+
+    registry.register(plugin)
+
+    assert registry.get("sales") is plugin
 
 
 def test_registry_rejects_duplicate_module_id() -> None:
@@ -66,7 +76,7 @@ def test_registry_unknown_module_raises_clear_error() -> None:
 def test_default_registry_includes_builtin_modules() -> None:
     registry = create_default_module_registry()
 
-    assert registry.list_modules() == ("procurement", "production")
+    assert registry.list_modules() == ("procurement", "production", "sales")
     assert registry.get("procurement").module_version == "v2"
     assert registry.get("production").module_version == "v1"
-
+    assert registry.get("sales").module_version == "v1"

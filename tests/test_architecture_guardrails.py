@@ -19,6 +19,8 @@ def test_generic_runner_does_not_import_concrete_generators() -> None:
         "ProcurementTransactionGenerator",
         "ProductionMasterDataGenerator",
         "ProductionTransactionGenerator",
+        "SalesMasterDataGenerator",
+        "SalesTransactionGenerator",
     ]
     for token in forbidden:
         assert token not in source
@@ -31,8 +33,8 @@ def test_core_prompt_builder_has_generic_mes_system_message() -> None:
     assert "procurement data planning assistant" not in source.lower()
 
 
-def test_default_registry_contains_only_active_modules() -> None:
-    assert create_default_module_registry().list_modules() == ("procurement", "production")
+def test_default_registry_contains_registered_platform_modules() -> None:
+    assert create_default_module_registry().list_modules() == ("procurement", "production", "sales")
 
 
 def test_production_only_generic_run_without_fallback_fails_clearly(tmp_path: Path) -> None:

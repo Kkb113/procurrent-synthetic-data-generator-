@@ -46,7 +46,7 @@ class ModuleRegistry:
 
 
 def create_default_module_registry() -> ModuleRegistry:
-    """Create a registry with the built-in Procurement and Production modules."""
+    """Create a registry with the built-in MES module plugins."""
 
     registry = ModuleRegistry()
     register_builtin_modules(registry)
@@ -60,11 +60,13 @@ def register_builtin_modules(registry: ModuleRegistry) -> ModuleRegistry:
     without pulling concrete modules into core contracts.
     """
 
-    from procurement_data_generator.modules.procurement.plugin import ProcurementModulePlugin
     from procurement_data_generator.modules.production.plugin import ProductionModulePlugin
+    from procurement_data_generator.modules.procurement.plugin import ProcurementModulePlugin
+    from procurement_data_generator.modules.sales.plugin import SalesModulePlugin
 
     registry.register(ProcurementModulePlugin())
     registry.register(ProductionModulePlugin())
+    registry.register(SalesModulePlugin())
     return registry
 
 
@@ -73,4 +75,3 @@ def _normalize_module_id(module_id: str) -> str:
     if not normalized:
         raise ModuleRegistryError("Module plugin id must not be empty.")
     return normalized
-

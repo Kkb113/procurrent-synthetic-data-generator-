@@ -6,6 +6,7 @@ import pytest
 
 from procurement_data_generator.core.pipeline.generic_runner import (
     ModuleDependencyError,
+    ModuleExecutionNotSupportedError,
     PipelineConfigurationError,
     PipelineRunSpec,
     SyntheticDataPipelineRunner,
@@ -24,7 +25,7 @@ GENERIC_RUNNER = ROOT / "procurement_data_generator" / "core" / "pipeline" / "ge
 def test_generic_runner_constructs_with_default_registry() -> None:
     runner = SyntheticDataPipelineRunner()
 
-    assert runner.module_registry.list_modules() == ("procurement", "production")
+    assert runner.module_registry.list_modules() == ("procurement", "production", "sales")
 
 
 def test_generic_runner_resolves_procurement_plugin() -> None:
@@ -40,6 +41,14 @@ def test_generic_runner_resolves_production_plugin() -> None:
 
     assert resolution.module_ids == ("production",)
     assert resolution.plugins[0].module_id == "production"
+    assert resolution.plugins[0].module_version == "v1"
+
+
+def test_generic_runner_resolves_sales_plugin() -> None:
+    resolution = SyntheticDataPipelineRunner().resolve_modules(("sales",))
+
+    assert resolution.module_ids == ("sales",)
+    assert resolution.plugins[0].module_id == "sales"
     assert resolution.plugins[0].module_version == "v1"
 
 
@@ -83,6 +92,20 @@ def test_generic_runner_rejects_wrong_dependency_order(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ModuleDependencyError, match="before Production"):
+        SyntheticDataPipelineRunner().run(spec)
+
+
+def test_generic_runner_rejects_sales_execution_as_not_implemented(tmp_path: Path) -> None:
+    spec = PipelineRunSpec(
+        module_ids=("procurement", "production", "sales"),
+        metadata_path=str(METADATA),
+        erd_path=str(ERD),
+        scenario_path=str(SCENARIO),
+        plan_path=str(PLAN),
+        output_folder=str(tmp_path),
+    )
+
+    with pytest.raises(ModuleExecutionNotSupportedError, match="Sales module is registered but execution is not implemented yet"):
         SyntheticDataPipelineRunner().run(spec)
 
 
