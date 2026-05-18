@@ -4,13 +4,13 @@ import pandas as pd
 import pytest
 
 from procurement_data_generator.core.pipeline.generic_runner import (
-    ModuleExecutionNotSupportedError,
+    ModuleDependencyError,
     PipelineRunSpec,
     SyntheticDataPipelineRunner,
 )
 from procurement_data_generator.core.metadata.metadata_reader import read_metadata_schema
 from procurement_data_generator.modules.sales.master_generator import SalesMasterDataGenerator
-from procurement_data_generator.modules.sales.plugin import SALES_EXECUTION_NOT_IMPLEMENTED, SalesModulePlugin
+from procurement_data_generator.modules.sales.plugin import SalesModulePlugin
 from procurement_data_generator.modules.sales.transaction_generator import SalesTransactionGenerator
 
 
@@ -90,9 +90,12 @@ def test_sales_generator_factories_return_master_and_transaction_generators() ->
 
 
 @pytest.mark.unit
-def test_sales_plugin_run_pipeline_fails_clearly() -> None:
-    with pytest.raises(NotImplementedError, match="Sales module is registered but execution is not implemented yet"):
+def test_sales_plugin_run_pipeline_requires_upstream_chain(tmp_path) -> None:
+    with pytest.raises(ValueError, match="Sales pipeline execution requires output_folder"):
         SalesModulePlugin().run_pipeline()
+
+    with pytest.raises(ValueError, match="Sales requires upstream Procurement and Production data"):
+        SalesModulePlugin().run_pipeline(output_folder=str(tmp_path))
 
 
 @pytest.mark.unit
@@ -106,5 +109,5 @@ def test_generic_runner_rejects_sales_execution_clearly(tmp_path) -> None:
         output_folder=str(tmp_path),
     )
 
-    with pytest.raises(ModuleExecutionNotSupportedError, match=SALES_EXECUTION_NOT_IMPLEMENTED):
+    with pytest.raises(ModuleDependencyError, match="Sales requires upstream Procurement and Production data"):
         SyntheticDataPipelineRunner().run(spec)

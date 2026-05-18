@@ -748,8 +748,12 @@ class SalesTransactionGenerator:
                     "WarehouseID": allocation["warehouse_id"],
                     "ReservationDate": order_date,
                     "ReservedQuantity": allocation["reserved_quantity"],
-                    "ReleasedQuantity": 0.0,
-                    "ReservationStatus": "Consumed" if allocation["shipped_quantity"] == allocation["reserved_quantity"] else "Reserved",
+                    "ReleasedQuantity": round(allocation["reserved_quantity"] - allocation["shipped_quantity"], 2)
+                    if allocation["shipped_quantity"] < allocation["reserved_quantity"]
+                    else 0.0,
+                    "ReservationStatus": "Consumed"
+                    if allocation["shipped_quantity"] == allocation["reserved_quantity"]
+                    else "Released",
                 }
             )
 

@@ -239,3 +239,7 @@ Sales Phase 8 implemented post-Sales `FinishedGoodsInventory` recalculation. The
 ## Sales Phase 9 Note
 
 Sales Phase 9 implemented Sales generated-data validation rules. Validation covers master references, order/reservation/pick/shipment flow, invoice/payment reconciliation, returns, shipment traceability, and post-Sales `FinishedGoodsInventory` rollup. Sales full generic execution and frontend activation remain disabled until later phases.
+
+## Sales Phase 10 Note
+
+Sales Phase 10 enabled generic backend execution for `procurement,production,sales`. Sales now generates the 18 approved Sales v1 tables from Production finished goods and Procurement/Production lineage, runs Sales validation during module execution, and exports a Sales-adjusted `FinishedGoodsInventory` for the combined final output. Frontend/API activation remains Sales Phase 11.

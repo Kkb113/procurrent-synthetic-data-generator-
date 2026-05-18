@@ -7,6 +7,7 @@ without moving module business logic into core.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -22,6 +23,10 @@ from procurement_data_generator.core.sql.sql_loader import SQLServerLoader
 
 SQLLoaderFactory = Callable[[DatabaseConfig], SQLServerLoader]
 LLMClientFactory = Callable[[], LLMClientBase]
+SALES_REQUIRES_UPSTREAM_CHAIN = (
+    "Sales requires upstream Procurement and Production data. "
+    "Run modules=['procurement','production','sales']."
+)
 
 
 class PipelineConfigurationError(ValueError):
@@ -292,6 +297,38 @@ class SyntheticDataPipelineRunner:
                 errors.extend(production_result.errors)
                 if production_result.status not in {"passed", "passed_with_warnings"}:
                     break
+                production_run_folder = production_result.output_folders.get("run")
+                if production_run_folder:
+                    upstream_paths["production"] = Path(production_run_folder) / "final_data"
+                continue
+
+            if plugin.module_id == "sales":
+                sales_upstream_paths = self._resolve_sales_upstream_paths(plugin, upstream_paths)
+                sales_result = plugin.run_pipeline(
+                    output_folder=str(module_output_root),
+                    seed=spec.seed,
+                    upstream_data_paths={module_id: str(path) for module_id, path in sales_upstream_paths.items()},
+                    operating_scope=spec.operating_scope or self.operating_scope,
+                    generation_config=spec.generation_config or self.generation_config,
+                )
+                module_results["sales"] = ModulePipelineRunResult(
+                    module_id="sales",
+                    status=sales_result.status,
+                    output_folder=sales_result.output_folders.get("run"),
+                    tables_generated=sales_result.generated_table_count,
+                    total_rows_generated=sum(sales_result.row_counts_by_table.values()),
+                    data_quality_status=sales_result.validation_status,
+                    sql_load_status=sales_result.sql_load_status,
+                    report=sales_result,
+                )
+                warnings.extend(sales_result.warnings)
+                errors.extend(sales_result.errors)
+                if sales_result.status not in {"passed", "passed_with_warnings"}:
+                    break
+                sales_run_folder = sales_result.output_folders.get("run")
+                if sales_run_folder:
+                    upstream_paths["sales"] = Path(sales_run_folder) / "final_data"
+                self._write_combined_final_data(root_output, upstream_paths, sales_result)
                 continue
 
             raise ModuleExecutionNotSupportedError(
@@ -307,6 +344,25 @@ class SyntheticDataPipelineRunner:
             warnings=warnings,
             errors=errors,
         )
+
+    def _resolve_sales_upstream_paths(
+        self,
+        plugin: MESModulePlugin,
+        upstream_paths: dict[str, Path],
+    ) -> dict[str, Path]:
+        resolved: dict[str, Path] = {}
+        missing_modules: list[str] = []
+        for requirement in plugin.get_upstream_requirements():
+            upstream_path = upstream_paths.get(requirement.module_id)
+            if upstream_path is None:
+                if requirement.required:
+                    missing_modules.append(requirement.module_id)
+                continue
+            self._check_requirement_tables(plugin.module_id, requirement, upstream_path)
+            resolved[requirement.module_id] = upstream_path
+        if missing_modules:
+            raise ModuleDependencyError(SALES_REQUIRES_UPSTREAM_CHAIN)
+        return resolved
 
     def _resolve_upstream_path(
         self,
@@ -335,27 +391,59 @@ class SyntheticDataPipelineRunner:
         return None
 
     def _check_required_upstream_tables(self, plugin: MESModulePlugin, upstream_path: Path) -> None:
-        missing = []
         for requirement in plugin.get_upstream_requirements():
-            missing.extend(
-                table_name
-                for table_name in requirement.table_names
-                if not (upstream_path / f"{table_name}.csv").exists()
-            )
+            self._check_requirement_tables(plugin.module_id, requirement, upstream_path)
+
+    def _check_requirement_tables(
+        self,
+        module_id: str,
+        requirement,
+        upstream_path: Path,
+    ) -> None:
+        missing = [
+            table_name
+            for table_name in requirement.table_names
+            if not (upstream_path / f"{table_name}.csv").exists()
+        ]
         if missing:
             raise ModuleDependencyError(
-                f"Module '{plugin.module_id}' is missing required upstream tables: {', '.join(sorted(missing))}."
+                f"Module '{module_id}' is missing required upstream tables from {requirement.module_id}: "
+                f"{', '.join(sorted(missing))}."
             )
+
+    def _write_combined_final_data(
+        self,
+        root_output: Path,
+        upstream_paths: dict[str, Path],
+        sales_result,
+    ) -> None:
+        final_output = root_output / "final_data"
+        final_output.mkdir(parents=True, exist_ok=True)
+        for existing_csv in final_output.glob("*.csv"):
+            existing_csv.unlink()
+
+        for module_id in ("procurement", "production", "sales"):
+            module_final = upstream_paths.get(module_id)
+            if module_final is None:
+                continue
+            for csv_path in module_final.glob("*.csv"):
+                shutil.copy2(csv_path, final_output / csv_path.name)
+
+        adjusted_inventory_path = getattr(sales_result, "adjusted_finished_goods_inventory_path", None)
+        if adjusted_inventory_path:
+            shutil.copy2(Path(adjusted_inventory_path), final_output / "FinishedGoodsInventory.csv")
 
     def _validate_supported_execution_order(self, resolution: ModuleResolution) -> None:
         module_ids = resolution.module_ids
-        if "sales" in module_ids:
-            raise ModuleExecutionNotSupportedError(
-                "Sales module is registered but execution is not implemented yet. "
-                "Sales execution starts in a later Sales phase."
-            )
-        if module_ids in {("procurement",), ("production",), ("procurement", "production")}:
+        if module_ids in {
+            ("procurement",),
+            ("production",),
+            ("procurement", "production"),
+            ("procurement", "production", "sales"),
+        }:
             return
+        if "sales" in module_ids:
+            raise ModuleDependencyError(SALES_REQUIRES_UPSTREAM_CHAIN)
         if "production" in module_ids and "procurement" in module_ids:
             if module_ids.index("production") < module_ids.index("procurement"):
                 raise ModuleDependencyError("Production requires Procurement to run before Production.")

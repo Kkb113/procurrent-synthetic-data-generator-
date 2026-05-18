@@ -6,7 +6,6 @@ import pytest
 
 from procurement_data_generator.core.pipeline.generic_runner import (
     ModuleDependencyError,
-    ModuleExecutionNotSupportedError,
     PipelineConfigurationError,
     PipelineRunSpec,
     SyntheticDataPipelineRunner,
@@ -95,9 +94,9 @@ def test_generic_runner_rejects_wrong_dependency_order(tmp_path: Path) -> None:
         SyntheticDataPipelineRunner().run(spec)
 
 
-def test_generic_runner_rejects_sales_execution_as_not_implemented(tmp_path: Path) -> None:
+def test_generic_runner_rejects_sales_without_full_upstream_chain(tmp_path: Path) -> None:
     spec = PipelineRunSpec(
-        module_ids=("procurement", "production", "sales"),
+        module_ids=("sales",),
         metadata_path=str(METADATA),
         erd_path=str(ERD),
         scenario_path=str(SCENARIO),
@@ -105,7 +104,7 @@ def test_generic_runner_rejects_sales_execution_as_not_implemented(tmp_path: Pat
         output_folder=str(tmp_path),
     )
 
-    with pytest.raises(ModuleExecutionNotSupportedError, match="Sales module is registered but execution is not implemented yet"):
+    with pytest.raises(ModuleDependencyError, match="Sales requires upstream Procurement and Production data"):
         SyntheticDataPipelineRunner().run(spec)
 
 
