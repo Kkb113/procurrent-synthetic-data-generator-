@@ -10,15 +10,15 @@
   <header class="app-header">
     <div>
       <h1>MES Synthetic Data Generator</h1>
-      <p>Run validated MES synthetic data pipelines from metadata, ERD, scenario, and LLM planning.</p>
+      <p>Generate validated Procurement &rarr; Production &rarr; Sales synthetic MES data using metadata, ERD, business scenario, and optional LLM planning.</p>
     </div>
   </header>
 
   <main class="page">
     <section class="panel">
       <h2>Pipeline Inputs</h2>
-      <form id="pipeline-form" action="/api/pipeline/run-generic" method="post" enctype="multipart/form-data" data-endpoint="/api/pipeline/run-generic">
-        <input type="hidden" name="modules" id="modules-field" value="procurement">
+      <form id="pipeline-form" action="/api/pipeline/run-generic" method="post" enctype="multipart/form-data" data-endpoint="/api/pipeline/run-generic" autocomplete="off">
+        <input type="hidden" name="modules" id="modules-field" value="procurement,production,sales">
         <fieldset class="module-selector">
           <legend>Modules</legend>
           <label class="check module-check">
@@ -26,14 +26,14 @@
             Procurement
           </label>
           <label class="check module-check">
-            <input type="checkbox" name="module_production" value="production">
+            <input type="checkbox" name="module_production" value="production" checked>
             Production
           </label>
-          <label class="check module-check disabled">
-            <input type="checkbox" name="module_sales" value="sales" disabled>
-            Sales - Coming soon
+          <label class="check module-check">
+            <input type="checkbox" name="module_sales" value="sales" checked>
+            Sales
           </label>
-          <p id="module-helper" class="muted">Production consumes Procurement output. When Production is selected, Procurement should run first unless demo fallback is explicitly enabled.</p>
+          <p id="module-helper" class="muted">Default team flow: Procurement &rarr; Production &rarr; Sales.</p>
         </fieldset>
         <div class="grid">
           <label>
@@ -65,9 +65,9 @@
           <label>
             Profile ID
             <select name="profile_id">
-              <option value="ev_manufacturing" selected>ev_manufacturing - default EV demo profile</option>
+              <option value="food_manufacturing" selected>food_manufacturing - packaged food/snack flow</option>
+              <option value="ev_manufacturing">ev_manufacturing</option>
               <option value="generic_mes">generic_mes</option>
-              <option value="food_manufacturing">food_manufacturing</option>
             </select>
             <span class="hint">Choose food_manufacturing for packaged food or snack scenarios. This controls deterministic Python vocabulary after the LLM planning step.</span>
           </label>
@@ -84,9 +84,10 @@
         </details>
 
         <details class="model-help" open>
-          <summary>Production dependency behavior</summary>
-          <p>Production v1 is a Production Execution module within MES context. It consumes Procurement final_data and generates production orders, material issues, batches, operations, quality, finished goods, genealogy, and cost summary.</p>
-          <p>For an integrated run, select Procurement and Production. Production requires Procurement upstream data. Production-only runs require an upstream Procurement final_data folder or explicit demo fallback.</p>
+          <summary>Module dependency behavior</summary>
+          <p>Default team flow: Procurement &rarr; Production &rarr; Sales.</p>
+          <p>Production consumes Procurement output. Procurement will run first.</p>
+          <p>Sales requires Production finished goods and Procurement/Production lineage. Procurement and Production will run first.</p>
         </details>
 
         <details class="model-help">
@@ -127,9 +128,10 @@
 
         <div class="options">
           <label class="check">
-            <input type="checkbox" name="use_azure_openai">
+            <input type="checkbox" name="use_azure_openai" autocomplete="off">
             Generate plan using Azure OpenAI
           </label>
+          <span id="azure-openai-hint" class="hint options-hint">Leave unchecked for local deterministic runs. Check only when Azure OpenAI environment variables are configured.</span>
           <label class="check">
             <input type="checkbox" name="build_prompt" checked>
             Build prompt
@@ -182,6 +184,8 @@
         <div><span>Total Rows</span><strong id="result-rows">-</strong></div>
         <div><span>Data Quality</span><strong id="result-quality">-</strong></div>
         <div><span>SQL Load</span><strong id="result-sql">-</strong></div>
+        <div><span>Execution Order</span><strong id="result-execution-order">-</strong></div>
+        <div><span>Adjusted FinishedGoodsInventory</span><strong id="result-adjusted-fgi">-</strong></div>
       </div>
       <h3>Module Results</h3>
       <table id="module-table">
@@ -210,6 +214,6 @@
     </section>
   </main>
 
-  <script src="/static/js/app.js?v=phase10-generic-route"></script>
+  <script src="/static/js/app.js?v=phase11-azure-hint"></script>
 </body>
 </html>

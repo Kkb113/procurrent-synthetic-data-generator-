@@ -132,14 +132,14 @@ def test_sales_master_generation_requires_upstream_product_master() -> None:
         generator.generate_master_data(upstream_data={"ProductMaster": pd.DataFrame({"ProductName": ["Snack"]})})
 
 
-def test_sales_plugin_can_create_master_generator_but_full_execution_still_fails() -> None:
+def test_sales_plugin_can_create_master_generator_and_requires_upstream_for_execution(tmp_path) -> None:
     plugin = SalesModulePlugin()
     generator = plugin.create_master_generator(generation_config=GenerationConfig(seed=42, profile_id="food_manufacturing"))
 
     dataframes = generator.generate_master_data(upstream_data=_upstream_data())
     assert set(dataframes) == set(SALES_MASTER_TABLES)
-    with pytest.raises(NotImplementedError, match="Sales module is registered but execution is not implemented yet"):
-        plugin.run_pipeline()
+    with pytest.raises(ValueError, match="Sales requires upstream Procurement and Production data"):
+        plugin.run_pipeline(output_folder=str(tmp_path))
 
 
 def _food_generator() -> SalesMasterDataGenerator:

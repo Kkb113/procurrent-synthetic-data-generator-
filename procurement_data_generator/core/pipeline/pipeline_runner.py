@@ -159,7 +159,10 @@ class ProcurementPipelineRunner:
                     return self._fail(report, "prompt_building", "Prompt building failed.", run_folder)
                 generated_plan_path = self._run_llm_plan_generation(report, prompt_text, run_folder)
                 if self._last_stage_failed(report) or generated_plan_path is None:
-                    return self._fail(report, "llm_plan_generation", "Azure OpenAI plan generation failed.", run_folder)
+                    message = "Azure OpenAI plan generation failed."
+                    if report.stages and report.stages[-1].stage_name == "llm_plan_generation" and report.stages[-1].message:
+                        message = report.stages[-1].message
+                    return self._fail(report, "llm_plan_generation", message, run_folder)
                 active_plan_path = str(generated_plan_path)
             elif build_prompt:
                 self._run_prompt_stage(report, schema, relationships, scenario_path, run_folder, model_version)

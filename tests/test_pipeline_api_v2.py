@@ -115,7 +115,8 @@ def test_ui_contains_generic_mes_module_selector_and_procurement_v2_model() -> N
     assert "MES Synthetic Data Generator" in response.text
     assert "module_procurement" in response.text
     assert "module_production" in response.text
-    assert "Sales - Coming soon" in response.text
+    assert 'name="module_sales" value="sales" checked' in response.text
+    assert "Sales - Coming soon" not in response.text
     assert 'name="model_version"' in response.text
     assert '<option value="v2" selected>' in response.text
     assert 'option value="v1"' not in response.text

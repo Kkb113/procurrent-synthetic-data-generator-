@@ -1,12 +1,13 @@
 # Procurrent Synthetic Data Generator
 
-Synthetic MES data generator for internal Procurement and Production demos,
+Synthetic MES data generator for internal Procurement, Production, and Sales demos,
 validation, and SQL-load preparation.
 
 Current modules:
 
 - Procurement v2: 25-table supplier-to-inventory flow.
 - Production v1: 21-table production execution flow using Procurement upstream inventory and receipt lineage.
+- Sales v1: 18-table Order-to-Cash flow using Production finished goods and Procurement/Production lineage.
 
 The LLM is used for structured planning only. Python owns deterministic row
 generation, primary/foreign keys, formulas, reconciliation, validation, and
@@ -20,10 +21,10 @@ Run the browser UI:
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000`, choose Procurement or Procurement + Production,
-and run the generic pipeline. Production depends on Procurement output; a
-Production-only run requires an upstream `final_data` folder or explicit demo
-fallback.
+Open `http://127.0.0.1:8000` and run the default team flow:
+Procurement + Production + Sales. Sales depends on Production finished goods and
+Procurement/Production lineage, so the UI auto-selects those dependencies.
+Run without SQL first, then test SQL load separately.
 
 Run Procurement only:
 
@@ -35,6 +36,12 @@ Run Procurement followed by Production:
 
 ```powershell
 python scripts/run_pipeline.py --modules procurement,production --output-dir output/demo_mes --seed 42
+```
+
+Run the full backend chain:
+
+```powershell
+python scripts/run_pipeline.py --modules procurement,production,sales --output-dir output/demo_full_mes --seed 42 --profile-id food_manufacturing
 ```
 
 Run Production only with explicit demo fallback upstream data:
@@ -96,13 +103,12 @@ Use `docs/module_template/` as the starting point. A future module should define
 a role catalog, prompt sections, validation rules, generators, plugin adapter,
 upstream requirements, and tests before being added to the built-in registry.
 
-Sales is a future module concept only. It is not registered and has no backend
-generation logic in the current platform.
-
 Frontend acceptance checks:
 
 - Procurement only: select Procurement and run; the result should include 25 Procurement tables.
 - Procurement to Production: select Procurement and Production; the result should include 25 Procurement tables and 21 Production tables.
+- Procurement to Production to Sales: select all three modules; the result should include 25 Procurement tables, 21 Production tables, and 18 Sales tables.
 - Production only without fallback: expect a clear dependency error.
 - Production only with demo fallback: enable demo fallback and expect a fallback warning.
-- Food manufacturing: provide packaged food/snack scenario inputs through the scenario/plan flow; the UI does not force EV manufacturing.
+- Food manufacturing: use `profile_id=food_manufacturing` for packaged food/snack scenarios.
+- SQL validation for the full Sales chain remains a later phase.

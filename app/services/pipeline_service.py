@@ -48,6 +48,11 @@ DEFAULT_GENERIC_INPUTS = {
     ),
 }
 
+AZURE_OPENAI_PLAN_HINT = (
+    "For local deterministic runs, leave 'Generate plan using Azure OpenAI' unchecked. "
+    "To use live planning, configure AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT."
+)
+
 
 @dataclass(frozen=True)
 class PipelineWebRequest:
@@ -382,6 +387,11 @@ class PipelineService:
             raise UploadValidationError("if_table_exists must be replace, append, or fail.")
         if request.modules == ("production",) and not request.allow_demo_fallback and not request.upstream_data:
             raise UploadValidationError("Production requires Procurement upstream data. Select Procurement + Production or enable demo fallback.")
+        if "sales" in request.modules and request.modules != ("procurement", "production", "sales"):
+            raise UploadValidationError(
+                "Sales requires Production finished goods and Procurement/Production lineage. "
+                "Select Procurement + Production + Sales."
+            )
 
     def _new_run_id(self) -> str:
         return "web_run_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -422,7 +432,7 @@ class PipelineService:
             "data_quality_status": data_quality_stage.status if data_quality_stage else "not_run",
             "sql_load_status": sql_stage.status if sql_stage else "not_run",
             "warnings": report.warnings,
-            "errors": report.errors,
+            "errors": self._errors_with_hints(report.errors),
             "downloads": downloads,
         }
 
@@ -439,6 +449,10 @@ class PipelineService:
                     "output_folder": result.output_folder,
                 }
             }
+            summary["output_dir"] = result.output_folder
+            summary["table_counts"] = {"procurement": result.tables_generated}
+            summary["validation_summary"] = {"procurement": result.data_quality_status}
+            summary["adjusted_finished_goods_inventory"] = {"available": False, "path": None}
             summary["sql_load_status"] = result.sql_load_status
             return summary
         module_sql_statuses = [
@@ -449,9 +463,21 @@ class PipelineService:
         return {
             "run_id": web_run_id,
             "status": result.status,
+            "message": "Pipeline completed." if result.status in {"passed", "passed_with_warnings"} else "Pipeline failed.",
             "module_ids": list(result.module_ids),
             "output_folder": result.output_folder,
+            "output_dir": result.output_folder,
+            "tables_generated": sum(module_result.tables_generated for module_result in result.module_results.values()),
+            "total_rows_generated": sum(module_result.total_rows_generated for module_result in result.module_results.values()),
             "sql_load_status": self._combined_status(module_sql_statuses, empty="not_run"),
+            "table_counts": {
+                module_id: module_result.tables_generated
+                for module_id, module_result in result.module_results.items()
+            },
+            "validation_summary": {
+                module_id: module_result.data_quality_status
+                for module_id, module_result in result.module_results.items()
+            },
             "module_results": {
                 module_id: {
                     "status": module_result.status,
@@ -462,8 +488,18 @@ class PipelineService:
                 }
                 for module_id, module_result in result.module_results.items()
             },
+            "adjusted_finished_goods_inventory": self._adjusted_inventory_summary(result),
             "warnings": result.warnings,
-            "errors": result.errors,
+            "errors": self._errors_with_hints(result.errors),
+        }
+
+    def _adjusted_inventory_summary(self, result: GenericPipelineRunResult) -> dict:
+        sales_result = result.module_results.get("sales")
+        sales_report = sales_result.report if sales_result is not None else None
+        adjusted_path = getattr(sales_report, "adjusted_finished_goods_inventory_path", None)
+        return {
+            "available": bool(adjusted_path),
+            "path": adjusted_path,
         }
 
     def _combined_status(self, statuses: list[str], empty: str = "-") -> str:
@@ -478,3 +514,12 @@ class PipelineService:
         if any(status == "passed" for status in statuses):
             return "passed"
         return statuses[0]
+
+    def _errors_with_hints(self, errors: list[str]) -> list[str]:
+        enhanced: list[str] = []
+        for error in errors:
+            message = str(error)
+            if "Azure OpenAI plan generation failed" in message and AZURE_OPENAI_PLAN_HINT not in message:
+                message = f"{message} {AZURE_OPENAI_PLAN_HINT}"
+            enhanced.append(message)
+        return enhanced

@@ -332,20 +332,24 @@ missing required tables
 ## 8. FastAPI UI/API Status
 
 The FastAPI UI is a generic MES browser workflow for the registered modules.
-It calls `/api/pipeline/run-generic` for Procurement-only and Procurement to
-Production orchestration, while the legacy upload-based Procurement endpoint
-remains available for backward compatibility.
+It calls `/api/pipeline/run-generic` for Procurement-only, Procurement to
+Production, and Procurement to Production to Sales orchestration, while the
+legacy upload-based Procurement endpoint remains available for backward
+compatibility.
 
 Supported UI/API module flows:
 
 ```text
 procurement
 procurement,production
+procurement,production,sales
 ```
 
-Production requires Procurement upstream data unless demo fallback is explicitly
-enabled. Sales is shown only as a disabled future placeholder and is not
-registered as a backend module.
+The default team flow is `procurement,production,sales`. Production requires
+Procurement output, and Sales requires Production finished goods plus
+Procurement/Production lineage. The browser auto-selects dependencies and keeps
+Sales active. Use `food_manufacturing` for food test runs. Run without SQL first;
+full Sales SQL validation remains Phase 12.
 
 ## 9. Current Regression Commands
 
@@ -398,4 +402,4 @@ Python reconciliation and data quality reports
 manager-facing SQL validation packs
 ```
 
-Phase 10 upgrades the frontend from a Procurement-only page to a generic MES browser UI. The UI can trigger `/api/pipeline/run-generic` for `procurement` and `procurement,production`, shows Production dependency behavior, keeps demo fallback explicit, and presents Sales only as a disabled future placeholder. The legacy upload-based Procurement route remains backward compatible. Known non-blocking warnings remain limited to existing pandas deprecation/future warnings.
+Phase 11 activates Sales in the frontend/API. The UI can trigger `/api/pipeline/run-generic` for `procurement`, `procurement,production`, and `procurement,production,sales`, shows Sales and Production dependency behavior, and reports module table counts plus Sales validation status. The legacy upload-based Procurement route remains backward compatible. Known non-blocking warnings remain limited to existing pandas deprecation/future warnings.

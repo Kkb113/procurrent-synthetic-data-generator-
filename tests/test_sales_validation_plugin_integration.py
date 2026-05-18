@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 
 from procurement_data_generator.core.pipeline.generic_runner import (
-    ModuleExecutionNotSupportedError,
+    ModuleDependencyError,
     PipelineRunSpec,
     SyntheticDataPipelineRunner,
 )
 from procurement_data_generator.core.modules.registry import create_default_module_registry
-from procurement_data_generator.modules.sales.plugin import SALES_EXECUTION_NOT_IMPLEMENTED, SalesModulePlugin
+from procurement_data_generator.modules.sales.plugin import SalesModulePlugin
 from procurement_data_generator.modules.sales.validation_rules import SalesDataQualityEngine
 
 
@@ -30,7 +30,7 @@ def test_default_registry_exposes_sales_validation_capability() -> None:
     assert "sales_invoice_totals" in plugin.get_validation_rules()
 
 
-def test_sales_full_generic_runner_execution_remains_disabled(tmp_path) -> None:
+def test_sales_generic_runner_still_rejects_sales_without_upstream_chain(tmp_path) -> None:
     spec = PipelineRunSpec(
         module_ids=("sales",),
         metadata_path="input/production_v1_metadata.xlsx",
@@ -40,5 +40,5 @@ def test_sales_full_generic_runner_execution_remains_disabled(tmp_path) -> None:
         output_folder=str(tmp_path),
     )
 
-    with pytest.raises(ModuleExecutionNotSupportedError, match=SALES_EXECUTION_NOT_IMPLEMENTED):
+    with pytest.raises(ModuleDependencyError, match="Sales requires upstream Procurement and Production data"):
         SyntheticDataPipelineRunner().run(spec)

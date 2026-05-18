@@ -9,7 +9,10 @@ const modelVersionSelect = document.getElementById("model-version");
 const v2ModelHelp = document.getElementById("v2-model-help");
 const procurementCheckbox = form.elements["module_procurement"];
 const productionCheckbox = form.elements["module_production"];
+const salesCheckbox = form.elements["module_sales"];
 const fallbackCheckbox = form.elements["allow_demo_fallback"];
+const azureOpenAICheckbox = form.elements["use_azure_openai"];
+const azureOpenAIHint = document.getElementById("azure-openai-hint");
 const moduleHelper = document.getElementById("module-helper");
 const modulesField = document.getElementById("modules-field");
 
@@ -19,13 +22,33 @@ if (modelVersionSelect && v2ModelHelp) {
 }
 
 productionCheckbox.addEventListener("change", () => {
-  if (productionCheckbox.checked && !fallbackCheckbox.checked) {
+  if (salesCheckbox.checked && !productionCheckbox.checked) {
+    productionCheckbox.checked = true;
+  }
+  if (productionCheckbox.checked) {
     procurementCheckbox.checked = true;
   }
   updateModuleHelper();
 });
-procurementCheckbox.addEventListener("change", updateModuleHelper);
+salesCheckbox.addEventListener("change", () => {
+  if (salesCheckbox.checked) {
+    productionCheckbox.checked = true;
+    procurementCheckbox.checked = true;
+  }
+  updateModuleHelper();
+});
+procurementCheckbox.addEventListener("change", () => {
+  if ((productionCheckbox.checked || salesCheckbox.checked) && !procurementCheckbox.checked) {
+    procurementCheckbox.checked = true;
+  }
+  updateModuleHelper();
+});
 fallbackCheckbox.addEventListener("change", updateModuleHelper);
+if (azureOpenAICheckbox) {
+  azureOpenAICheckbox.checked = false;
+  azureOpenAICheckbox.addEventListener("change", updateAzureOpenAIHint);
+  updateAzureOpenAIHint();
+}
 updateModuleHelper();
 
 form.addEventListener("submit", async (event) => {
@@ -33,6 +56,13 @@ form.addEventListener("submit", async (event) => {
   const modules = selectedModules();
   if (!modules.length) {
     showError("Select at least one module.");
+    return;
+  }
+  if (modules.includes("sales") && modules.join(",") !== "procurement,production,sales") {
+    showError("Sales requires Production finished goods and Procurement/Production lineage. Procurement and Production will run first.");
+    productionCheckbox.checked = true;
+    procurementCheckbox.checked = true;
+    updateModuleHelper();
     return;
   }
   if (modules.includes("production") && !modules.includes("procurement") && !fallbackCheckbox.checked && !form.elements["upstream_data"].value.trim()) {
@@ -76,15 +106,25 @@ function selectedModules() {
   const modules = [];
   if (procurementCheckbox.checked) modules.push("procurement");
   if (productionCheckbox.checked) modules.push("production");
+  if (salesCheckbox.checked) modules.push("sales");
   return modules;
 }
 
 function updateModuleHelper() {
+  if (salesCheckbox.checked) {
+    productionCheckbox.checked = true;
+    procurementCheckbox.checked = true;
+  }
+  if (productionCheckbox.checked) {
+    procurementCheckbox.checked = true;
+  }
   const modules = selectedModules();
   if (modulesField) {
     modulesField.value = modules.join(",");
   }
-  if (modules.includes("production") && modules.includes("procurement")) {
+  if (modules.includes("sales")) {
+    moduleHelper.textContent = "Sales requires Production finished goods and Procurement/Production lineage. Procurement and Production will run first.";
+  } else if (modules.includes("production") && modules.includes("procurement")) {
     moduleHelper.textContent = "Production consumes Procurement output. Procurement will run first.";
   } else if (modules.includes("production") && fallbackCheckbox.checked) {
     moduleHelper.textContent = "Production will use explicit demo fallback upstream data.";
@@ -92,6 +132,15 @@ function updateModuleHelper() {
     moduleHelper.textContent = "Production requires Procurement upstream data. Select Procurement + Production or enable demo fallback.";
   } else {
     moduleHelper.textContent = "Procurement-only runs generate the 25-table Procurement v2 flow.";
+  }
+}
+
+function updateAzureOpenAIHint() {
+  if (!azureOpenAIHint || !azureOpenAICheckbox) return;
+  if (azureOpenAICheckbox.checked) {
+    azureOpenAIHint.textContent = "Azure OpenAI planning is enabled and requires AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT. Uncheck to use the bundled deterministic plan.";
+  } else {
+    azureOpenAIHint.textContent = "Leave unchecked for local deterministic runs. Check only when Azure OpenAI environment variables are configured.";
   }
 }
 
@@ -108,6 +157,8 @@ function renderResults(payload) {
   document.getElementById("result-rows").textContent = payload.total_rows_generated ?? "-";
   document.getElementById("result-quality").textContent = payload.data_quality_status || combinedModuleQuality(payload.module_results) || "-";
   document.getElementById("result-sql").textContent = payload.sql_load_status || "not_run";
+  document.getElementById("result-execution-order").textContent = (payload.module_ids || ["procurement"]).join(" -> ");
+  document.getElementById("result-adjusted-fgi").textContent = adjustedInventoryText(payload.adjusted_finished_goods_inventory);
   renderList("warnings-list", payload.warnings || []);
   renderList("errors-list", payload.errors || []);
   renderDownloads(payload.downloads || {});
@@ -191,6 +242,11 @@ function renderDownloads(downloads) {
     link.target = "_blank";
     container.appendChild(link);
   }
+}
+
+function adjustedInventoryText(adjustedInventory) {
+  if (!adjustedInventory || !adjustedInventory.available) return "not available";
+  return adjustedInventory.path ? `available: ${adjustedInventory.path}` : "available";
 }
 
 function totalModuleTables(moduleResults) {

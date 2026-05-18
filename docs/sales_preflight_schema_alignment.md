@@ -243,3 +243,7 @@ Sales Phase 9 implemented Sales generated-data validation rules. Validation cove
 ## Sales Phase 10 Note
 
 Sales Phase 10 enabled generic backend execution for `procurement,production,sales`. Sales now generates the 18 approved Sales v1 tables from Production finished goods and Procurement/Production lineage, runs Sales validation during module execution, and exports a Sales-adjusted `FinishedGoodsInventory` for the combined final output. Frontend/API activation remains Sales Phase 11.
+
+## Sales Phase 11 Note
+
+Sales Phase 11 activated Sales in the browser/API generic workflow. The frontend now defaults to `procurement,production,sales`, keeps Sales selectable, auto-selects Procurement and Production dependencies, passes `profile_id` through the API, and reports Sales table count, validation status, and adjusted `FinishedGoodsInventory` availability. Run without SQL first; final SQL validation remains Sales Phase 12.

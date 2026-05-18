@@ -127,6 +127,17 @@ textarea {
   width: auto;
 }
 
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.options-hint {
+  grid-column: 1 / -1;
+  margin-top: -8px;
+}
+
 .module-selector {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, max-content));
