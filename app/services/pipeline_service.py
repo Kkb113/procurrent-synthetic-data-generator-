@@ -39,6 +39,13 @@ DEFAULT_GENERIC_INPUTS = {
         plan_path="input/sample_generation_plan_production_v1_valid.json",
         model_version="production_v1",
     ),
+    "sales": ModulePipelineInput(
+        metadata_path="input/sales_v1_metadata.xlsx",
+        erd_path="input/sales_v1_erd.mmd",
+        scenario_path=None,
+        plan_path=None,
+        model_version="v1",
+    ),
 }
 
 
@@ -176,6 +183,7 @@ class PipelineService:
     async def _generic_module_inputs(self, request: GenericPipelineWebRequest, uploads: Path) -> dict[str, ModulePipelineInput]:
         procurement = DEFAULT_GENERIC_INPUTS["procurement"]
         production = DEFAULT_GENERIC_INPUTS["production"]
+        sales = DEFAULT_GENERIC_INPUTS["sales"]
 
         shared_metadata = await self._optional_upload(request.metadata_file, uploads / "combined_metadata.xlsx", {".xlsx"})
         metadata_by_module = self._split_combined_metadata_by_module(shared_metadata, uploads, request.modules) if shared_metadata else {}
@@ -197,24 +205,36 @@ class PipelineService:
             production_erd = erd_by_module.get("production")
         production_plan = await self._optional_upload(request.production_plan_file, uploads / "production_plan.json", {".json"}) or production.plan_path
         production_scenario = save_text_input(request.production_scenario_text, uploads / "production_scenario.txt", "production_scenario_text", required=False) if request.production_scenario_text and request.production_scenario_text.strip() else None
+        sales_metadata = metadata_by_module.get("sales") or sales.metadata_path
+        sales_erd = erd_by_module.get("sales") or sales.erd_path
 
-        return {
-            "procurement": ModulePipelineInput(
+        module_inputs: dict[str, ModulePipelineInput] = {}
+        if "procurement" in request.modules:
+            module_inputs["procurement"] = ModulePipelineInput(
                 metadata_path=str(procurement_metadata),
                 erd_path=str(procurement_erd or procurement.erd_path),
                 scenario_path=str(procurement_scenario or procurement.scenario_path),
                 plan_path=None if request.use_azure_openai else str(procurement_plan),
                 model_version="v2",
-            ),
-            "production": ModulePipelineInput(
+            )
+        if "production" in request.modules:
+            module_inputs["production"] = ModulePipelineInput(
                 metadata_path=str(production_metadata),
                 erd_path=str(production_erd or production.erd_path),
                 scenario_path=str(production_scenario or production.scenario_path),
                 plan_path=str(production_plan),
                 model_version="production_v1",
                 upstream_data_path=request.upstream_data,
-            ),
-        }
+            )
+        if "sales" in request.modules:
+            module_inputs["sales"] = ModulePipelineInput(
+                metadata_path=str(sales_metadata),
+                erd_path=str(sales_erd),
+                scenario_path=str(procurement_scenario or sales.scenario_path or ""),
+                plan_path=str(sales.plan_path) if sales.plan_path else None,
+                model_version="v1",
+            )
+        return module_inputs
 
     def _split_combined_metadata_by_module(
         self,
@@ -273,9 +293,8 @@ class PipelineService:
             if not table_names:
                 continue
             plugin = registry.get(module_id)
-            if module_id == "production":
-                for requirement in plugin.get_upstream_requirements():
-                    table_names.update(requirement.table_names)
+            for requirement in plugin.get_upstream_requirements():
+                table_names.update(requirement.table_names)
             filtered_text = self._filter_mermaid_erd_for_tables(erd_path.read_text(encoding="utf-8"), table_names)
             target = uploads / f"{module_id}_erd.mmd"
             target.write_text(filtered_text, encoding="utf-8")

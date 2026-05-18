@@ -7,6 +7,7 @@ from procurement_data_generator.core.pipeline.generic_runner import (
     PipelineRunSpec,
     SyntheticDataPipelineRunner,
 )
+from procurement_data_generator.core.metadata.metadata_reader import read_metadata_schema
 from procurement_data_generator.modules.sales.master_generator import SalesMasterDataGenerator
 from procurement_data_generator.modules.sales.plugin import SALES_EXECUTION_NOT_IMPLEMENTED, SalesModulePlugin
 from procurement_data_generator.modules.sales.transaction_generator import SalesTransactionGenerator
@@ -57,6 +58,15 @@ def test_sales_plugin_returns_prompt_sections_and_planned_validation_rules() -> 
 
 
 @pytest.mark.unit
+def test_sales_plugin_role_validation_passes_for_sales_metadata() -> None:
+    schema = read_metadata_schema("input/sales_v1_metadata.xlsx")
+    result = SalesModulePlugin().validate_roles(schema)
+
+    assert result.report.is_valid
+    assert result.summary.detected_roles == 18
+
+
+@pytest.mark.unit
 def test_sales_generator_factories_return_skeletons_that_do_not_generate_data() -> None:
     plugin = SalesModulePlugin()
     master = plugin.create_master_generator()
@@ -89,4 +99,3 @@ def test_generic_runner_rejects_sales_execution_clearly(tmp_path) -> None:
 
     with pytest.raises(ModuleExecutionNotSupportedError, match=SALES_EXECUTION_NOT_IMPLEMENTED):
         SyntheticDataPipelineRunner().run(spec)
-

@@ -12,6 +12,7 @@ from procurement_data_generator.core.modules.contracts import PromptSection, Ups
 from procurement_data_generator.modules.sales.master_generator import SalesMasterDataGenerator
 from procurement_data_generator.modules.sales.prompt_sections import get_sales_prompt_sections
 from procurement_data_generator.modules.sales.role_catalog import get_sales_role_catalog
+from procurement_data_generator.modules.sales.role_validator import validate_sales_roles
 from procurement_data_generator.modules.sales.transaction_generator import SalesTransactionGenerator
 from procurement_data_generator.modules.sales.validation_rules import get_sales_validation_rules
 
@@ -42,7 +43,7 @@ class SalesModulePlugin:
         report: ValidationReport | None = None,
         model_version: str | None = None,
     ):
-        raise NotImplementedError("Sales role validation is not implemented yet.")
+        return validate_sales_roles(schema, report=report, model_version=model_version or self.module_version)
 
     def get_prompt_sections(
         self,
@@ -103,4 +104,3 @@ class SalesModulePlugin:
                 description="Sales v1 traceability follows Production genealogy back to Procurement suppliers and components.",
             ),
         )
-

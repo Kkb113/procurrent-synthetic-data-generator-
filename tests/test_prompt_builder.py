@@ -129,6 +129,20 @@ def test_prompt_builder_can_assemble_multi_module_prompt() -> None:
     assert prompt.index("Procurement v2 Exact Model") < prompt.index("Production v1 Lifecycle Guidance")
 
 
+def test_prompt_builder_can_assemble_sales_prompt_sections() -> None:
+    prompt = build_llm_planning_prompt(
+        schema_contract=_schema(),
+        relationships=[],
+        business_scenario="Integrated Procurement, Production, and Sales planning scenario.",
+        module_ids=["procurement", "production", "sales"],
+    )
+
+    assert "Selected modules: procurement, production, sales" in prompt
+    assert "Sales v1 Order-to-Cash Guidance" in prompt
+    assert "SalesShipmentTraceability" in prompt
+    assert "SalesCreditMemo is excluded from Sales v1" in prompt
+
+
 def test_prompt_builder_unknown_module_fails_clearly() -> None:
     with pytest.raises(KeyError, match="Unknown module plugin 'quality'"):
         build_llm_planning_prompt(

@@ -207,3 +207,7 @@ Sales Phase 1 should add the module folder, role catalog, prompt sections, plugi
 ## Sales Phase 1 Note
 
 Sales Phase 1 added the Sales module skeleton, Sales v1 role catalog, Sales plugin, prompt sections, validation placeholders, and generator placeholders. Sales is registered in the default module registry, but execution is intentionally not implemented yet.
+
+## Sales Phase 2 Note
+
+Sales Phase 2 added Sales v1 metadata and Mermaid ERD support. The metadata fixture contains exactly the 18 approved Sales v1 tables, excludes `SalesCreditMemo`, and can be validated against the Sales role catalog. Module-aware metadata and ERD filtering can now prepare Sales subsets with allowed upstream links for future Procurement -> Production -> Sales execution. Sales execution is still not implemented; the next phase is Sales Phase 3: Sales master data generator.

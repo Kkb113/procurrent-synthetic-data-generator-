@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-Area = Literal["Master", "Procurement", "Production", "MES", "Logistics", "Receiving", "Quality", "Inventory", "Finance"]
+Area = Literal["Master", "Procurement", "Production", "Sales", "MES", "Logistics", "Receiving", "Quality", "Inventory", "Finance"]
 KeyType = Literal["PK", "FK"]
 Nullable = Literal["Yes", "No"]
 GenerationType = Literal[
