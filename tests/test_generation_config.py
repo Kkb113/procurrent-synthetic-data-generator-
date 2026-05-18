@@ -25,13 +25,15 @@ def test_generation_config_defaults_are_deterministic_and_conservative() -> None
     assert config.output_dir is None
     assert config.allow_demo_fallback is False
     assert config.run_name is None
+    assert config.profile_id is None
 
 
 def test_generation_config_normalizes_output_dir_to_path(tmp_path: Path) -> None:
-    config = GenerationConfig(output_dir=str(tmp_path), run_name=" phase-5 ")
+    config = GenerationConfig(output_dir=str(tmp_path), run_name=" phase-5 ", profile_id=" food_manufacturing ")
 
     assert config.output_dir == tmp_path
     assert config.run_name == "phase-5"
+    assert config.profile_id == "food_manufacturing"
 
 
 @pytest.mark.parametrize("seed", [None, True, "42"])

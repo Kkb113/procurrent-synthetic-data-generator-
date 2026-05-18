@@ -1,0 +1,10 @@
+"""Template module validation boundary."""
+
+from __future__ import annotations
+
+
+def get_example_validation_rules() -> tuple[str, ...]:
+    return (
+        "example_required_tables",
+        "example_lifecycle_consistency",
+    )

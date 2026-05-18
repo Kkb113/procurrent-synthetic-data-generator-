@@ -68,9 +68,12 @@ def test_project_documentation_includes_current_production_script_sequence() -> 
     assert "docs/production_v1_sql_checks.sql" in text
 
 
-def test_ui_documents_production_but_does_not_expose_active_production_option() -> None:
+def test_ui_exposes_production_generic_option_but_not_sales_backend() -> None:
     text = UI_TEMPLATE.read_text(encoding="utf-8")
 
     assert "Production Execution module within MES context" in text
-    assert "dedicated command-line pipeline" in text
+    assert "Production requires Procurement upstream data" in text
+    assert 'value="production"' in text
+    assert "Sales - Coming soon" in text
     assert 'value="production_v1"' not in text
+    assert 'value="sales" disabled' in text

@@ -540,6 +540,20 @@ def test_v2_invoice_total_mismatch_fails() -> None:
     assert _has_issue(report, "V2_INVOICE_TOTAL")
 
 
+def test_v2_invoice_total_accepts_formula_rounding_at_tolerance_boundary() -> None:
+    data = _valid_v2_data()
+    expected = (
+        data["SupplierInvoice"].loc[0, "InvoiceAmount"]
+        + data["SupplierInvoice"].loc[0, "TaxAmount"]
+        + data["SupplierInvoice"].loc[0, "FreightAmount"]
+    )
+    data["SupplierInvoice"].loc[0, "TotalInvoiceAmount"] = expected + 0.01
+
+    report = _reconcile(data)
+
+    assert not _has_issue(report, "V2_INVOICE_TOTAL")
+
+
 def test_v2_payment_date_before_invoice_fails() -> None:
     data = _valid_v2_data()
     data["PaymentTransaction"].loc[0, "PaymentDate"] = "2025-01-01"

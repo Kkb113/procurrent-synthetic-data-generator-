@@ -555,12 +555,14 @@ class ProcurementNameGenerator:
         )
 
     def _vendor_terms(self, domain_profile: DomainProfile) -> list[str]:
-        terms: list[str] = []
-        terms.extend(self._term_tokens(domain_profile.vendor_categories))
-        terms.extend(self._term_tokens([domain_profile.industry]))
-        terms.extend(self._term_tokens(category.category_name for category in domain_profile.material_categories))
-        terms.extend(self.universal_vendor_terms)
-        return _dedupe_preserve_order([self._title_term(term) for term in terms if term])
+        profile_terms: list[str] = []
+        profile_terms.extend(self._term_tokens(domain_profile.vendor_categories))
+        profile_terms.extend(self._term_tokens([domain_profile.industry]))
+        profile_terms.extend(self._term_tokens(category.category_name for category in domain_profile.material_categories))
+        terms = _dedupe_preserve_order([self._title_term(term) for term in profile_terms if term])
+        if len(terms) < 5:
+            terms = _dedupe_preserve_order([*terms, *self.universal_vendor_terms])
+        return terms
 
     def _material_categories(self, domain_profile: DomainProfile, minimum_count: int) -> list[MaterialCategory]:
         rich_categories = [

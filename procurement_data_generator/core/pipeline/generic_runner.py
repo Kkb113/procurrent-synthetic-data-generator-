@@ -81,6 +81,7 @@ class ModulePipelineRunResult:
     tables_generated: int = 0
     total_rows_generated: int = 0
     data_quality_status: str = "not_run"
+    sql_load_status: str = "not_run"
     report: Any = None
 
 
@@ -108,6 +109,7 @@ class GenericPipelineRunResult:
                     "tables_generated": result.tables_generated,
                     "total_rows_generated": result.total_rows_generated,
                     "data_quality_status": result.data_quality_status,
+                    "sql_load_status": result.sql_load_status,
                 }
                 for module_id, result in self.module_results.items()
             },
@@ -249,6 +251,7 @@ class SyntheticDataPipelineRunner:
                     tables_generated=procurement_report.tables_generated,
                     total_rows_generated=procurement_report.total_rows_generated,
                     data_quality_status=procurement_report.data_quality_status,
+                    sql_load_status=procurement_report.sql_load_status,
                     report=procurement_report,
                 )
                 if procurement_report.status not in {"passed", "passed_with_warnings"}:
@@ -267,6 +270,10 @@ class SyntheticDataPipelineRunner:
                     output_folder=str(module_output_root),
                     seed=spec.seed,
                     upstream_data_path=str(upstream_path) if upstream_path is not None else None,
+                    load_sql=spec.load_sql,
+                    allow_unvalidated_sql_load=spec.allow_unvalidated_sql_load,
+                    if_table_exists=spec.if_table_exists,
+                    sql_loader_factory=self.sql_loader_factory,
                     allow_demo_fallback=(spec.generation_config or self.generation_config).allow_demo_fallback,
                     operating_scope=spec.operating_scope or self.operating_scope,
                     generation_config=spec.generation_config or self.generation_config,
@@ -278,6 +285,7 @@ class SyntheticDataPipelineRunner:
                     tables_generated=production_result.generated_table_count,
                     total_rows_generated=sum(production_result.row_counts_by_table.values()),
                     data_quality_status=production_result.validation_status,
+                    sql_load_status=production_result.sql_load_status,
                     report=production_result,
                 )
                 warnings.extend(production_result.warnings)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import pandas as pd
 
@@ -15,6 +15,8 @@ from procurement_data_generator.core.contracts.validation_report import Validati
 from procurement_data_generator.core.config import GenerationConfig, OperatingScope
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
 from procurement_data_generator.core.modules.contracts import PromptSection, UpstreamRequirement
+from procurement_data_generator.core.sql.db_config import DatabaseConfig
+from procurement_data_generator.core.sql.sql_loader import SQLServerLoader
 from procurement_data_generator.modules.production.master_generator import ProductionMasterDataGenerator
 from procurement_data_generator.modules.production.prompt_sections import get_production_prompt_sections
 from procurement_data_generator.modules.production.reconciler_rules import UPSTREAM_TABLES
@@ -22,6 +24,9 @@ from procurement_data_generator.modules.production.role_catalog import get_produ
 from procurement_data_generator.modules.production.role_validator import validate_production_roles
 from procurement_data_generator.modules.production.transaction_generator import ProductionTransactionGenerator
 from procurement_data_generator.modules.production.validation_rules import get_production_validation_rules
+
+
+SQLLoaderFactory = Callable[[DatabaseConfig], SQLServerLoader]
 
 
 class ProductionModulePlugin:
@@ -89,6 +94,10 @@ class ProductionModulePlugin:
         seed: int | None = None,
         upstream_data_path: str | None = None,
         run_id: str | None = None,
+        load_sql: bool = False,
+        allow_unvalidated_sql_load: bool = False,
+        if_table_exists: str = "replace",
+        sql_loader_factory: SQLLoaderFactory | None = None,
         allow_demo_fallback: bool = False,
         operating_scope: OperatingScope | None = None,
         generation_config: GenerationConfig | None = None,
@@ -117,6 +126,12 @@ class ProductionModulePlugin:
             output_root=output_folder,
             seed=seed,
             run_id=run_id,
+            load_sql=load_sql,
+            allow_unvalidated_sql_load=allow_unvalidated_sql_load,
+            if_table_exists=if_table_exists,
+            sql_loader_factory=sql_loader_factory,
+            operating_scope=operating_scope,
+            generation_config=generation_config,
         )
         if fallback_used:
             return replace(

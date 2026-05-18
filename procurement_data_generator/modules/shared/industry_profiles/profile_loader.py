@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from procurement_data_generator.modules.shared.industry_profiles.ev_manufacturing_profile import EV_MANUFACTURING_PROFILE
+from procurement_data_generator.modules.shared.industry_profiles.food_manufacturing_profile import FOOD_MANUFACTURING_PROFILE
 from procurement_data_generator.modules.shared.industry_profiles.generic_mes_profile import GENERIC_MES_PROFILE
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import (
     IndustryProfile,
@@ -21,6 +22,7 @@ DEFAULT_INDUSTRY_PROFILE_ID = "ev_manufacturing"
 
 _INDUSTRY_PROFILES: dict[str, IndustryProfile] = {
     EV_MANUFACTURING_PROFILE.industry_id: EV_MANUFACTURING_PROFILE,
+    FOOD_MANUFACTURING_PROFILE.industry_id: FOOD_MANUFACTURING_PROFILE,
     GENERIC_MES_PROFILE.industry_id: GENERIC_MES_PROFILE,
 }
 

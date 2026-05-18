@@ -2,31 +2,61 @@ const form = document.getElementById("pipeline-form");
 const runButton = document.getElementById("run-button");
 const statusMessage = document.getElementById("status-message");
 const stageTableBody = document.querySelector("#stage-table tbody");
+const moduleTableBody = document.querySelector("#module-table tbody");
 const resultsPanel = document.getElementById("results-panel");
 const downloadsPanel = document.getElementById("downloads-panel");
 const modelVersionSelect = document.getElementById("model-version");
 const v2ModelHelp = document.getElementById("v2-model-help");
+const procurementCheckbox = form.elements["module_procurement"];
+const productionCheckbox = form.elements["module_production"];
+const fallbackCheckbox = form.elements["allow_demo_fallback"];
+const moduleHelper = document.getElementById("module-helper");
+const modulesField = document.getElementById("modules-field");
 
 if (modelVersionSelect && v2ModelHelp) {
   modelVersionSelect.addEventListener("change", updateModelHelp);
   updateModelHelp();
 }
 
+productionCheckbox.addEventListener("change", () => {
+  if (productionCheckbox.checked && !fallbackCheckbox.checked) {
+    procurementCheckbox.checked = true;
+  }
+  updateModuleHelper();
+});
+procurementCheckbox.addEventListener("change", updateModuleHelper);
+fallbackCheckbox.addEventListener("change", updateModuleHelper);
+updateModuleHelper();
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const modules = selectedModules();
+  if (!modules.length) {
+    showError("Select at least one module.");
+    return;
+  }
+  if (modules.includes("production") && !modules.includes("procurement") && !fallbackCheckbox.checked && !form.elements["upstream_data"].value.trim()) {
+    showError("Production requires Procurement upstream data. Select Procurement + Production or enable demo fallback.");
+    return;
+  }
+
   runButton.disabled = true;
   statusMessage.textContent = "Pipeline is running...";
+  statusMessage.className = "";
   stageTableBody.innerHTML = "";
+  moduleTableBody.innerHTML = "";
   resultsPanel.classList.add("hidden");
   downloadsPanel.classList.add("hidden");
 
   try {
     const formData = new FormData(form);
-    for (const name of ["use_azure_openai", "build_prompt", "load_sql"]) {
+    formData.set("modules", modules.join(","));
+    for (const name of ["use_azure_openai", "build_prompt", "load_sql", "allow_demo_fallback"]) {
       formData.set(name, form.elements[name].checked ? "true" : "false");
     }
 
-    const response = await fetch("/api/pipeline/run", {
+    const endpoint = form.dataset.endpoint || form.action || "/api/pipeline/run-generic";
+    const response = await fetch(endpoint, {
       method: "POST",
       body: formData,
     });
@@ -36,30 +66,54 @@ form.addEventListener("submit", async (event) => {
     }
     renderResults(payload);
   } catch (error) {
-    statusMessage.textContent = error.message;
-    statusMessage.className = "status-failed";
+    showError(error.message);
   } finally {
     runButton.disabled = false;
   }
 });
 
+function selectedModules() {
+  const modules = [];
+  if (procurementCheckbox.checked) modules.push("procurement");
+  if (productionCheckbox.checked) modules.push("production");
+  return modules;
+}
+
+function updateModuleHelper() {
+  const modules = selectedModules();
+  if (modulesField) {
+    modulesField.value = modules.join(",");
+  }
+  if (modules.includes("production") && modules.includes("procurement")) {
+    moduleHelper.textContent = "Production consumes Procurement output. Procurement will run first.";
+  } else if (modules.includes("production") && fallbackCheckbox.checked) {
+    moduleHelper.textContent = "Production will use explicit demo fallback upstream data.";
+  } else if (modules.includes("production")) {
+    moduleHelper.textContent = "Production requires Procurement upstream data. Select Procurement + Production or enable demo fallback.";
+  } else {
+    moduleHelper.textContent = "Procurement-only runs generate the 25-table Procurement v2 flow.";
+  }
+}
+
 function renderResults(payload) {
   statusMessage.textContent = payload.message || "Pipeline completed.";
   statusMessage.className = statusClass(payload.status);
   renderStages(payload.stage_summary || []);
+  renderModules(payload);
 
   document.getElementById("result-status").textContent = payload.status || "-";
-  document.getElementById("result-model-version").textContent = payload.model_version || "v2";
-  document.getElementById("result-tables").textContent = payload.tables_generated ?? "-";
+  document.getElementById("result-model-version").textContent = payload.model_version || "generic";
+  document.getElementById("result-modules").textContent = (payload.module_ids || ["procurement"]).join(", ");
+  document.getElementById("result-tables").textContent = payload.tables_generated ?? totalModuleTables(payload.module_results) ?? "-";
   document.getElementById("result-rows").textContent = payload.total_rows_generated ?? "-";
-  document.getElementById("result-quality").textContent = payload.data_quality_status || "-";
-  document.getElementById("result-sql").textContent = payload.sql_load_status || "-";
+  document.getElementById("result-quality").textContent = payload.data_quality_status || combinedModuleQuality(payload.module_results) || "-";
+  document.getElementById("result-sql").textContent = payload.sql_load_status || "not_run";
   renderList("warnings-list", payload.warnings || []);
   renderList("errors-list", payload.errors || []);
   renderDownloads(payload.downloads || {});
 
   resultsPanel.classList.remove("hidden");
-  downloadsPanel.classList.remove("hidden");
+  downloadsPanel.classList.toggle("hidden", Object.keys(payload.downloads || {}).length === 0);
 }
 
 function updateModelHelp() {
@@ -77,6 +131,29 @@ function renderStages(stages) {
       <td>${stage.warnings_count ?? 0}</td>
     `;
     stageTableBody.appendChild(row);
+  }
+}
+
+function renderModules(payload) {
+  moduleTableBody.innerHTML = "";
+  const moduleResults = payload.module_results || {
+    procurement: {
+      status: payload.status,
+      tables_generated: payload.tables_generated,
+      data_quality_status: payload.data_quality_status,
+      output_folder: payload.output_folder,
+    },
+  };
+  for (const [moduleId, result] of Object.entries(moduleResults)) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${escapeHtml(moduleId)}</td>
+      <td class="${statusClass(result.status)}">${escapeHtml(result.status || "")}</td>
+      <td>${result.tables_generated ?? "-"}</td>
+      <td>${escapeHtml(result.data_quality_status || "-")}</td>
+      <td>${escapeHtml(result.output_folder || "-")}</td>
+    `;
+    moduleTableBody.appendChild(row);
   }
 }
 
@@ -114,6 +191,23 @@ function renderDownloads(downloads) {
     link.target = "_blank";
     container.appendChild(link);
   }
+}
+
+function totalModuleTables(moduleResults) {
+  if (!moduleResults) return null;
+  return Object.values(moduleResults).reduce((total, result) => total + Number(result.tables_generated || 0), 0);
+}
+
+function combinedModuleQuality(moduleResults) {
+  if (!moduleResults) return "";
+  return Object.entries(moduleResults)
+    .map(([moduleId, result]) => `${moduleId}: ${result.data_quality_status || "not_run"}`)
+    .join("; ");
+}
+
+function showError(message) {
+  statusMessage.textContent = message;
+  statusMessage.className = "status-failed";
 }
 
 function statusClass(status) {

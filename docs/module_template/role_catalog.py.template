@@ -1,0 +1,12 @@
+"""Template role catalog."""
+
+from __future__ import annotations
+
+
+def get_example_role_catalog() -> dict[str, dict[str, object]]:
+    return {
+        "example_master": {
+            "required": True,
+            "description": "TODO: describe the table role.",
+        }
+    }

@@ -31,3 +31,15 @@ Marker meanings:
 SQL and live LLM tests are excluded from normal local runs unless explicitly requested.
 Tests that need generated CSVs should create them under pytest temporary directories or
 use committed test fixtures, not repo-level `output/` folders.
+
+CI should run the same non-external baseline:
+
+```powershell
+pytest -m "not sql and not llm" -q
+```
+
+The full suite can be run locally before commits:
+
+```powershell
+pytest -q -x
+```

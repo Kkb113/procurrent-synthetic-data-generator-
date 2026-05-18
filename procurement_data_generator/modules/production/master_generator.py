@@ -101,9 +101,10 @@ class ProductionMasterDataGenerator:
         operating_scope: OperatingScope | None = None,
         generation_config: GenerationConfig | None = None,
     ) -> None:
-        self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
+        effective_profile_id = profile_id or self.generation_config.profile_id
+        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
         self.fallback_components = _fallback_components_from_profile(self.industry_profile)
         self.fallback_plants = _fallback_plants_from_profile(self.industry_profile)
         self.fallback_warehouses = _fallback_warehouses_from_profile(self.industry_profile)

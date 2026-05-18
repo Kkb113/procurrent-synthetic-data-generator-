@@ -108,10 +108,14 @@ class FakeRunner:
         return _fake_report(kwargs["model_version"], str(output_folder))
 
 
-def test_ui_contains_procurement_v2_model_selector() -> None:
+def test_ui_contains_generic_mes_module_selector_and_procurement_v2_model() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
+    assert "MES Synthetic Data Generator" in response.text
+    assert "module_procurement" in response.text
+    assert "module_production" in response.text
+    assert "Sales - Coming soon" in response.text
     assert 'name="model_version"' in response.text
     assert '<option value="v2" selected>' in response.text
     assert 'option value="v1"' not in response.text

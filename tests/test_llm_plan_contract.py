@@ -57,6 +57,183 @@ def test_unsupported_formula_rule_type_fails() -> None:
     assert any("formula_rules[0].rule_type" in (issue.table_name or "") for issue in result.report.errors)
 
 
+def test_live_plan_drops_unsupported_inventory_balance_formula_aliases() -> None:
+    plan = _valid_plan()
+    plan["formula_rules"].append(
+        {
+            "rule_id": "live_available_quantity",
+            "rule_type": "inventory_balance",
+            "target_table": "Inventory",
+            "target_column": "AvailableQuantity",
+            "operation": "subtract",
+            "input_columns": ["OnHandQuantity", "ReservedQuantity"],
+            "description": "Live plan alias; Python inventory logic owns this field.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.formula_rules] == ["formula_line_amount"]
+
+
+def test_live_plan_drops_unsupported_inventory_available_value_formula_alias() -> None:
+    plan = _valid_plan()
+    plan["formula_rules"].append(
+        {
+            "rule_id": "live_available_value",
+            "rule_type": "row_level",
+            "target_table": "Inventory",
+            "target_column": "AvailableValue",
+            "operation": "multiply",
+            "input_columns": ["AvailableQuantity"],
+            "formula": "AvailableQuantity * (OnHandValue / OnHandQuantity)",
+            "denominator_column": "OnHandQuantity",
+            "denominator_guard": True,
+            "tolerance_type": "absolute",
+            "tolerance_value": 0.01,
+            "description": "Live plan alias; Python inventory logic owns this field.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.formula_rules] == ["formula_line_amount"]
+
+
+def test_live_plan_drops_non_date_table_local_date_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_bad_short_quantity_date",
+            "table_name": "GoodsReceiptLine",
+            "date_columns": ["ShortQuantity"],
+            "description": "Bad live alias; ShortQuantity is not a date field.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.date_rules] == ["date_req_before_order"]
+
+
+def test_live_plan_normalizes_target_table_date_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_po_date_sequence",
+            "target_table": "PurchaseOrderHdr",
+            "date_columns": ["OrderDate", "ExpectedDeliveryDate"],
+            "rule_type": "date_order",
+            "operation": "less_than_or_equal",
+            "formula": "OrderDate <= ExpectedDeliveryDate",
+            "description": "Live plan alias; normalize to the strict date rule contract.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    normalized = result.plan.date_rules[-1]
+    assert normalized.rule_id == "live_po_date_sequence"
+    assert normalized.earlier_table == "PurchaseOrderHdr"
+    assert normalized.earlier_column == "OrderDate"
+    assert normalized.later_table == "PurchaseOrderHdr"
+    assert normalized.later_column == "ExpectedDeliveryDate"
+
+
+def test_live_plan_normalizes_start_end_date_aliases() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_required_after_requisition",
+            "rule_type": "date_order",
+            "table_name": "PurchaseRequisition",
+            "start_column": "RequisitionDate",
+            "end_column": "RequiredDate",
+            "operator": "less_than_or_equal",
+            "description": "Live plan alias; normalize start/end columns.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    normalized = result.plan.date_rules[-1]
+    assert normalized.rule_id == "live_required_after_requisition"
+    assert normalized.earlier_table == "PurchaseRequisition"
+    assert normalized.earlier_column == "RequisitionDate"
+    assert normalized.later_table == "PurchaseRequisition"
+    assert normalized.later_column == "RequiredDate"
+
+
+def test_live_plan_drops_start_end_aliases_when_columns_are_not_dates() -> None:
+    plan = _valid_plan()
+    plan["date_rules"].append(
+        {
+            "rule_id": "live_lineage_id_alias",
+            "rule_type": "date_order",
+            "table_name": "RFQHeader",
+            "start_column": "RequisitionID",
+            "end_column": "RFQDate",
+            "operator": "less_than_or_equal",
+            "description": "Live plan alias for lineage; Python validation owns this.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.date_rules] == ["date_req_before_order"]
+
+
+def test_live_plan_drops_flag_columns_from_status_aliases() -> None:
+    plan = _valid_plan()
+    plan["status_rules"].append(
+        {
+            "rule_id": "live_cross_year_flag",
+            "table_name": "InventoryReceiptDetail",
+            "column_name": "CrossYearDeliveryFlag",
+            "allowed_values": ["0"],
+            "description": "Live plan alias; numeric flags are not status rules.",
+        }
+    )
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    assert [rule.rule_id for rule in result.plan.status_rules] == ["status_po"]
+
+
+def test_live_plan_normalizes_target_table_status_aliases() -> None:
+    plan = _valid_plan()
+    plan["status_rules"][0] = {
+        "rule_id": "live_po_status",
+        "target_table": "PurchaseOrderHdr",
+        "status_column": "POStatus",
+        "allowed_values": ["Received"],
+        "description": "Live plan alias; normalize to the strict status rule contract.",
+    }
+
+    result = validate_llm_plan_data(plan)
+
+    assert result.report.is_valid
+    assert result.plan is not None
+    normalized = result.plan.status_rules[0]
+    assert normalized.table_name == "PurchaseOrderHdr"
+    assert normalized.status_values == ["Received"]
+    assert normalized.derivation_logic == "Live plan alias; normalize to the strict status rule contract."
+
+
 def test_invalid_confidence_fails() -> None:
     plan = _valid_plan()
     plan["table_role_mapping"][0]["confidence"] = "certain"

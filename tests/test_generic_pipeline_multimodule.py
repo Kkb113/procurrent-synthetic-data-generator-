@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from procurement_data_generator.core.contracts.sql_load_report import SQLLoadReport
 from procurement_data_generator.core.config import GenerationConfig
 from procurement_data_generator.core.pipeline.generic_runner import (
     ModuleDependencyError,
@@ -44,6 +45,39 @@ def test_generic_runner_executes_procurement_then_production(tmp_path: Path) -> 
     assert len(list(procurement_final.glob("*.csv"))) == 25
     assert len(list(production_final.glob("*.csv"))) == 21
     assert len(pd.read_csv(production_final / "ProductionGenealogy.csv")) > 0
+
+
+@pytest.mark.pipeline
+def test_generic_runner_loads_procurement_and_production_to_sql_when_enabled(tmp_path: Path) -> None:
+    loaded_tables: list[set[str]] = []
+
+    class RecordingSQLLoader:
+        def __init__(self, _config) -> None:
+            pass
+
+        def load_dataset(self, dataframes, schema, validation_report_path=None, allow_unvalidated_load=False):
+            report = SQLLoadReport()
+            report.tables_loaded = [table.table_name for table in schema.ordered_tables]
+            report.rows_inserted_by_table = {
+                table_name: len(dataframe)
+                for table_name, dataframe in dataframes.items()
+            }
+            report.complete()
+            loaded_tables.append(set(report.tables_loaded))
+            return report
+
+    result = SyntheticDataPipelineRunner(sql_loader_factory=RecordingSQLLoader).run(
+        _multi_module_spec(tmp_path, load_sql=True)
+    )
+
+    assert result.status in {"passed", "passed_with_warnings"}
+    assert len(loaded_tables) == 2
+    assert len(loaded_tables[0]) == 25
+    assert len(loaded_tables[1]) == 21
+    assert "SupplierMaster" in loaded_tables[0]
+    assert "ProductionOrderHdr" in loaded_tables[1]
+    assert result.module_results["procurement"].sql_load_status == "passed"
+    assert result.module_results["production"].sql_load_status == "passed"
 
 
 @pytest.mark.pipeline
@@ -92,7 +126,7 @@ def test_generic_runner_uses_production_plugin_upstream_requirements() -> None:
     assert "InventoryTransaction" in requirements[0].table_names
 
 
-def _multi_module_spec(tmp_path: Path) -> PipelineRunSpec:
+def _multi_module_spec(tmp_path: Path, load_sql: bool = False) -> PipelineRunSpec:
     return PipelineRunSpec(
         module_ids=("procurement", "production"),
         metadata_path=str(PROC_METADATA),
@@ -101,7 +135,7 @@ def _multi_module_spec(tmp_path: Path) -> PipelineRunSpec:
         plan_path=str(PROC_PLAN),
         output_folder=str(tmp_path),
         seed=42,
-        load_sql=False,
+        load_sql=load_sql,
         build_prompt=False,
         model_version="v2",
         module_inputs={

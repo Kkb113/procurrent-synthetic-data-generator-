@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from procurement_data_generator.modules.shared.industry_profiles import (
     EV_MANUFACTURING_PROFILE,
+    FOOD_MANUFACTURING_PROFILE,
     GENERIC_MES_PROFILE,
     IndustryProfile,
     validate_industry_profile,
@@ -23,6 +24,11 @@ def test_generic_mes_profile_loads() -> None:
     assert GENERIC_MES_PROFILE.industry_name == "Generic Manufacturing Execution"
 
 
+def test_food_manufacturing_profile_loads() -> None:
+    assert FOOD_MANUFACTURING_PROFILE.industry_id == "food_manufacturing"
+    assert FOOD_MANUFACTURING_PROFILE.industry_name == "Food Manufacturing"
+
+
 def test_ev_manufacturing_profile_validates_successfully() -> None:
     result = validate_industry_profile(EV_MANUFACTURING_PROFILE)
 
@@ -32,6 +38,13 @@ def test_ev_manufacturing_profile_validates_successfully() -> None:
 
 def test_generic_mes_profile_validates_successfully() -> None:
     result = validate_industry_profile(GENERIC_MES_PROFILE)
+
+    assert result.valid
+    assert result.errors == []
+
+
+def test_food_manufacturing_profile_validates_successfully() -> None:
+    result = validate_industry_profile(FOOD_MANUFACTURING_PROFILE)
 
     assert result.valid
     assert result.errors == []
@@ -115,7 +128,7 @@ def test_generic_mes_profile_is_not_ev_specific() -> None:
 
 
 def test_profile_uom_sections_exist_and_are_non_empty() -> None:
-    for profile in (EV_MANUFACTURING_PROFILE, GENERIC_MES_PROFILE):
+    for profile in (EV_MANUFACTURING_PROFILE, FOOD_MANUFACTURING_PROFILE, GENERIC_MES_PROFILE):
         assert profile.shared.countable_uoms
         assert profile.shared.measurable_uoms
         assert set(profile.shared.countable_uoms) != set(profile.shared.measurable_uoms)

@@ -1513,7 +1513,7 @@ class ProcurementReconciler:
     def _numeric_compare(self, dataframe, actual, expected, check_type, message, table_name, column_name, report, tolerance=0.0001) -> None:
         actual_num = pd.to_numeric(actual, errors="coerce")
         expected_num = pd.to_numeric(expected, errors="coerce")
-        mask = (actual_num - expected_num).abs() <= tolerance
+        mask = (actual_num - expected_num).abs() <= (tolerance + 1e-9)
         self._compare_mask(dataframe, mask, check_type, message, "Recalculate or regenerate the reconciled value from source records.", "error", table_name, column_name, report)
 
     def _v2_group_sum(self, dataframe: pd.DataFrame, keys: list[str], quantity_column: str, output_column: str) -> pd.DataFrame:

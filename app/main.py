@@ -1,4 +1,4 @@
-"""FastAPI application entrypoint for the Procurement Data Generator MVP."""
+"""FastAPI application entrypoint for the MES Synthetic Data Generator."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from app.routes import artifact_routes, pipeline_routes, ui_routes
 APP_ROOT = Path(__file__).resolve().parent
 
 
-app = FastAPI(title="Procurement Data Generator", version="14.0.0")
+app = FastAPI(title="MES Synthetic Data Generator", version="15.0.0")
 app.mount("/static", StaticFiles(directory=APP_ROOT / "static"), name="static")
 app.include_router(ui_routes.router)
 app.include_router(pipeline_routes.router)

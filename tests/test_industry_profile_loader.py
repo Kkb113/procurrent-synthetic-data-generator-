@@ -5,6 +5,7 @@ import pytest
 from procurement_data_generator.modules.shared.industry_profiles import (
     DEFAULT_INDUSTRY_PROFILE_ID,
     EV_MANUFACTURING_PROFILE,
+    FOOD_MANUFACTURING_PROFILE,
     GENERIC_MES_PROFILE,
     get_default_industry_profile,
     get_industry_profile,
@@ -23,6 +24,7 @@ def test_default_industry_profile_is_ev_manufacturing() -> None:
 def test_get_industry_profile_loads_known_profiles() -> None:
     assert get_industry_profile("ev_manufacturing") is EV_MANUFACTURING_PROFILE
     assert get_industry_profile("generic_mes") is GENERIC_MES_PROFILE
+    assert get_industry_profile("food_manufacturing") is FOOD_MANUFACTURING_PROFILE
 
 
 def test_get_industry_profile_or_default_uses_ev_when_blank() -> None:
@@ -40,4 +42,4 @@ def test_unknown_industry_profile_fails_clearly() -> None:
 
 
 def test_supported_profile_ids_are_exposed() -> None:
-    assert get_supported_industry_profile_ids() == ("ev_manufacturing", "generic_mes")
+    assert get_supported_industry_profile_ids() == ("ev_manufacturing", "food_manufacturing", "generic_mes")

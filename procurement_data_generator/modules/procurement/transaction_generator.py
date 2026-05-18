@@ -94,10 +94,11 @@ class ProcurementTransactionGenerator:
         generation_config: GenerationConfig | None = None,
     ) -> None:
         self.name_generator = ProcurementNameGenerator()
-        self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
-        self.profile_values = IndustryProfileValueProvider(self.industry_profile)
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
+        effective_profile_id = profile_id or self.generation_config.profile_id
+        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
+        self.profile_values = IndustryProfileValueProvider(self.industry_profile)
 
     def generate_transaction_data(
         self,
@@ -327,7 +328,7 @@ class ProcurementTransactionGenerator:
                     "quotation_date": quote_date,
                     "valid_until_date": self._v2_add_days(quote_date, rng.randint(20, 60)),
                     "quotation_status": "Awarded" if row_id <= 1800 else self._v2_varied_status(row_id, "Rejected", ["Submitted", "UnderReview", "Expired"], [0.12, 0.08, 0.06], rng),
-                    "currency_code": self.profile_values.default_currency,
+                    "currency_code": self._currency_for_table(table),
                     "rfq_date": rfq["rfq_date"],
                     "plant_id": rfq["plant_id"],
                     "quoted_component_id": component_id,
@@ -428,7 +429,7 @@ class ProcurementTransactionGenerator:
                     "expected_delivery_date": self._v2_add_days(order_date, rng.randint(15, 45)),
                     "po_status": "Received",
                     "total_amount": 0.0,
-                    "currency_code": self.profile_values.default_currency,
+                    "currency_code": self._currency_for_table(table),
                     "quotation_date": quote["quotation_date"],
                 }
             )
@@ -1081,7 +1082,7 @@ class ProcurementTransactionGenerator:
                     "tax_amount": tax,
                     "freight_amount": freight,
                     "total_invoice_amount": total,
-                    "currency_code": self.profile_values.default_currency,
+                    "currency_code": self._currency_for_table(table),
                     "receipt_date": receipt["receipt_date"],
                 }
             )
@@ -1120,7 +1121,7 @@ class ProcurementTransactionGenerator:
                     "payment_amount": amount,
                     "payment_method": methods[(row_id - 1) % len(methods)],
                     "payment_status": status,
-                    "currency_code": self.profile_values.default_currency,
+                    "currency_code": self._currency_for_table(table),
                     "invoice_date": invoice["invoice_date"],
                     "total_invoice_amount": invoice["total_invoice_amount"],
                 }
@@ -2023,9 +2024,9 @@ class ProcurementTransactionGenerator:
                 if column.generation_type == "status" and len(column.allowed_values) > 1 and len(dataframe) >= 10 and series.nunique(dropna=True) <= 1:
                     report.add_warning(table_name=table.table_name, column_name=column.column_name, message="Status column has low diversity for v2 transaction data.", suggested_fix="Derive statuses from lifecycle facts.")
 
-        self._validate_v2_core_invariants(dataframes, master_dataframes, report)
+        self._validate_v2_core_invariants(dataframes, master_dataframes, schema, report)
 
-    def _validate_v2_core_invariants(self, data: dict[str, pd.DataFrame], master: dict[str, pd.DataFrame], report: ValidationReport) -> None:
+    def _validate_v2_core_invariants(self, data: dict[str, pd.DataFrame], master: dict[str, pd.DataFrame], schema: SchemaContract, report: ValidationReport) -> None:
         self._v2_assert_subset(data["PurchaseReqLine"], "RequisitionID", data["PurchaseRequisition"], "RequisitionID", "PurchaseReqLine", report)
         self._v2_assert_subset(data["RFQHeader"], "RequisitionID", data["PurchaseRequisition"], "RequisitionID", "RFQHeader", report)
         self._v2_assert_subset(data["RFQLine"], "RFQID", data["RFQHeader"], "RFQID", "RFQLine", report)
@@ -2204,12 +2205,13 @@ class ProcurementTransactionGenerator:
             report.add_error(table_name="PaymentTransaction", column_name="PaymentAmount", message="PaymentAmount exceeds TotalInvoiceAmount.", suggested_fix="Cap payments by invoice total.")
 
         for table_name in ("SupplierQuotation", "PurchaseOrderHdr", "SupplierInvoice", "PaymentTransaction"):
-            if "CurrencyCode" in data[table_name].columns and set(data[table_name]["CurrencyCode"].dropna()) != {self.profile_values.default_currency}:
+            expected_currency = self._currency_for_table(schema.tables[table_name])
+            if "CurrencyCode" in data[table_name].columns and set(data[table_name]["CurrencyCode"].dropna()) != {expected_currency}:
                 report.add_error(
                     table_name=table_name,
                     column_name="CurrencyCode",
-                    message=f"CurrencyCode must be {self.profile_values.default_currency} in v2 transactions.",
-                    suggested_fix=f"Use {self.profile_values.default_currency} only.",
+                    message=f"CurrencyCode must be {expected_currency} in v2 transactions.",
+                    suggested_fix=f"Use {expected_currency} only.",
                 )
 
         warehouse_lookup = master["Warehouse"].set_index("WarehouseID")["PlantID"]
@@ -2314,6 +2316,12 @@ class ProcurementTransactionGenerator:
                 maximum = float(column.max_value) if column.max_value is not None else default_max
                 return minimum, maximum
         return default_min, default_max
+
+    def _currency_for_table(self, table: TableContract) -> str:
+        column = next((column for column in table.columns if column.column_name == "CurrencyCode"), None)
+        if column and column.allowed_values:
+            return str(column.allowed_values[0])
+        return self.profile_values.default_currency
 
     def _dataframes_by_role(self, dataframes: dict[str, pd.DataFrame], schema: SchemaContract) -> dict[str, pd.DataFrame]:
         output = {}

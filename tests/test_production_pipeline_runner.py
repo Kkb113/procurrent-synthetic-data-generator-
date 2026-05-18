@@ -102,11 +102,12 @@ def test_production_pipeline_generates_21_table_run_folder_and_reports(tmp_path:
     assert len(warehouse_ids) == 1
 
 
-def test_production_pipeline_does_not_modify_procurement_pipeline_script() -> None:
+def test_generic_pipeline_script_keeps_standalone_production_script_compatibility() -> None:
     text = (ROOT / "scripts" / "run_pipeline.py").read_text(encoding="utf-8")
 
     assert "run_production_pipeline" not in text
-    assert "production_v1" not in text
+    assert "--modules" in text
+    assert "procurement,production" in text
 
 
 def _pipeline_command(upstream: Path, output: Path, run_id: str) -> list[str]:

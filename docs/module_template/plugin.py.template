@@ -1,0 +1,60 @@
+"""Template module plugin adapter.
+
+Replace Example with the module name and keep module-specific business logic
+inside the module package, not in core.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Sequence
+
+from procurement_data_generator.core.contracts.erd_contract import RelationshipContract
+from procurement_data_generator.core.contracts.llm_plan_contract import LLMGenerationPlan
+from procurement_data_generator.core.contracts.schema_contract import SchemaContract
+from procurement_data_generator.core.contracts.validation_report import ValidationReport
+from procurement_data_generator.core.modules.contracts import PromptSection, UpstreamRequirement
+
+
+class ExampleModulePlugin:
+    module_id = "example"
+    module_name = "Example"
+    module_version = "v1"
+
+    @property
+    def supported_table_roles(self) -> tuple[str, ...]:
+        return tuple(self.get_role_catalog())
+
+    def get_role_catalog(self):
+        raise NotImplementedError
+
+    def validate_roles(self, schema: SchemaContract, report: ValidationReport | None = None, model_version: str | None = None):
+        raise NotImplementedError
+
+    def get_prompt_sections(
+        self,
+        schema: SchemaContract | None = None,
+        relationships: Sequence[RelationshipContract] | None = None,
+        scenario: str | None = None,
+    ) -> tuple[PromptSection, ...]:
+        raise NotImplementedError
+
+    def validate_plan(self, plan: LLMGenerationPlan, schema: SchemaContract, relationships: Sequence[RelationshipContract]) -> Any:
+        raise NotImplementedError
+
+    def create_master_generator(self, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    def create_transaction_generator(self, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    def create_data_quality_engine(self) -> Any:
+        raise NotImplementedError
+
+    def get_validation_rules(self) -> tuple[str, ...]:
+        raise NotImplementedError
+
+    def run_pipeline(self, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+    def get_upstream_requirements(self) -> tuple[UpstreamRequirement, ...]:
+        return ()

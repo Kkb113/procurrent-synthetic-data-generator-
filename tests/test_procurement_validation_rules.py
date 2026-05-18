@@ -30,6 +30,15 @@ def test_procurement_validator_preserves_v2_country_rule() -> None:
 
 
 @pytest.mark.unit
+def test_procurement_validator_uses_metadata_allowed_country_for_v2_rule() -> None:
+    data = {"SupplierMaster": pd.DataFrame({"SupplierID": [1], "SupplierCountry": ["India"]})}
+
+    report = ProcurementGeneratedDataValidator().validate_dataset(data, _supplier_schema(country_values=["India"]), model_version="v2")
+
+    assert not _has_issue(report, "V2_USA_SUPPLIER_COUNTRY")
+
+
+@pytest.mark.unit
 def test_procurement_validator_preserves_v1_deprecation_behavior() -> None:
     data = {"SupplierMaster": pd.DataFrame({"SupplierID": [1], "SupplierCountry": ["USA"]})}
 
@@ -45,7 +54,7 @@ def test_procurement_data_quality_engine_uses_module_owned_components() -> None:
     assert isinstance(engine.reconciler, ProcurementReconciler)
 
 
-def _supplier_schema() -> SchemaContract:
+def _supplier_schema(country_values: list[str] | None = None) -> SchemaContract:
     return SchemaContract(
         tables={
             "SupplierMaster": TableContract(
@@ -56,21 +65,28 @@ def _supplier_schema() -> SchemaContract:
                 target_rows=1,
                 columns=[
                     _col("SupplierID", "int", "sequence_id", "No", key_type="PK"),
-                    _col("SupplierCountry", "varchar(80)", "category", "No"),
+                    _col("SupplierCountry", "varchar(80)", "category", "No", allowed_values=country_values),
                 ],
             )
         }
     )
 
 
-def _col(column_name: str, data_type: str, generation_type: str, nullable: str, key_type: str | None = None) -> ColumnContract:
+def _col(
+    column_name: str,
+    data_type: str,
+    generation_type: str,
+    nullable: str,
+    key_type: str | None = None,
+    allowed_values: list[str] | None = None,
+) -> ColumnContract:
     return ColumnContract(
         column_name=column_name,
         data_type=data_type,
         key_type=key_type,
         nullable=nullable,
         generation_type=generation_type,
-        allowed_values=[],
+        allowed_values=allowed_values or [],
         formula=None,
     )
 

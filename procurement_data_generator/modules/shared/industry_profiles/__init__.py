@@ -1,6 +1,7 @@
 """Shared industry profile architecture for future catalog-driven generation."""
 
 from procurement_data_generator.modules.shared.industry_profiles.ev_manufacturing_profile import EV_MANUFACTURING_PROFILE
+from procurement_data_generator.modules.shared.industry_profiles.food_manufacturing_profile import FOOD_MANUFACTURING_PROFILE
 from procurement_data_generator.modules.shared.industry_profiles.generic_mes_profile import GENERIC_MES_PROFILE
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import (
     IndustryProfile,
@@ -31,6 +32,7 @@ from procurement_data_generator.modules.shared.industry_profiles.profile_loader 
 
 __all__ = [
     "EV_MANUFACTURING_PROFILE",
+    "FOOD_MANUFACTURING_PROFILE",
     "GENERIC_MES_PROFILE",
     "DEFAULT_INDUSTRY_PROFILE_ID",
     "IndustryProfile",

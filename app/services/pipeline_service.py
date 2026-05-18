@@ -7,14 +7,39 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+import pandas as pd
 from fastapi import UploadFile
 
 from app.services.upload_service import UploadValidationError, save_text_input, save_upload_file
+from procurement_data_generator.core.metadata.metadata_reader import METADATA_SHEET_NAME
+from procurement_data_generator.core.modules.registry import create_default_module_registry
+from procurement_data_generator.core.erd.mermaid_parser import RELATIONSHIP_PATTERN
 from procurement_data_generator.core.contracts.pipeline_report import PipelineRunReport
+from procurement_data_generator.core.config import GenerationConfig
+from procurement_data_generator.core.pipeline.generic_runner import GenericPipelineRunResult, ModulePipelineInput, PipelineRunSpec, SyntheticDataPipelineRunner
 from procurement_data_generator.core.pipeline.pipeline_runner import ProcurementPipelineRunner
 
 
 PipelineRunnerFactory = Callable[[], ProcurementPipelineRunner]
+GenericPipelineRunnerFactory = Callable[[], SyntheticDataPipelineRunner]
+
+
+DEFAULT_GENERIC_INPUTS = {
+    "procurement": ModulePipelineInput(
+        metadata_path="input/procurement_v2_metadata.xlsx",
+        erd_path="input/procurement_v2_erd.mmd",
+        scenario_path="input/procurement_v2_business_scenario.txt",
+        plan_path="input/sample_generation_plan_v2_valid.json",
+        model_version="v2",
+    ),
+    "production": ModulePipelineInput(
+        metadata_path="input/production_v1_metadata.xlsx",
+        erd_path="input/production_v1_erd.mmd",
+        scenario_path="input/production_v1_business_scenario.txt",
+        plan_path="input/sample_generation_plan_production_v1_valid.json",
+        model_version="production_v1",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -32,6 +57,30 @@ class PipelineWebRequest:
     model_version: str = "v2"
 
 
+@dataclass(frozen=True)
+class GenericPipelineWebRequest:
+    modules: tuple[str, ...]
+    output_dir: str | None = None
+    seed: int | None = None
+    allow_demo_fallback: bool = False
+    upstream_data: str | None = None
+    use_azure_openai: bool = False
+    build_prompt: bool = False
+    load_sql: bool = False
+    if_table_exists: str = "replace"
+    profile_id: str | None = None
+    metadata_file: UploadFile | None = None
+    erd_file: UploadFile | None = None
+    plan_file: UploadFile | None = None
+    erd_text: str | None = None
+    scenario_text: str | None = None
+    production_metadata_file: UploadFile | None = None
+    production_erd_file: UploadFile | None = None
+    production_plan_file: UploadFile | None = None
+    production_erd_text: str | None = None
+    production_scenario_text: str | None = None
+
+
 class PipelineService:
     """Validate web inputs, save uploads, and call the backend pipeline."""
 
@@ -39,9 +88,11 @@ class PipelineService:
         self,
         base_folder: str | Path = "output/web_runs",
         runner_factory: PipelineRunnerFactory | None = None,
+        generic_runner_factory: GenericPipelineRunnerFactory | None = None,
     ) -> None:
         self.base_folder = Path(base_folder)
         self.runner_factory = runner_factory or ProcurementPipelineRunner
+        self.generic_runner_factory = generic_runner_factory or SyntheticDataPipelineRunner
 
     async def run_pipeline(self, request: PipelineWebRequest) -> dict:
         self._validate_switches(request)
@@ -87,6 +138,186 @@ class PipelineService:
         )
         return self._summary(run_id, report)
 
+    async def run_generic_pipeline(self, request: GenericPipelineWebRequest) -> dict:
+        self._validate_generic_request(request)
+        run_id = self._new_run_id()
+        workspace = self.base_folder / run_id
+        uploads = workspace / "uploads"
+        uploads.mkdir(parents=True, exist_ok=True)
+        output_root = Path(request.output_dir) if request.output_dir else workspace / "pipeline_output"
+        generation_config = GenerationConfig(
+            seed=request.seed if request.seed is not None else 42,
+            allow_demo_fallback=request.allow_demo_fallback,
+            profile_id=request.profile_id,
+        )
+        runner = self.generic_runner_factory()
+        module_inputs = await self._generic_module_inputs(request, uploads)
+        first_input = module_inputs[request.modules[0]]
+        result = runner.run(
+            PipelineRunSpec(
+                module_ids=request.modules,
+                metadata_path=first_input.metadata_path,
+                erd_path=first_input.erd_path,
+                scenario_path=first_input.scenario_path,
+                plan_path=first_input.plan_path,
+                output_folder=str(output_root),
+                seed=request.seed,
+                load_sql=request.load_sql,
+                build_prompt=request.build_prompt,
+                generate_plan=request.use_azure_openai,
+                if_table_exists=request.if_table_exists,
+                model_version=first_input.model_version,
+                generation_config=generation_config,
+                module_inputs={module_id: module_inputs[module_id] for module_id in request.modules},
+            )
+        )
+        return self._generic_summary(run_id, result)
+
+    async def _generic_module_inputs(self, request: GenericPipelineWebRequest, uploads: Path) -> dict[str, ModulePipelineInput]:
+        procurement = DEFAULT_GENERIC_INPUTS["procurement"]
+        production = DEFAULT_GENERIC_INPUTS["production"]
+
+        shared_metadata = await self._optional_upload(request.metadata_file, uploads / "combined_metadata.xlsx", {".xlsx"})
+        metadata_by_module = self._split_combined_metadata_by_module(shared_metadata, uploads, request.modules) if shared_metadata else {}
+        procurement_metadata = metadata_by_module.get("procurement") or shared_metadata or procurement.metadata_path
+        shared_erd = await self._optional_upload(request.erd_file, uploads / "combined_erd.mmd", {".mmd", ".txt"})
+        if shared_erd is None and request.erd_text and request.erd_text.strip():
+            shared_erd = save_text_input(request.erd_text, uploads / "combined_erd.mmd", "erd_text", required=True)
+        erd_by_module = self._split_combined_erd_by_module(shared_erd, metadata_by_module, uploads, request.modules) if shared_erd else {}
+        procurement_erd = erd_by_module.get("procurement") or shared_erd
+        procurement_plan = await self._optional_upload(request.plan_file, uploads / "procurement_plan.json", {".json"}) or procurement.plan_path
+        procurement_scenario = save_text_input(request.scenario_text, uploads / "procurement_scenario.txt", "scenario_text", required=False) if request.scenario_text and request.scenario_text.strip() else None
+
+        production_metadata_upload = await self._optional_upload(request.production_metadata_file, uploads / "production_metadata.xlsx", {".xlsx"})
+        production_metadata = production_metadata_upload or metadata_by_module.get("production") or production.metadata_path
+        production_erd = await self._optional_upload(request.production_erd_file, uploads / "production_erd.mmd", {".mmd", ".txt"})
+        if production_erd is None and request.production_erd_text and request.production_erd_text.strip():
+            production_erd = save_text_input(request.production_erd_text, uploads / "production_erd.mmd", "production_erd_text", required=True)
+        if production_erd is None:
+            production_erd = erd_by_module.get("production")
+        production_plan = await self._optional_upload(request.production_plan_file, uploads / "production_plan.json", {".json"}) or production.plan_path
+        production_scenario = save_text_input(request.production_scenario_text, uploads / "production_scenario.txt", "production_scenario_text", required=False) if request.production_scenario_text and request.production_scenario_text.strip() else None
+
+        return {
+            "procurement": ModulePipelineInput(
+                metadata_path=str(procurement_metadata),
+                erd_path=str(procurement_erd or procurement.erd_path),
+                scenario_path=str(procurement_scenario or procurement.scenario_path),
+                plan_path=None if request.use_azure_openai else str(procurement_plan),
+                model_version="v2",
+            ),
+            "production": ModulePipelineInput(
+                metadata_path=str(production_metadata),
+                erd_path=str(production_erd or production.erd_path),
+                scenario_path=str(production_scenario or production.scenario_path),
+                plan_path=str(production_plan),
+                model_version="production_v1",
+                upstream_data_path=request.upstream_data,
+            ),
+        }
+
+    def _split_combined_metadata_by_module(
+        self,
+        metadata_path: Path,
+        uploads: Path,
+        module_ids: tuple[str, ...],
+    ) -> dict[str, Path]:
+        """Write module-specific metadata files from a combined workbook.
+
+        The browser can upload one Procurement + Production workbook. Existing
+        module runners still validate module-specific metadata, so this adapter
+        filters by the registered role catalogs before orchestration.
+        """
+
+        if len(module_ids) < 2:
+            return {}
+        try:
+            metadata = pd.read_excel(metadata_path, sheet_name=METADATA_SHEET_NAME, engine="openpyxl", dtype=object)
+        except Exception:
+            return {}
+        if "TableRole" not in metadata.columns:
+            return {}
+
+        registry = create_default_module_registry()
+        normalized_roles = metadata["TableRole"].astype(str).str.strip().str.lower()
+        split_paths: dict[str, Path] = {}
+        for module_id in module_ids:
+            plugin = registry.get(module_id)
+            supported_roles = {role.strip().lower() for role in plugin.supported_table_roles}
+            subset = metadata.loc[normalized_roles.isin(supported_roles)].copy()
+            if subset.empty:
+                continue
+            target = uploads / f"{module_id}_metadata.xlsx"
+            with pd.ExcelWriter(target, engine="openpyxl") as writer:
+                subset.to_excel(writer, sheet_name=METADATA_SHEET_NAME, index=False)
+            split_paths[module_id] = target
+        return split_paths
+
+    def _split_combined_erd_by_module(
+        self,
+        erd_path: Path,
+        metadata_by_module: dict[str, Path],
+        uploads: Path,
+        module_ids: tuple[str, ...],
+    ) -> dict[str, Path]:
+        if len(module_ids) < 2:
+            return {}
+
+        registry = create_default_module_registry()
+        split_paths: dict[str, Path] = {}
+        for module_id in module_ids:
+            metadata_path = metadata_by_module.get(module_id)
+            if metadata_path is None:
+                continue
+            table_names = self._metadata_table_names(metadata_path)
+            if not table_names:
+                continue
+            plugin = registry.get(module_id)
+            if module_id == "production":
+                for requirement in plugin.get_upstream_requirements():
+                    table_names.update(requirement.table_names)
+            filtered_text = self._filter_mermaid_erd_for_tables(erd_path.read_text(encoding="utf-8"), table_names)
+            target = uploads / f"{module_id}_erd.mmd"
+            target.write_text(filtered_text, encoding="utf-8")
+            split_paths[module_id] = target
+        return split_paths
+
+    def _metadata_table_names(self, metadata_path: Path) -> set[str]:
+        try:
+            metadata = pd.read_excel(metadata_path, sheet_name=METADATA_SHEET_NAME, engine="openpyxl", dtype=object)
+        except Exception:
+            return set()
+        if "TableName" not in metadata.columns:
+            return set()
+        return {str(table_name).strip() for table_name in metadata["TableName"].dropna() if str(table_name).strip()}
+
+    def _filter_mermaid_erd_for_tables(self, erd_text: str, allowed_tables: set[str]) -> str:
+        allowed = {table.strip() for table in allowed_tables if table.strip()}
+        lines = ["erDiagram"]
+        seen_header = False
+        for raw_line in erd_text.splitlines():
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+            if stripped == "erDiagram":
+                seen_header = True
+                continue
+            match = RELATIONSHIP_PATTERN.match(stripped)
+            if not match:
+                continue
+            left_table = match.group("left")
+            right_table = match.group("right")
+            if left_table in allowed and right_table in allowed:
+                lines.append(f"    {stripped}")
+        if not seen_header and erd_text.strip():
+            lines.insert(0, "%% Filtered from combined Mermaid ERD")
+        return "\n".join(lines) + "\n"
+
+    async def _optional_upload(self, upload: UploadFile | None, target: Path, allowed_extensions: set[str]) -> Path | None:
+        if upload is None or not upload.filename:
+            return None
+        return await save_upload_file(upload, target, allowed_extensions, upload.filename, required=True)
+
     async def _save_erd(self, request: PipelineWebRequest, uploads: Path) -> Path:
         if request.erd_file and request.erd_file.filename:
             saved = await save_upload_file(
@@ -118,6 +349,20 @@ class PipelineService:
             raise UploadValidationError("Either erd_file or erd_text is required.")
         if not request.use_azure_openai and (request.plan_file is None or not request.plan_file.filename):
             raise UploadValidationError("plan_file is required when Azure OpenAI generation is disabled.")
+
+    def _validate_generic_request(self, request: GenericPipelineWebRequest) -> None:
+        if not request.modules:
+            raise UploadValidationError("modules must include at least one module.")
+        unknown = [module_id for module_id in request.modules if module_id not in DEFAULT_GENERIC_INPUTS]
+        if unknown:
+            raise UploadValidationError(f"Unknown module(s): {', '.join(unknown)}")
+        duplicates = sorted({module_id for module_id in request.modules if request.modules.count(module_id) > 1})
+        if duplicates:
+            raise UploadValidationError(f"Duplicate module(s): {', '.join(duplicates)}")
+        if request.if_table_exists not in {"replace", "append", "fail"}:
+            raise UploadValidationError("if_table_exists must be replace, append, or fail.")
+        if request.modules == ("production",) and not request.allow_demo_fallback and not request.upstream_data:
+            raise UploadValidationError("Production requires Procurement upstream data. Select Procurement + Production or enable demo fallback.")
 
     def _new_run_id(self) -> str:
         return "web_run_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -161,3 +406,56 @@ class PipelineService:
             "errors": report.errors,
             "downloads": downloads,
         }
+
+    def _generic_summary(self, web_run_id: str, result: PipelineRunReport | GenericPipelineRunResult) -> dict:
+        if isinstance(result, PipelineRunReport):
+            summary = self._summary(web_run_id, result)
+            summary["module_ids"] = ["procurement"]
+            summary["module_results"] = {
+                "procurement": {
+                    "status": result.status,
+                    "tables_generated": result.tables_generated,
+                    "data_quality_status": result.data_quality_status,
+                    "sql_load_status": result.sql_load_status,
+                    "output_folder": result.output_folder,
+                }
+            }
+            summary["sql_load_status"] = result.sql_load_status
+            return summary
+        module_sql_statuses = [
+            module_result.sql_load_status
+            for module_result in result.module_results.values()
+            if module_result.sql_load_status and module_result.sql_load_status != "not_run"
+        ]
+        return {
+            "run_id": web_run_id,
+            "status": result.status,
+            "module_ids": list(result.module_ids),
+            "output_folder": result.output_folder,
+            "sql_load_status": self._combined_status(module_sql_statuses, empty="not_run"),
+            "module_results": {
+                module_id: {
+                    "status": module_result.status,
+                    "tables_generated": module_result.tables_generated,
+                    "data_quality_status": module_result.data_quality_status,
+                    "sql_load_status": module_result.sql_load_status,
+                    "output_folder": module_result.output_folder,
+                }
+                for module_id, module_result in result.module_results.items()
+            },
+            "warnings": result.warnings,
+            "errors": result.errors,
+        }
+
+    def _combined_status(self, statuses: list[str], empty: str = "-") -> str:
+        if not statuses:
+            return empty
+        if any(status == "failed" for status in statuses):
+            return "failed"
+        if any(status == "passed_with_warnings" for status in statuses):
+            return "passed_with_warnings"
+        if all(status == "skipped" for status in statuses):
+            return "skipped"
+        if any(status == "passed" for status in statuses):
+            return "passed"
+        return statuses[0]

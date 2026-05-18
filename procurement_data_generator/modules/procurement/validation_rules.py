@@ -366,11 +366,11 @@ class ProcurementGeneratedDataValidator:
                     "Provide all 25 Procurement v2 tables.",
                     table_name=table_name,
                 )
-        self._validate_v2_constant(dataframes, "SupplierMaster", "SupplierCountry", "USA", "V2_USA_SUPPLIER_COUNTRY", report)
-        self._validate_v2_constant(dataframes, "Plant", "PlantCountry", "USA", "V2_USA_PLANT_COUNTRY", report)
-        self._validate_v2_constant(dataframes, "Warehouse", "WarehouseCountry", "USA", "V2_USA_WAREHOUSE_COUNTRY", report)
+        self._validate_v2_constant(dataframes, "SupplierMaster", "SupplierCountry", self._expected_column_value(schema, "SupplierMaster", "SupplierCountry", "USA"), "V2_USA_SUPPLIER_COUNTRY", report)
+        self._validate_v2_constant(dataframes, "Plant", "PlantCountry", self._expected_column_value(schema, "Plant", "PlantCountry", "USA"), "V2_USA_PLANT_COUNTRY", report)
+        self._validate_v2_constant(dataframes, "Warehouse", "WarehouseCountry", self._expected_column_value(schema, "Warehouse", "WarehouseCountry", "USA"), "V2_USA_WAREHOUSE_COUNTRY", report)
         for table_name in ("ComponentMaster", "SupplierComponent", "SupplierQuotation", "PurchaseOrderHdr", "SupplierInvoice", "PaymentTransaction"):
-            self._validate_v2_constant(dataframes, table_name, "CurrencyCode", "USD", "V2_USD_CURRENCY", report)
+            self._validate_v2_constant(dataframes, table_name, "CurrencyCode", self._expected_column_value(schema, table_name, "CurrencyCode", "USD"), "V2_USD_CURRENCY", report)
         self._validate_v2_operating_scope(dataframes, report)
         self._validate_v2_warehouse_master_location(dataframes, report)
         self._validate_v2_quantity_precision(dataframes, report)
@@ -482,6 +482,16 @@ class ProcurementGeneratedDataValidator:
                 column_name=column_name,
                 sample_failed_rows=self._sample_rows(dataframe[~mask]),
             )
+
+    def _expected_column_value(self, schema: SchemaContract, table_name: str, column_name: str, fallback: str) -> str:
+        table = schema.tables.get(table_name)
+        if table is None:
+            return fallback
+        column = next((column for column in table.columns if column.column_name == column_name), None)
+        if column is None:
+            return fallback
+        values = [str(value).strip() for value in column.allowed_values if str(value).strip()]
+        return values[0] if values else fallback
 
     def _validate_v2_warehouse_master_location(self, dataframes: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
         warehouse = dataframes.get("Warehouse")

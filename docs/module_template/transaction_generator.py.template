@@ -1,0 +1,11 @@
+"""Template transaction data generator."""
+
+from __future__ import annotations
+
+
+class ExampleTransactionGenerator:
+    def __init__(self, **kwargs):
+        self.options = kwargs
+
+    def generate_transaction_data(self, *args, **kwargs):
+        raise NotImplementedError

@@ -167,7 +167,7 @@ def test_currency_code_non_usd_rule_is_flagged() -> None:
     result = _validate_data(data)
 
     assert not result.report.is_valid
-    assert _has_error(result, "CurrencyCode generation must be USD-only")
+    assert _has_error(result, "CurrencyCode generation must match metadata AllowedValues: USD")
 
 
 def test_non_usa_country_rule_is_flagged() -> None:
@@ -177,7 +177,7 @@ def test_non_usa_country_rule_is_flagged() -> None:
     result = _validate_data(data)
 
     assert not result.report.is_valid
-    assert _has_error(result, "country generation must be USA-only")
+    assert _has_error(result, "country generation must match metadata AllowedValues: USA")
 
 
 def test_missing_warehouse_location_generation_rule_produces_warning() -> None:
@@ -192,6 +192,102 @@ def test_missing_warehouse_location_generation_rule_produces_warning() -> None:
 
     assert result.report.is_valid
     assert _has_warning(result, "Warehouse location column_generation_rule")
+
+
+def test_conceptual_live_validation_scopes_are_global_guidance() -> None:
+    data = _valid_plan_data()
+    data["validation_rules"].extend(
+        [
+            {
+                "rule_id": "conceptual_procurement_lifecycle",
+                "rule_type": "date_order",
+                "table_name": "ProcurementLifecycle",
+                "column_name": None,
+                "condition": "ProcurementLifecycle should enforce chronology across all procurement dates.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+            {
+                "rule_id": "conceptual_currency_consistency",
+                "rule_type": "status_check",
+                "table_name": "CurrencyConsistency",
+                "column_name": "CurrencyCode",
+                "condition": "Currency code consistency should apply to all tables with currency fields.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+        ]
+    )
+
+    result = _validate_data(data)
+
+    assert result.report.is_valid
+
+
+def test_live_validation_theme_tables_and_columns_are_global_guidance() -> None:
+    data = _valid_plan_data()
+    data["validation_rules"].extend(
+        [
+            {
+                "rule_id": "live_all_table_primary_keys",
+                "rule_type": "pk_check",
+                "table_name": "all_tables",
+                "column_name": "all_pk_columns",
+                "condition": "All tables must have primary keys populated.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+            {
+                "rule_id": "live_lifecycle_quantities",
+                "rule_type": "quantity_check",
+                "table_name": "procurement_lifecycle",
+                "column_name": "all_quantities",
+                "condition": "Procurement lifecycle quantity reconciliation should hold across all quantities.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+            {
+                "rule_id": "live_traceability_lineage",
+                "rule_type": "reconciliation",
+                "table_name": "InventoryReceiptDetail",
+                "column_name": "traceability_lineage",
+                "condition": "InventoryReceiptDetail must preserve traceability lineage.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+            {
+                "rule_id": "live_currency_tables",
+                "rule_type": "status_check",
+                "table_name": "CurrencyCode",
+                "column_name": "all_financial_tables",
+                "condition": "CurrencyCode must be consistent across all financial tables.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+            {
+                "rule_id": "live_procurement_finance",
+                "rule_type": "formula_check",
+                "table_name": "procurement_finance",
+                "column_name": None,
+                "condition": "All monetary formulas and reconciliations must match within tolerance.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+            {
+                "rule_id": "live_currency_and_country",
+                "rule_type": "status_check",
+                "table_name": "currency_and_country",
+                "column_name": None,
+                "condition": "Currency and country policies should be consistent with metadata.",
+                "severity": "error",
+                "description": "Conceptual live-plan validation theme.",
+            },
+        ]
+    )
+
+    result = _validate_data(data)
+
+    assert result.report.is_valid
 
 
 def test_v2_key_formula_rules_validate() -> None:

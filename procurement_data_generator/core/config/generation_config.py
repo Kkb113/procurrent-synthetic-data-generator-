@@ -14,6 +14,7 @@ class GenerationConfig:
     output_dir: Path | None = None
     allow_demo_fallback: bool = False
     run_name: str | None = None
+    profile_id: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.seed, bool) or not isinstance(self.seed, int):
@@ -25,3 +26,6 @@ class GenerationConfig:
             if not run_name:
                 raise ValueError("run_name must not be blank when provided.")
             object.__setattr__(self, "run_name", run_name)
+        if self.profile_id is not None:
+            profile_id = str(self.profile_id).strip()
+            object.__setattr__(self, "profile_id", profile_id or None)

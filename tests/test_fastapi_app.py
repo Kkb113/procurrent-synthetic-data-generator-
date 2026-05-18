@@ -12,9 +12,10 @@ def test_get_root_returns_200() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Procurement Data Generator" in response.text
+    assert "MES Synthetic Data Generator" in response.text
     assert 'name="model_version"' in response.text
     assert "Procurement v2" in response.text
+    assert 'name="module_production"' in response.text
 
 
 def test_static_files_are_mounted() -> None:

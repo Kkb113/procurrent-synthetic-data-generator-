@@ -3,21 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Procurement Data Generator</title>
+  <title>MES Synthetic Data Generator</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
   <header class="app-header">
     <div>
-      <h1>Procurement Data Generator</h1>
-      <p>Run the validated Procurement backend pipeline from metadata, ERD, scenario, and an LLM generation plan.</p>
+      <h1>MES Synthetic Data Generator</h1>
+      <p>Run validated MES synthetic data pipelines from metadata, ERD, scenario, and LLM planning.</p>
     </div>
   </header>
 
   <main class="page">
     <section class="panel">
-      <h2>Inputs</h2>
-      <form id="pipeline-form">
+      <h2>Pipeline Inputs</h2>
+      <form id="pipeline-form" action="/api/pipeline/run-generic" method="post" enctype="multipart/form-data" data-endpoint="/api/pipeline/run-generic">
+        <input type="hidden" name="modules" id="modules-field" value="procurement">
+        <fieldset class="module-selector">
+          <legend>Modules</legend>
+          <label class="check module-check">
+            <input type="checkbox" name="module_procurement" value="procurement" checked>
+            Procurement
+          </label>
+          <label class="check module-check">
+            <input type="checkbox" name="module_production" value="production">
+            Production
+          </label>
+          <label class="check module-check disabled">
+            <input type="checkbox" name="module_sales" value="sales" disabled>
+            Sales - Coming soon
+          </label>
+          <p id="module-helper" class="muted">Production consumes Procurement output. When Production is selected, Procurement should run first unless demo fallback is explicitly enabled.</p>
+        </fieldset>
         <div class="grid">
           <label>
             Model Version
@@ -27,7 +44,7 @@
           </label>
           <label>
             Metadata XLSX
-            <input type="file" name="metadata_file" accept=".xlsx" required>
+            <input type="file" name="metadata_file" accept=".xlsx">
           </label>
           <label>
             Mermaid ERD File
@@ -41,6 +58,23 @@
             Seed
             <input type="number" name="seed" value="42">
           </label>
+          <label>
+            Output Directory
+            <input type="text" name="output_dir" placeholder="output/web_runs/custom_run">
+          </label>
+          <label>
+            Profile ID
+            <select name="profile_id">
+              <option value="ev_manufacturing" selected>ev_manufacturing - default EV demo profile</option>
+              <option value="generic_mes">generic_mes</option>
+              <option value="food_manufacturing">food_manufacturing</option>
+            </select>
+            <span class="hint">Choose food_manufacturing for packaged food or snack scenarios. This controls deterministic Python vocabulary after the LLM planning step.</span>
+          </label>
+          <label>
+            Upstream Procurement final_data
+            <input type="text" name="upstream_data" placeholder="Only needed for Production-only without running Procurement">
+          </label>
         </div>
 
         <details id="v2-model-help" class="model-help" hidden>
@@ -49,10 +83,36 @@
           <p>InventoryReceiptDetail captures receipt-level supplier, component, PO, receipt, date, and price variance traceability. InventoryTransaction is the inbound StockIn ledger sourced from InventoryReceiptDetail. Inventory stores the calculated stock balance by Component, Plant, and Warehouse. InventoryBalance is not part of v2. Procurement v2 uses 2025 dates, US locations, USD values, one Plant, and one Warehouse.</p>
         </details>
 
+        <details class="model-help" open>
+          <summary>Production dependency behavior</summary>
+          <p>Production v1 is a Production Execution module within MES context. It consumes Procurement final_data and generates production orders, material issues, batches, operations, quality, finished goods, genealogy, and cost summary.</p>
+          <p>For an integrated run, select Procurement and Production. Production requires Procurement upstream data. Production-only runs require an upstream Procurement final_data folder or explicit demo fallback.</p>
+        </details>
+
         <details class="model-help">
-          <summary>Production v1 runs from the dedicated command-line pipeline</summary>
-          <p>Production v1 is a Production Execution module within MES context. It consumes Procurement final_data and generates production orders, material issues, batches, operations, quality, finished goods, genealogy, and cost summary through scripts/run_production_pipeline.py. It uses the single upstream Plant and Warehouse, ShiftCode A only, and still allows multiple WorkCenters.</p>
-          <p>The UI does not expose Production as an active pipeline option yet. Use Procurement v2 here, then run the dedicated Production pipeline from the command line.</p>
+          <summary>Production-specific inputs</summary>
+          <div class="grid">
+            <label>
+              Production Metadata XLSX
+              <input type="file" name="production_metadata_file" accept=".xlsx">
+            </label>
+            <label>
+              Production Mermaid ERD File
+              <input type="file" name="production_erd_file" accept=".mmd,.txt">
+            </label>
+            <label>
+              Production Plan JSON
+              <input type="file" name="production_plan_file" accept=".json">
+            </label>
+          </div>
+          <label>
+            Production Mermaid ERD Text
+            <textarea name="production_erd_text" rows="5" placeholder="Optional Production ERD text override."></textarea>
+          </label>
+          <label>
+            Production Scenario
+            <textarea name="production_scenario_text" rows="5" placeholder="Optional Production scenario override."></textarea>
+          </label>
         </details>
 
         <label>
@@ -62,7 +122,7 @@
 
         <label>
           Business Scenario
-          <textarea name="scenario_text" rows="7" required placeholder="Describe the procurement scenario to generate."></textarea>
+          <textarea name="scenario_text" rows="7" placeholder="Describe the MES scenario to generate, such as packaged food/snack manufacturing. Defaults are used when blank."></textarea>
         </label>
 
         <div class="options">
@@ -78,6 +138,10 @@
             <input type="checkbox" name="load_sql">
             Load to SQL
           </label>
+          <label class="check">
+            <input type="checkbox" name="allow_demo_fallback">
+            Allow demo fallback
+          </label>
           <label>
             If table exists
             <select name="if_table_exists">
@@ -88,7 +152,7 @@
           </label>
         </div>
 
-        <button id="run-button" type="submit">Run Pipeline</button>
+        <button id="run-button" type="submit">Run Generic Pipeline</button>
       </form>
     </section>
 
@@ -112,12 +176,26 @@
       <h2>Results</h2>
       <div class="metrics">
         <div><span>Model Version</span><strong id="result-model-version">-</strong></div>
+        <div><span>Modules</span><strong id="result-modules">-</strong></div>
         <div><span>Final Status</span><strong id="result-status">-</strong></div>
         <div><span>Tables</span><strong id="result-tables">-</strong></div>
         <div><span>Total Rows</span><strong id="result-rows">-</strong></div>
         <div><span>Data Quality</span><strong id="result-quality">-</strong></div>
         <div><span>SQL Load</span><strong id="result-sql">-</strong></div>
       </div>
+      <h3>Module Results</h3>
+      <table id="module-table">
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>Status</th>
+            <th>Tables</th>
+            <th>Validation</th>
+            <th>Output</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
       <div class="issues">
         <h3>Warnings</h3>
         <ul id="warnings-list"></ul>
@@ -132,6 +210,6 @@
     </section>
   </main>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=phase10-generic-route"></script>
 </body>
 </html>

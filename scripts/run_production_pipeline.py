@@ -9,16 +9,19 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from procurement_data_generator.core.erd.mermaid_parser import parse_mermaid_erd_file
+from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
+from procurement_data_generator.core.sql.db_config import DatabaseConfig
+from procurement_data_generator.core.sql.sql_loader import SQLServerLoader, save_sql_load_report
 from procurement_data_generator.modules.production.data_validator import (
     validate_production_generated_data,
     write_production_quality_reports,
@@ -32,6 +35,9 @@ from procurement_data_generator.modules.production.reconciler_rules import (
 )
 from procurement_data_generator.modules.production.role_validator import validate_production_roles
 from procurement_data_generator.modules.production.transaction_generator import ProductionTransactionGenerator
+
+
+SQLLoaderFactory = Callable[[DatabaseConfig], SQLServerLoader]
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,8 @@ class ProductionPipelineResult:
     notes: list[str]
     errors: list[str]
     warnings: list[str]
+    sql_load_status: str = "not_run"
+    sql_load_report_path: str | None = None
 
 
 def run_production_pipeline(
@@ -64,6 +72,12 @@ def run_production_pipeline(
     output_root: str | Path,
     seed: int | None = None,
     run_id: str | None = None,
+    load_sql: bool = False,
+    allow_unvalidated_sql_load: bool = False,
+    if_table_exists: str = "replace",
+    sql_loader_factory: SQLLoaderFactory | None = None,
+    operating_scope: OperatingScope | None = None,
+    generation_config: GenerationConfig | None = None,
 ) -> ProductionPipelineResult:
     """Run the dedicated Production v1 pipeline without touching Procurement dispatch."""
 
@@ -74,6 +88,8 @@ def run_production_pipeline(
     upstream_data_path = Path(upstream_data_path)
     output_root = Path(output_root)
     run_id = run_id or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
+    generation_config = generation_config or GenerationConfig(seed=seed if seed is not None else 42)
 
     run_folder = output_root / run_id
     master_folder = run_folder / "master_data"
@@ -236,7 +252,10 @@ def run_production_pipeline(
         return result
     notes.extend(f"Plan validation warning: {issue.message}" for issue in semantic_plan_result.report.warnings)
 
-    master_generator = ProductionMasterDataGenerator()
+    master_generator = ProductionMasterDataGenerator(
+        operating_scope=operating_scope,
+        generation_config=generation_config,
+    )
     master_data, master_report = master_generator.generate_master_data(
         schema,
         plan,
@@ -266,7 +285,10 @@ def run_production_pipeline(
         return result
     master_generator.export_master_data(master_data, master_folder)
 
-    transaction_generator = ProductionTransactionGenerator()
+    transaction_generator = ProductionTransactionGenerator(
+        operating_scope=operating_scope,
+        generation_config=generation_config,
+    )
     master_context = transaction_generator.load_master_data(master_folder)
     upstream_context = transaction_generator.load_upstream_data(upstream_data_path, master_context)
     transaction_data, transaction_report = transaction_generator.generate_transaction_data(
@@ -301,14 +323,31 @@ def run_production_pipeline(
 
     _merge_final_data(master_folder, transaction_folder, final_folder)
     quality_result = validate_production_generated_data(schema, master_folder, transaction_folder, upstream_data_path)
-    write_production_quality_reports(quality_result, reports_folder)
+    quality_json_path, _quality_md_path = write_production_quality_reports(quality_result, reports_folder)
     errors.extend(f"{issue.check_type}: {issue.message}" for issue in quality_result.errors)
     warnings.extend(f"{issue.check_type}: {issue.message}" for issue in quality_result.warnings)
 
     all_data = {**master_data, **transaction_data}
+    sql_load_status = "skipped"
+    sql_load_report_path: str | None = None
+    if load_sql:
+        sql_report_path, sql_load_status, sql_warnings = _run_sql_load(
+            all_data,
+            schema,
+            quality_json_path,
+            reports_folder,
+            allow_unvalidated_sql_load,
+            if_table_exists,
+            sql_loader_factory,
+        )
+        sql_load_report_path = str(sql_report_path)
+        warnings.extend(sql_warnings)
+    else:
+        notes.append("SQL load skipped.")
+
     result = _build_result(
         run_id,
-        _status_for(len(quality_result.errors), len(quality_result.warnings)),
+        _status_for(len(quality_result.errors), len(warnings)),
         seed,
         input_paths,
         upstream_data_path,
@@ -320,6 +359,8 @@ def run_production_pipeline(
         notes,
         errors,
         warnings,
+        sql_load_status=sql_load_status,
+        sql_load_report_path=sql_load_report_path,
     )
     _write_pipeline_reports(result, reports_folder)
     return result
@@ -334,7 +375,11 @@ def main() -> int:
     parser.add_argument("--upstream-data", required=True, help="Procurement v2 final_data folder.")
     parser.add_argument("--output", required=True, help="Production run output root folder.")
     parser.add_argument("--seed", type=int, default=None, help="Optional deterministic random seed.")
+    parser.add_argument("--profile-id", "--industry-profile", dest="profile_id", default=None, help="Industry profile ID, for example ev_manufacturing, generic_mes, or food_manufacturing.")
     parser.add_argument("--run-id", default=None, help="Optional run id. Defaults to timestamp run id.")
+    parser.add_argument("--load-sql", default="false", choices=["true", "false"], help="Whether to load Production final data to SQL.")
+    parser.add_argument("--allow-unvalidated-sql-load", action="store_true", help="Allow SQL load without a passing quality report.")
+    parser.add_argument("--if-table-exists", default="replace", choices=["replace", "append", "fail"], help="SQL table handling mode.")
     args = parser.parse_args()
 
     result = run_production_pipeline(
@@ -346,6 +391,10 @@ def main() -> int:
         output_root=args.output,
         seed=args.seed,
         run_id=args.run_id,
+        load_sql=args.load_sql == "true",
+        allow_unvalidated_sql_load=args.allow_unvalidated_sql_load,
+        if_table_exists=args.if_table_exists,
+        generation_config=GenerationConfig(seed=args.seed if args.seed is not None else 42, profile_id=args.profile_id),
     )
     print("Production pipeline completed.")
     print(f"Run ID: {result.run_id}")
@@ -354,6 +403,7 @@ def main() -> int:
     print(f"Tables generated: {result.generated_table_count}")
     print(f"Final data CSVs: {result.final_data_csv_count}")
     print(f"Validation status: {result.validation_status}")
+    print(f"SQL load status: {result.sql_load_status}")
     print(f"Errors: {len(result.errors)}")
     print(f"Warnings: {len(result.warnings)}")
     print(f"Pipeline report: {Path(result.output_folders['reports']) / 'production_pipeline_report.md'}")
@@ -407,6 +457,30 @@ def _row_counts(dataframes: dict[str, Any]) -> dict[str, int]:
     return {table_name: len(dataframe) for table_name, dataframe in sorted(dataframes.items())}
 
 
+def _run_sql_load(
+    dataframes: dict[str, Any],
+    schema,
+    quality_report_path: Path,
+    reports_folder: Path,
+    allow_unvalidated_sql_load: bool,
+    if_table_exists: str,
+    sql_loader_factory: SQLLoaderFactory | None,
+) -> tuple[Path, str, list[str]]:
+    config = DatabaseConfig.from_env(if_table_exists_override=if_table_exists)
+    loader = (sql_loader_factory or (lambda config: SQLServerLoader(config)))(config)
+    sql_report = loader.load_dataset(
+        dataframes,
+        schema,
+        validation_report_path=quality_report_path,
+        allow_unvalidated_load=allow_unvalidated_sql_load,
+    )
+    json_path, _markdown_path = save_sql_load_report(sql_report, reports_folder)
+    status = "passed" if sql_report.status == "passed" else "passed_with_warnings"
+    warnings = [f"SQL load warning: {warning}" for warning in sql_report.warnings]
+    warnings.extend(f"SQL load error: {error}" for error in sql_report.errors)
+    return json_path, status, warnings
+
+
 def _status_for(error_count: int, warning_count: int) -> str:
     if error_count > 0:
         return "failed"
@@ -429,6 +503,8 @@ def _build_result(
     notes: list[str],
     errors: list[str],
     warnings: list[str],
+    sql_load_status: str = "not_run",
+    sql_load_report_path: str | None = None,
 ) -> ProductionPipelineResult:
     final_data_path = Path(output_folders["final_data"])
     final_csv_count = len(list(final_data_path.glob("*.csv"))) if final_data_path.exists() else 0
@@ -448,6 +524,8 @@ def _build_result(
         notes=notes,
         errors=errors,
         warnings=warnings,
+        sql_load_status=sql_load_status,
+        sql_load_report_path=sql_load_report_path,
     )
 
 
@@ -471,6 +549,7 @@ def _format_pipeline_markdown(payload: dict[str, Any]) -> str:
         f"- Validation status: {payload['validation_status']}",
         f"- Validation errors: {payload['validation_error_count']}",
         f"- Validation warnings: {payload['validation_warning_count']}",
+        f"- SQL load status: {payload.get('sql_load_status', 'not_run')}",
         f"- Generated table count: {payload['generated_table_count']}",
         f"- Final data CSV count: {payload['final_data_csv_count']}",
         f"- Upstream data: {payload['upstream_data_path']}",
@@ -479,6 +558,8 @@ def _format_pipeline_markdown(payload: dict[str, Any]) -> str:
     ]
     for key, value in payload["output_folders"].items():
         lines.append(f"- {key}: {value}")
+    if payload.get("sql_load_report_path"):
+        lines.append(f"- sql_load_report: {payload['sql_load_report_path']}")
     lines.extend(["", "## Row Counts"])
     for table_name, row_count in payload["row_counts_by_table"].items():
         lines.append(f"- {table_name}: {row_count}")

@@ -6,6 +6,7 @@ import pytest
 
 from procurement_data_generator.modules.shared.industry_profiles import (
     EV_MANUFACTURING_PROFILE,
+    FOOD_MANUFACTURING_PROFILE,
     GENERIC_MES_PROFILE,
     IndustryProfileValueProvider,
 )
@@ -43,6 +44,16 @@ def test_non_default_profile_does_not_force_battery_safety_critical_policy() -> 
 
     assert provider.is_procurement_safety_critical_category("Battery") is False
     assert provider.is_procurement_safety_critical_category("Safety") is False
+
+
+def test_food_profile_exposes_food_quality_vocabulary() -> None:
+    provider = IndustryProfileValueProvider(FOOD_MANUFACTURING_PROFILE)
+
+    assert provider.default_country == "India"
+    assert provider.default_currency == "INR"
+    assert "Moisture Check" in provider.procurement_inspection_test_names()
+    assert "Foreign Material Detected" in provider.procurement_rejection_reasons()
+    assert provider.is_procurement_safety_critical_category("Battery") is False
 
 
 def test_custom_profile_values_override_named_generator_policies() -> None:

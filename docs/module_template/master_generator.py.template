@@ -1,0 +1,11 @@
+"""Template master data generator."""
+
+from __future__ import annotations
+
+
+class ExampleMasterDataGenerator:
+    def __init__(self, **kwargs):
+        self.options = kwargs
+
+    def generate_master_data(self, *args, **kwargs):
+        raise NotImplementedError

@@ -99,10 +99,11 @@ class ProcurementMasterDataGenerator:
         generation_config: GenerationConfig | None = None,
     ) -> None:
         self.name_generator = ProcurementNameGenerator()
-        self.industry_profile = industry_profile or get_industry_profile_or_default(profile_id)
-        self.profile_values = IndustryProfileValueProvider(self.industry_profile)
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
+        effective_profile_id = profile_id or self.generation_config.profile_id
+        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
+        self.profile_values = IndustryProfileValueProvider(self.industry_profile)
 
     def generate_master_data(
         self,
@@ -440,14 +441,17 @@ class ProcurementMasterDataGenerator:
         count = self.get_target_rows(table, plan)
         domain_profile = self._profile_domain_profile(plan)
         locations = self._shuffled_us_locations(count, rng)
+        supplier_cities = self._column_allowed_values(table, "SupplierCity")
+        supplier_states = self._column_allowed_values(table, "SupplierState")
+        supplier_countries = self._column_allowed_values(table, "SupplierCountry")
         names = self.name_generator.generate_vendor_names(count, domain_profile, seed, set())
         values_by_column: dict[str, list[Any]] = {
             "SupplierID": list(range(1, count + 1)),
             "SupplierCode": [f"SUP-{index:05d}" for index in range(1, count + 1)],
             "SupplierName": names,
-            "SupplierCity": [locations[index]["city"] for index in range(count)],
-            "SupplierState": [locations[index]["state"] for index in range(count)],
-            "SupplierCountry": [locations[index].get("country", self.profile_values.default_country) for index in range(count)],
+            "SupplierCity": self._repeat_allowed_or_location(supplier_cities, locations, "city", count),
+            "SupplierState": self._repeat_allowed_or_location(supplier_states, locations, "state", count),
+            "SupplierCountry": self._repeat_allowed_or_location(supplier_countries, locations, "country", count, self.profile_values.default_country),
             "SupplierZipCode": [locations[index]["zip"] for index in range(count)],
         }
         return self._build_v2_dataframe(table, count, plan, rng, values_by_column, status_primary="Active")
@@ -475,7 +479,7 @@ class ProcurementMasterDataGenerator:
             "ComponentName": names,
             "ComponentCategory": component_categories,
             "StandardCost": standard_costs,
-            "CurrencyCode": [self.profile_values.default_currency] * count,
+            "CurrencyCode": [self._column_value_or_default(table, "CurrencyCode", self.profile_values.default_currency)] * count,
             "SafetyCriticalFlag": [
                 1 if self.profile_values.is_procurement_safety_critical_category(category) or rng.random() < 0.18 else 0
                 for category in component_categories
@@ -493,13 +497,16 @@ class ProcurementMasterDataGenerator:
         count = get_expected_plant_count()
         locations = self._shuffled_us_locations(count, rng)
         plant_types = self.industry_profile.procurement.plant_type_names or ("Manufacturing Plant",)
+        plant_cities = self._column_allowed_values(table, "PlantCity")
+        plant_states = self._column_allowed_values(table, "PlantState")
+        plant_countries = self._column_allowed_values(table, "PlantCountry")
         values_by_column: dict[str, list[Any]] = {
             "PlantID": list(range(1, count + 1)),
             "PlantCode": [f"PLT-{locations[index]['city'][:3].upper()}-{index + 1:02d}" for index in range(count)],
-            "PlantName": [f"{locations[index]['city']} {plant_types[index % len(plant_types)]}" for index in range(count)],
-            "PlantCity": [locations[index]["city"] for index in range(count)],
-            "PlantState": [locations[index]["state"] for index in range(count)],
-            "PlantCountry": [locations[index].get("country", self.profile_values.default_country) for index in range(count)],
+            "PlantName": [f"{(plant_cities[index % len(plant_cities)] if plant_cities else locations[index]['city'])} {plant_types[index % len(plant_types)]}" for index in range(count)],
+            "PlantCity": self._repeat_allowed_or_location(plant_cities, locations, "city", count),
+            "PlantState": self._repeat_allowed_or_location(plant_states, locations, "state", count),
+            "PlantCountry": self._repeat_allowed_or_location(plant_countries, locations, "country", count, self.profile_values.default_country),
             "PlantZipCode": [locations[index]["zip"] for index in range(count)],
         }
         return self._build_v2_dataframe(table, count, plan, rng, values_by_column, status_primary="Active")
@@ -657,7 +664,7 @@ class ProcurementMasterDataGenerator:
             "MinOrderQuantity": self._generate_decimal_values(min_order_column, len(pairs), rng) if min_order_column else [1.0] * len(pairs),
             "LeadTimeDays": self._generate_integer_values(lead_time_column, len(pairs), rng) if lead_time_column else [14] * len(pairs),
             "ContractPrice": [],
-            "CurrencyCode": [self.profile_values.default_currency] * len(pairs),
+            "CurrencyCode": [self._column_value_or_default(table, "CurrencyCode", self.profile_values.default_currency)] * len(pairs),
         }
         minimum = float(_parse_number(price_column.min_value if price_column else None, 1.0))
         maximum = float(_parse_number(price_column.max_value if price_column else None, 5000.0))
@@ -684,9 +691,9 @@ class ProcurementMasterDataGenerator:
             if column.key_type == "PK" or column.generation_type == "sequence_id":
                 data[column.column_name] = list(range(1, count + 1))
             elif column.column_name == "CurrencyCode":
-                data[column.column_name] = [self.profile_values.default_currency] * count
+                data[column.column_name] = [self._column_value_or_default(table, column.column_name, self.profile_values.default_currency)] * count
             elif column.column_name.endswith("Country"):
-                data[column.column_name] = [self.profile_values.default_country] * count
+                data[column.column_name] = [self._column_value_or_default(table, column.column_name, self.profile_values.default_country)] * count
             elif column.generation_type == "category":
                 data[column.column_name] = self._generate_category_values(table, column, count, plan, rng)
             elif column.generation_type == "status":
@@ -713,11 +720,11 @@ class ProcurementMasterDataGenerator:
             if extra:
                 report.add_error(message=f"Procurement v2 master generation produced non-master tables: {', '.join(extra)}.", suggested_fix="Do not generate transaction tables in V2-5.")
 
-        self._validate_constant_value(dataframes, "SupplierMaster", "SupplierCountry", self.profile_values.default_country, report)
-        self._validate_constant_value(dataframes, "Plant", "PlantCountry", self.profile_values.default_country, report)
-        self._validate_constant_value(dataframes, "Warehouse", "WarehouseCountry", self.profile_values.default_country, report)
-        self._validate_constant_value(dataframes, "ComponentMaster", "CurrencyCode", self.profile_values.default_currency, report)
-        self._validate_constant_value(dataframes, "SupplierComponent", "CurrencyCode", self.profile_values.default_currency, report)
+        self._validate_constant_value(dataframes, "SupplierMaster", "SupplierCountry", self._schema_column_value_or_default(schema, "SupplierMaster", "SupplierCountry", self.profile_values.default_country), report)
+        self._validate_constant_value(dataframes, "Plant", "PlantCountry", self._schema_column_value_or_default(schema, "Plant", "PlantCountry", self.profile_values.default_country), report)
+        self._validate_constant_value(dataframes, "Warehouse", "WarehouseCountry", self._schema_column_value_or_default(schema, "Warehouse", "WarehouseCountry", self.profile_values.default_country), report)
+        self._validate_constant_value(dataframes, "ComponentMaster", "CurrencyCode", self._schema_column_value_or_default(schema, "ComponentMaster", "CurrencyCode", self.profile_values.default_currency), report)
+        self._validate_constant_value(dataframes, "SupplierComponent", "CurrencyCode", self._schema_column_value_or_default(schema, "SupplierComponent", "CurrencyCode", self.profile_values.default_currency), report)
         self._validate_unique_column(dataframes, "SupplierMaster", "SupplierName", report)
         self._validate_unique_column(dataframes, "ComponentMaster", "ComponentName", report)
         self._validate_unique_column(dataframes, "Plant", "PlantName", report)
@@ -866,6 +873,28 @@ class ProcurementMasterDataGenerator:
     def _column_allowed_values(self, table: TableContract, column_name: str) -> list[str]:
         column = self._column(table, column_name)
         return list(column.allowed_values) if column else []
+
+    def _column_value_or_default(self, table: TableContract, column_name: str, default: str) -> str:
+        values = self._column_allowed_values(table, column_name)
+        return str(values[0]) if values else default
+
+    def _schema_column_value_or_default(self, schema: SchemaContract, table_name: str, column_name: str, default: str) -> str:
+        table = schema.tables.get(table_name)
+        if table is None:
+            return default
+        return self._column_value_or_default(table, column_name, default)
+
+    def _repeat_allowed_or_location(
+        self,
+        allowed_values: list[str],
+        locations: list[dict[str, str]],
+        location_key: str,
+        count: int,
+        fallback: str | None = None,
+    ) -> list[str]:
+        if allowed_values:
+            return [str(allowed_values[index % len(allowed_values)]) for index in range(count)]
+        return [str(locations[index].get(location_key, fallback or "")) for index in range(count)]
 
     def _order_master_tables(self, tables: list[TableContract], report: ValidationReport) -> list[TableContract]:
         table_by_name = {table.table_name: table for table in tables}

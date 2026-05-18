@@ -24,17 +24,17 @@ procurement_data_generator/modules/shared/
 ```
 
 Phase 1 module adapters are available through `procurement_data_generator/core/modules/`.
-They register Procurement and Production as module plugins without changing the existing
-Procurement runner or Production command-line workflow.
+They register Procurement and Production as module plugins while preserving existing
+Procurement and Production compatibility entry points.
 
 Phase 2 adds a generic pipeline runner foundation in `procurement_data_generator/core/pipeline/generic_runner.py`.
-Existing Procurement and Production entry points remain supported; full Production execution through the generic runner is scheduled for a later phase.
+Existing Procurement and Production entry points remain supported.
 
 Phase 3 introduces a normalized multi-module-capable LLM plan envelope while preserving legacy single-module plans. Prompt refactoring is intentionally deferred to Phase 4, and generator behavior remains unchanged.
 
 Phase 4 introduces generic MES prompt assembly. Module-specific prompt sections are provided by module plugins; legacy Procurement prompt construction remains supported, generator behavior is unchanged, and Production full generic execution remains deferred to Phase 8.
 
-Procurement v2 is the active FastAPI/backend Procurement pipeline. Production v1 has a dedicated command-line pipeline orchestration script, while the existing Procurement runner remains focused on Procurement v2.
+Procurement v2 and Production v1 are active registered modules. The generic runner supports Procurement-only and Procurement followed by Production, while compatibility entry points remain available.
 
 ## 2. Procurement v2 Completed State
 
@@ -331,15 +331,21 @@ missing required tables
 
 ## 8. FastAPI UI/API Status
 
-The FastAPI UI/API currently runs the Procurement pipeline only.
+The FastAPI UI is a generic MES browser workflow for the registered modules.
+It calls `/api/pipeline/run-generic` for Procurement-only and Procurement to
+Production orchestration, while the legacy upload-based Procurement endpoint
+remains available for backward compatibility.
 
-Supported UI/API model versions:
+Supported UI/API module flows:
 
 ```text
-v2 active/default
+procurement
+procurement,production
 ```
 
-Production v1 is documented in the UI as a command-line workflow only. Do not add `production_v1` as an active UI model option until a future UI/API phase intentionally wires the dedicated Production runner into the app.
+Production requires Procurement upstream data unless demo fallback is explicitly
+enabled. Sales is shown only as a disabled future placeholder and is not
+registered as a backend module.
 
 ## 9. Current Regression Commands
 
@@ -392,4 +398,4 @@ Python reconciliation and data quality reports
 manager-facing SQL validation packs
 ```
 
-Phase 8 makes Production a first-class generic pipeline module. The generic runner now supports Procurement-only and Procurement -> Production execution, passes Procurement final data into Production, and requires explicit upstream data or `allow_demo_fallback=True` for Production-only runs. Existing standalone Procurement and Production entry points remain supported; broader API/CLI hardening and future module templates remain Phase 9.
+Phase 10 upgrades the frontend from a Procurement-only page to a generic MES browser UI. The UI can trigger `/api/pipeline/run-generic` for `procurement` and `procurement,production`, shows Production dependency behavior, keeps demo fallback explicit, and presents Sales only as a disabled future placeholder. The legacy upload-based Procurement route remains backward compatible. Known non-blocking warnings remain limited to existing pandas deprecation/future warnings.

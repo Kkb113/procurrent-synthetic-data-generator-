@@ -1,0 +1,15 @@
+"""Template module prompt sections."""
+
+from __future__ import annotations
+
+from procurement_data_generator.core.modules.contracts import PromptSection
+
+
+def get_example_prompt_sections() -> tuple[PromptSection, ...]:
+    return (
+        PromptSection(
+            section_id="example.v1.planning",
+            title="Example Planning Rules",
+            content="TODO: describe module-specific planning rules. LLM plans only; Python generates and validates.",
+        ),
+    )

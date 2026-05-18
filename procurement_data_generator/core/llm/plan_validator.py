@@ -935,14 +935,32 @@ def _validate_plan_validation_rules(
         if rule.rule_id in seen_rule_ids:
             _validation_rule_error(report, rule, "Duplicate validation rule_id.", "Use a unique rule_id.")
         seen_rule_ids.add(rule.rule_id)
-        if rule.table_name and not table_exists(schema, rule.table_name):
-            _validation_rule_error(report, rule, f"Validation rule table {rule.table_name} does not exist.", "Use a metadata table.")
+        conceptual_scope = _is_conceptual_validation_scope(rule)
+        conceptual_column = _is_conceptual_validation_column(rule)
+        missing_table = bool(rule.table_name and not table_exists(schema, rule.table_name))
+        if missing_table:
+            _validation_rule_warning(
+                report,
+                rule,
+                f"Validation rule table {rule.table_name} does not exist; treating it as global validation guidance.",
+                "Keep executable table references in formula/date/quantity/status rules; Python data validation enforces generated data.",
+            )
         if rule.column_name:
-            if not rule.table_name:
-                if not _is_allowed_global_validation_column(rule):
-                    _validation_rule_error(report, rule, "column_name is provided without table_name.", "Provide table_name with column_name.")
-            elif not column_exists(schema, rule.table_name, rule.column_name):
-                _validation_rule_error(report, rule, f"Validation rule column {rule.column_name} does not exist.", "Use a metadata column.")
+            if not rule.table_name or conceptual_scope:
+                if not _is_allowed_global_validation_column(rule) and not conceptual_column:
+                    _validation_rule_warning(
+                        report,
+                        rule,
+                        "column_name is provided without a concrete metadata table; treating it as global validation guidance.",
+                        "Keep executable column references in formula/date/quantity/status rules; Python data validation enforces generated data.",
+                    )
+            elif not missing_table and not column_exists(schema, rule.table_name, rule.column_name):
+                _validation_rule_warning(
+                    report,
+                    rule,
+                    f"Validation rule column {rule.column_name} does not exist; treating it as validation guidance.",
+                    "Use metadata columns for executable rule types; Python data validation still checks generated data.",
+                )
         if not _has_text(rule.condition):
             _validation_rule_error(report, rule, "Validation rule condition is blank.", "Provide a non-blank condition.")
         if len(report.errors) == before_errors:
@@ -953,15 +971,59 @@ def _validate_plan_validation_rules(
 
 
 def _is_allowed_global_validation_column(rule: PlanValidationRule) -> bool:
-    """Allow narrowly scoped global v2 validation rules such as CurrencyCode = USD."""
+    """Allow narrowly scoped global validation rules such as CurrencyCode consistency."""
 
     column_name = (rule.column_name or "").lower()
     condition = (rule.condition or "").lower()
-    if column_name == "currencycode" and "usd" in condition:
+    if column_name == "currencycode" and "currency" in condition:
         return True
-    if column_name in {"suppliercountry", "plantcountry", "warehousecountry"} and "usa" in condition:
+    if column_name in {"suppliercountry", "plantcountry", "warehousecountry"} and "country" in condition:
         return True
     return False
+
+
+def _is_conceptual_validation_scope(rule: PlanValidationRule) -> bool:
+    """Treat live-plan validation theme names as global guidance, not tables."""
+
+    table_name = (rule.table_name or "").strip().lower()
+    condition = (rule.condition or "").lower()
+    if not table_name:
+        return False
+    if table_name in {"all_tables", "currencycode", "location_tables", "procurement_lifecycle", "production_lifecycle"}:
+        return True
+    if table_name.endswith("consistency") or table_name.endswith("lifecycle") or table_name.endswith("_tables"):
+        return True
+    return table_name in condition and any(token in table_name for token in ("consistency", "lifecycle"))
+
+
+def _is_conceptual_validation_column(rule: PlanValidationRule) -> bool:
+    """Allow live-plan validation theme fields that Python enforces later."""
+
+    column_name = (rule.column_name or "").strip().lower()
+    if not column_name:
+        return False
+    conceptual_tokens = {
+        "balance",
+        "columns",
+        "country",
+        "date",
+        "financial",
+        "fk",
+        "keys",
+        "lineage",
+        "lifecycle",
+        "nullable",
+        "pk",
+        "posting",
+        "primary",
+        "quantities",
+        "quantity",
+        "required",
+        "sequence",
+        "status",
+        "traceability",
+    }
+    return any(token in column_name for token in conceptual_tokens)
 
 
 def _validate_domain_profile(plan: LLMGenerationPlan, schema: SchemaContract, report: ValidationReport) -> None:
@@ -1105,36 +1167,40 @@ def _validate_v2_column_rules(plan: LLMGenerationPlan, schema: SchemaContract, r
         if rule.column_name == "CurrencyCode":
             values = {value.upper() for value in rule.allowed_values}
             strategy = f"{rule.strategy} {rule.notes or ''}".upper()
-            if values and values != {"USD"}:
+            expected_values = _expected_column_values(column, {"USD"})
+            expected_text = ", ".join(sorted(expected_values))
+            if values and values != expected_values:
                 report.add_error(
                     table_name=rule.table_name,
                     column_name=rule.column_name,
-                    message="Procurement v2 CurrencyCode generation must be USD-only.",
-                    suggested_fix="Use allowed_values ['USD'] or a strategy that always emits USD.",
+                    message=f"Procurement v2 CurrencyCode generation must match metadata AllowedValues: {expected_text}.",
+                    suggested_fix=f"Use allowed_values {sorted(expected_values)} or a strategy that always emits {expected_text}.",
                 )
-            elif not values and "USD" not in strategy:
+            elif not values and not any(value in strategy for value in expected_values):
                 report.add_warning(
                     table_name=rule.table_name,
                     column_name=rule.column_name,
-                    message="Procurement v2 CurrencyCode rule should explicitly mention USD.",
-                    suggested_fix="Set allowed_values to ['USD'] or mention USD in strategy.",
+                    message=f"Procurement v2 CurrencyCode rule should explicitly mention {expected_text}.",
+                    suggested_fix=f"Set allowed_values to {sorted(expected_values)} or mention {expected_text} in strategy.",
                 )
         if rule.column_name in {"SupplierCountry", "PlantCountry", "WarehouseCountry"}:
             values = {value.upper() for value in rule.allowed_values}
             strategy = f"{rule.strategy} {rule.notes or ''}".upper()
-            if values and values != {"USA"}:
+            expected_values = _expected_column_values(column, {"USA"})
+            expected_text = ", ".join(sorted(expected_values))
+            if values and values != expected_values:
                 report.add_error(
                     table_name=rule.table_name,
                     column_name=rule.column_name,
-                    message="Procurement v2 country generation must be USA-only.",
-                    suggested_fix="Use allowed_values ['USA'] for Supplier/Plant/Warehouse country columns.",
+                    message=f"Procurement v2 country generation must match metadata AllowedValues: {expected_text}.",
+                    suggested_fix=f"Use allowed_values {sorted(expected_values)} for Supplier/Plant/Warehouse country columns.",
                 )
-            elif not values and "USA" not in strategy:
+            elif not values and not any(value in strategy for value in expected_values):
                 report.add_warning(
                     table_name=rule.table_name,
                     column_name=rule.column_name,
-                    message="Procurement v2 country rule should explicitly mention USA.",
-                    suggested_fix="Set allowed_values to ['USA'] or mention USA in strategy.",
+                    message=f"Procurement v2 country rule should explicitly mention {expected_text}.",
+                    suggested_fix=f"Set allowed_values to {sorted(expected_values)} or mention {expected_text} in strategy.",
                 )
     for column_name in ["WarehouseLocation", "WarehouseCity", "WarehouseState", "WarehouseCountry", "WarehouseZipCode"]:
         if ("Warehouse", column_name) not in covered:
@@ -1144,6 +1210,11 @@ def _validate_v2_column_rules(plan: LLMGenerationPlan, schema: SchemaContract, r
                 message="Procurement v2 plan is missing a Warehouse location column_generation_rule.",
                 suggested_fix="Add warehouse location generation rules that align with PlantID.",
             )
+
+
+def _expected_column_values(column, fallback: set[str]) -> set[str]:
+    values = {str(value).strip().upper() for value in getattr(column, "allowed_values", []) if str(value).strip()}
+    return values or fallback
 
 
 def _validate_v2_formula_expectations(plan: LLMGenerationPlan, schema: SchemaContract, report: ValidationReport) -> None:
@@ -1443,6 +1514,20 @@ def _validation_rule_error(
     suggested_fix: str,
 ) -> None:
     report.add_error(
+        table_name=rule.table_name,
+        column_name=rule.column_name,
+        message=f"PlanValidationRule {rule.rule_id}: {message}",
+        suggested_fix=suggested_fix,
+    )
+
+
+def _validation_rule_warning(
+    report: ValidationReport,
+    rule: PlanValidationRule,
+    message: str,
+    suggested_fix: str,
+) -> None:
+    report.add_warning(
         table_name=rule.table_name,
         column_name=rule.column_name,
         message=f"PlanValidationRule {rule.rule_id}: {message}",

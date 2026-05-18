@@ -75,6 +75,18 @@ label {
   font-weight: 600;
 }
 
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 0 16px;
+  padding: 14px;
+}
+
+legend {
+  font-weight: 700;
+  padding: 0 6px;
+}
+
 input,
 textarea,
 select {
@@ -113,6 +125,22 @@ textarea {
 
 .check input {
   width: auto;
+}
+
+.module-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, max-content));
+  gap: 12px 24px;
+  align-items: center;
+}
+
+.module-selector p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.disabled {
+  color: var(--muted);
 }
 
 .model-help {
@@ -234,7 +262,8 @@ th {
 @media (max-width: 800px) {
   .grid,
   .options,
-  .metrics {
+  .metrics,
+  .module-selector {
     grid-template-columns: 1fr;
   }
 }
