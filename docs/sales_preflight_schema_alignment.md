@@ -231,3 +231,7 @@ Sales Phase 6 implemented deterministic low-volume customer returns for `SalesRe
 ## Sales Phase 7 Note
 
 Sales Phase 7 implemented deterministic shipment traceability for `SalesShipmentTraceability`. It links Sales shipment lines to `FinishedGoodsReceipt`, `ProductionBatch`, `ProductionGenealogy`, `MaterialIssueLine`, `InventoryReceiptDetail`, `SupplierMaster`, and `ComponentMaster`, and calculates `AllocatedConsumedQuantity` as `ProductionGenealogy.ConsumedQuantity * SalesShipmentLine.ShippedQuantity / FinishedGoodsReceipt.GoodQuantity`. FinishedGoodsInventory updates and full generic Sales execution remain disabled until later Sales phases.
+
+## Sales Phase 8 Note
+
+Sales Phase 8 implemented post-Sales `FinishedGoodsInventory` recalculation. The update applies Production receipts, Sales shipments, restocked Sales returns, and active `Reserved` reservations while preserving inventory row identity and avoiding in-place input mutation. Sales final validation remains Phase 9, and full generic Sales runner integration remains disabled until Sales Phase 10.

@@ -67,6 +67,11 @@ SALES_PHASE7_UPSTREAM_TABLES = (
     "ComponentMaster",
 )
 
+SALES_PHASE8_UPSTREAM_TABLES = (
+    "FinishedGoodsInventory",
+    "FinishedGoodsReceipt",
+)
+
 
 class SalesTransactionGenerator:
     """Generate Sales v1 transactions through shipment without inventory mutation."""
@@ -231,6 +236,107 @@ class SalesTransactionGenerator:
         """Compatibility alias for Phase 7 shipment traceability generation."""
 
         return self.generate_shipment_traceability_data(*args, **kwargs)
+
+    def update_finished_goods_inventory_after_sales(
+        self,
+        finished_goods_inventory: pd.DataFrame | None = None,
+        finished_goods_receipt: pd.DataFrame | None = None,
+        sales_transaction_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        upstream_data: Mapping[str, pd.DataFrame] | str | Path | None = None,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Recalculate FinishedGoodsInventory after Sales shipments, returns, and reservations."""
+
+        upstream_source = _first_not_none(upstream_data, kwargs.get("upstream_dataframes"), self.upstream_data)
+        transaction_source = _first_not_none(
+            sales_transaction_data,
+            kwargs.get("transaction_data"),
+            kwargs.get("phase4_data"),
+        )
+        upstream = self._load_tables(upstream_source, SALES_PHASE8_UPSTREAM_TABLES)
+        transactions = self._load_tables(
+            transaction_source,
+            SALES_PHASE4_TRANSACTION_TABLES + SALES_PHASE5_TRANSACTION_TABLES + SALES_PHASE6_TRANSACTION_TABLES,
+        )
+        if finished_goods_inventory is not None:
+            upstream["FinishedGoodsInventory"] = finished_goods_inventory.copy(deep=True)
+        if finished_goods_receipt is not None:
+            upstream["FinishedGoodsReceipt"] = finished_goods_receipt.copy(deep=True)
+        self._validate_phase8_inputs(upstream, transactions)
+        return self._recalculate_finished_goods_inventory(upstream, transactions)
+
+    def recalculate_finished_goods_inventory_after_sales(self, *args: Any, **kwargs: Any) -> pd.DataFrame:
+        """Compatibility alias for Phase 8 FinishedGoodsInventory recalculation."""
+
+        return self.update_finished_goods_inventory_after_sales(*args, **kwargs)
+
+    def generate_sales_adjusted_finished_goods_inventory(self, *args: Any, **kwargs: Any) -> pd.DataFrame:
+        """Compatibility alias for Phase 8 Sales-adjusted FinishedGoodsInventory."""
+
+        return self.update_finished_goods_inventory_after_sales(*args, **kwargs)
+
+    def _recalculate_finished_goods_inventory(
+        self,
+        upstream: Mapping[str, pd.DataFrame],
+        transactions: Mapping[str, pd.DataFrame],
+    ) -> pd.DataFrame:
+        inventory = upstream["FinishedGoodsInventory"].copy(deep=True)
+        receipts = upstream["FinishedGoodsReceipt"].copy(deep=True)
+        shipment_lines = transactions["SalesShipmentLine"].copy(deep=True)
+        reservations = transactions["SalesInventoryReservation"].copy(deep=True)
+        return_lines = transactions.get("SalesReturnLine", pd.DataFrame()).copy(deep=True)
+
+        inventory_ids = {_id_value(value) for value in inventory["FinishedGoodsInventoryID"]}
+        _validate_inventory_ids(shipment_lines, "SalesShipmentLine", inventory_ids)
+        _validate_inventory_ids(reservations, "SalesInventoryReservation", inventory_ids)
+
+        receipt_context = _receipt_context_by_inventory_key(receipts)
+        shipped_by_inventory = _sum_by_id(shipment_lines, "FinishedGoodsInventoryID", "ShippedQuantity")
+        restocked_by_inventory = _restocked_quantity_by_inventory(return_lines, shipment_lines)
+        reserved_by_inventory = _reserved_quantity_by_inventory(reservations)
+        last_update = _last_sales_update_date(transactions, self.operating_scope.date_end)
+
+        updated_rows: list[dict[str, Any]] = []
+        for row in inventory.itertuples(index=False):
+            inventory_id = _id_value(row.FinishedGoodsInventoryID)
+            key = (_id_value(row.ProductID), _id_value(row.PlantID), _id_value(row.WarehouseID))
+            receipt_quantity, average_unit_cost = receipt_context.get(key, (0.0, 0.0))
+            shipped_quantity = shipped_by_inventory.get(inventory_id, 0.0)
+            restocked_quantity = restocked_by_inventory.get(inventory_id, 0.0)
+            reserved_quantity = reserved_by_inventory.get(inventory_id, 0.0)
+
+            on_hand_quantity = round(receipt_quantity - shipped_quantity + restocked_quantity, 2)
+            reserved_quantity = round(reserved_quantity, 2)
+            available_quantity = round(on_hand_quantity - reserved_quantity, 2)
+            _validate_inventory_balance(
+                inventory_id=inventory_id,
+                receipt_quantity=receipt_quantity,
+                shipped_quantity=shipped_quantity,
+                restocked_quantity=restocked_quantity,
+                on_hand_quantity=on_hand_quantity,
+                reserved_quantity=reserved_quantity,
+                available_quantity=available_quantity,
+            )
+
+            output_row = row._asdict()
+            output_row["OnHandQuantity"] = on_hand_quantity
+            output_row["ReservedQuantity"] = reserved_quantity
+            output_row["AvailableQuantity"] = available_quantity
+            if "OnHandValue" in output_row:
+                output_row["OnHandValue"] = round(on_hand_quantity * average_unit_cost, 2)
+            if "AvailableValue" in output_row:
+                output_row["AvailableValue"] = round(available_quantity * average_unit_cost, 2)
+            if "InventoryStatus" in output_row:
+                output_row["InventoryStatus"] = _finished_goods_inventory_status(
+                    on_hand_quantity,
+                    reserved_quantity,
+                    available_quantity,
+                )
+            if "LastUpdatedDate" in output_row:
+                output_row["LastUpdatedDate"] = last_update.isoformat()
+            updated_rows.append(output_row)
+
+        return pd.DataFrame(updated_rows, columns=inventory.columns)
 
     def _generate_shipment_traceability_rows(
         self,
@@ -903,6 +1009,40 @@ class SalesTransactionGenerator:
         for table_name, columns in _REQUIRED_PHASE7_UPSTREAM_COLUMNS.items():
             _require_table_columns(upstream, table_name, columns, "upstream Production/Procurement lineage data")
 
+    def _validate_phase8_inputs(
+        self,
+        upstream: Mapping[str, pd.DataFrame],
+        transactions: Mapping[str, pd.DataFrame],
+    ) -> None:
+        for table_name, columns in _REQUIRED_PHASE8_UPSTREAM_COLUMNS.items():
+            _require_table_columns(upstream, table_name, columns, "upstream Production finished goods data")
+        for table_name, columns in _REQUIRED_PHASE8_TRANSACTION_COLUMNS.items():
+            _require_table_columns(transactions, table_name, columns, "Sales Phase 4 transaction data")
+        if "SalesReturnLine" in transactions and not transactions["SalesReturnLine"].empty:
+            missing = [
+                column
+                for column in _OPTIONAL_PHASE8_RETURN_COLUMNS["SalesReturnLine"]
+                if column not in transactions["SalesReturnLine"].columns
+            ]
+            if missing:
+                raise ValueError(f"Sales inventory update requires SalesReturnLine.{missing[0]}.")
+        if "SalesShipmentHeader" in transactions and not transactions["SalesShipmentHeader"].empty:
+            missing = [
+                column
+                for column in _OPTIONAL_PHASE8_SHIPMENT_HEADER_COLUMNS["SalesShipmentHeader"]
+                if column not in transactions["SalesShipmentHeader"].columns
+            ]
+            if missing:
+                raise ValueError(f"Sales inventory update requires SalesShipmentHeader.{missing[0]}.")
+        if "SalesReturnHeader" in transactions and not transactions["SalesReturnHeader"].empty:
+            missing = [
+                column
+                for column in _OPTIONAL_PHASE8_RETURN_HEADER_COLUMNS["SalesReturnHeader"]
+                if column not in transactions["SalesReturnHeader"].columns
+            ]
+            if missing:
+                raise ValueError(f"Sales inventory update requires SalesReturnHeader.{missing[0]}.")
+
     def _load_tables(
         self,
         tables: Mapping[str, pd.DataFrame] | str | Path | None,
@@ -960,6 +1100,122 @@ def _rows_by_key(dataframe: pd.DataFrame, key_column: str) -> dict[Any, list[Any
     for row in dataframe.itertuples(index=False):
         output.setdefault(getattr(row, key_column), []).append(row)
     return output
+
+
+def _receipt_context_by_inventory_key(receipts: pd.DataFrame) -> dict[tuple[Any, Any, Any], tuple[float, float]]:
+    receipts = receipts.copy(deep=True)
+    receipts["GoodQuantity"] = pd.to_numeric(receipts["GoodQuantity"], errors="coerce").fillna(0.0)
+    receipts["UnitCost"] = pd.to_numeric(receipts["UnitCost"], errors="coerce").fillna(0.0)
+    if "ReceiptValue" in receipts.columns:
+        receipts["ReceiptValue"] = pd.to_numeric(receipts["ReceiptValue"], errors="coerce").fillna(
+            receipts["GoodQuantity"] * receipts["UnitCost"]
+        )
+    else:
+        receipts["ReceiptValue"] = receipts["GoodQuantity"] * receipts["UnitCost"]
+
+    context: dict[tuple[Any, Any, Any], tuple[float, float]] = {}
+    for key_values, group in receipts.groupby(["ProductID", "PlantID", "WarehouseID"], sort=False):
+        key = tuple(_id_value(value) for value in key_values)
+        receipt_quantity = round(float(group["GoodQuantity"].sum()), 2)
+        receipt_value = round(float(group["ReceiptValue"].sum()), 2)
+        average_unit_cost = round(receipt_value / receipt_quantity, 6) if receipt_quantity > 0 else 0.0
+        context[key] = (receipt_quantity, average_unit_cost)
+    return context
+
+
+def _sum_by_id(dataframe: pd.DataFrame, id_column: str, quantity_column: str) -> dict[Any, float]:
+    if dataframe.empty:
+        return {}
+    grouped = dataframe.copy(deep=True)
+    grouped[id_column] = grouped[id_column].map(_id_value)
+    grouped[quantity_column] = pd.to_numeric(grouped[quantity_column], errors="coerce").fillna(0.0)
+    return {
+        inventory_id: round(float(quantity), 2)
+        for inventory_id, quantity in grouped.groupby(id_column)[quantity_column].sum().items()
+    }
+
+
+def _reserved_quantity_by_inventory(reservations: pd.DataFrame) -> dict[Any, float]:
+    active = reservations[reservations["ReservationStatus"].astype(str).str.lower() == "reserved"].copy(deep=True)
+    return _sum_by_id(active, "FinishedGoodsInventoryID", "ReservedQuantity")
+
+
+def _restocked_quantity_by_inventory(return_lines: pd.DataFrame, shipment_lines: pd.DataFrame) -> dict[Any, float]:
+    if return_lines.empty:
+        return {}
+    shipment_lookup = shipment_lines[["ShipmentLineID", "FinishedGoodsInventoryID"]].copy(deep=True)
+    merged = return_lines.merge(shipment_lookup, on="ShipmentLineID", how="left")
+    if merged["FinishedGoodsInventoryID"].isna().any():
+        missing_line = merged.loc[merged["FinishedGoodsInventoryID"].isna(), "ShipmentLineID"].iloc[0]
+        raise ValueError(f"Sales inventory update requires SalesShipmentLine for SalesReturnLine ShipmentLineID {missing_line}.")
+    return _sum_by_id(merged, "FinishedGoodsInventoryID", "RestockedQuantity")
+
+
+def _validate_inventory_ids(dataframe: pd.DataFrame, table_name: str, inventory_ids: set[Any]) -> None:
+    unknown_ids = {
+        _id_value(value)
+        for value in dataframe["FinishedGoodsInventoryID"].dropna()
+        if _id_value(value) not in inventory_ids
+    }
+    if unknown_ids:
+        first_unknown = sorted(unknown_ids)[0]
+        raise ValueError(f"Sales inventory update requires FinishedGoodsInventoryID {first_unknown} from {table_name}.")
+
+
+def _validate_inventory_balance(
+    inventory_id: Any,
+    receipt_quantity: float,
+    shipped_quantity: float,
+    restocked_quantity: float,
+    on_hand_quantity: float,
+    reserved_quantity: float,
+    available_quantity: float,
+) -> None:
+    if on_hand_quantity < -0.0001:
+        raise ValueError(
+            "Sales inventory update would produce negative OnHandQuantity for "
+            f"FinishedGoodsInventoryID {inventory_id}: receipts {receipt_quantity}, shipments {shipped_quantity}, "
+            f"restocked returns {restocked_quantity}."
+        )
+    if reserved_quantity < -0.0001:
+        raise ValueError(f"Sales inventory update would produce negative ReservedQuantity for FinishedGoodsInventoryID {inventory_id}.")
+    if available_quantity < -0.0001:
+        raise ValueError(
+            f"Sales inventory update would produce negative AvailableQuantity for FinishedGoodsInventoryID {inventory_id}."
+        )
+    if reserved_quantity > on_hand_quantity + 0.0001:
+        raise ValueError(
+            f"Sales inventory update ReservedQuantity exceeds OnHandQuantity for FinishedGoodsInventoryID {inventory_id}."
+        )
+
+
+def _finished_goods_inventory_status(on_hand_quantity: float, reserved_quantity: float, available_quantity: float) -> str:
+    if on_hand_quantity <= 0:
+        return "OutOfStock"
+    if reserved_quantity > 0 and available_quantity <= 0:
+        return "Hold"
+    if available_quantity > 0 and available_quantity <= on_hand_quantity * 0.1:
+        return "LowStock"
+    return "Available"
+
+
+def _last_sales_update_date(transactions: Mapping[str, pd.DataFrame], fallback: date) -> date:
+    candidates: list[date] = []
+    if "SalesShipmentHeader" in transactions and "ShipmentDate" in transactions["SalesShipmentHeader"].columns:
+        candidates.extend(
+            pd.to_datetime(transactions["SalesShipmentHeader"]["ShipmentDate"], errors="coerce")
+            .dropna()
+            .dt.date
+            .tolist()
+        )
+    if "SalesReturnHeader" in transactions and "ReturnDate" in transactions["SalesReturnHeader"].columns:
+        candidates.extend(
+            pd.to_datetime(transactions["SalesReturnHeader"]["ReturnDate"], errors="coerce")
+            .dropna()
+            .dt.date
+            .tolist()
+        )
+    return max(candidates) if candidates else fallback
 
 
 def _coalesce_values(*values: Any) -> Any:
@@ -1408,4 +1664,55 @@ _REQUIRED_PHASE7_UPSTREAM_COLUMNS = {
     "InventoryReceiptDetail": ("InventoryReceiptDetailID", "SupplierID", "ComponentID"),
     "SupplierMaster": ("SupplierID",),
     "ComponentMaster": ("ComponentID",),
+}
+
+_REQUIRED_PHASE8_UPSTREAM_COLUMNS = {
+    "FinishedGoodsInventory": (
+        "FinishedGoodsInventoryID",
+        "ProductID",
+        "PlantID",
+        "WarehouseID",
+        "OnHandQuantity",
+        "ReservedQuantity",
+        "AvailableQuantity",
+    ),
+    "FinishedGoodsReceipt": (
+        "FinishedGoodsReceiptID",
+        "ProductID",
+        "PlantID",
+        "WarehouseID",
+        "GoodQuantity",
+        "UnitCost",
+    ),
+}
+
+_REQUIRED_PHASE8_TRANSACTION_COLUMNS = {
+    "SalesShipmentLine": (
+        "FinishedGoodsInventoryID",
+        "FinishedGoodsReceiptID",
+        "ProductID",
+        "ShippedQuantity",
+        "UnitCost",
+        "COGSValue",
+    ),
+    "SalesInventoryReservation": (
+        "FinishedGoodsInventoryID",
+        "ProductID",
+        "PlantID",
+        "WarehouseID",
+        "ReservedQuantity",
+        "ReservationStatus",
+    ),
+}
+
+_OPTIONAL_PHASE8_RETURN_COLUMNS = {
+    "SalesReturnLine": ("ShipmentLineID", "ProductID", "RestockedQuantity", "ScrappedQuantity"),
+}
+
+_OPTIONAL_PHASE8_SHIPMENT_HEADER_COLUMNS = {
+    "SalesShipmentHeader": ("ShipmentDate",),
+}
+
+_OPTIONAL_PHASE8_RETURN_HEADER_COLUMNS = {
+    "SalesReturnHeader": ("ReturnDate",),
 }
