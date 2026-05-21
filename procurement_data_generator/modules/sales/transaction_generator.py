@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from datetime import date, timedelta
 from pathlib import Path
@@ -11,6 +12,7 @@ import pandas as pd
 
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract, TableContract
+from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
 from procurement_data_generator.modules.shared.industry_profiles.profile_value_provider import IndustryProfileValueProvider
@@ -71,6 +73,7 @@ SALES_PHASE8_UPSTREAM_TABLES = (
     "FinishedGoodsInventory",
     "FinishedGoodsReceipt",
 )
+SALES_QUANTITY_TOLERANCE = 0.011
 
 
 class SalesTransactionGenerator:
@@ -90,7 +93,10 @@ class SalesTransactionGenerator:
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
         effective_profile_id = profile_id or self.generation_config.profile_id
-        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
+        self.industry_profile = industry_profile or get_industry_profile_or_default(
+            effective_profile_id,
+            self.generation_config.profile_file,
+        )
         self.profile_values = IndustryProfileValueProvider(self.industry_profile)
 
     def generate_transaction_data(
@@ -679,15 +685,23 @@ class SalesTransactionGenerator:
         rng: random.Random,
     ) -> dict[str, list[dict[str, Any]]]:
         target_orders = max(1, self._target_rows(schema, "SalesOrderHdr", 12))
-        target_orders = min(target_orders, max(1, len(context["customers"]) * 2))
+        if self.generation_config.limit_sales_orders_by_customer:
+            customer_cap = max(1, len(context["customers"]) * self.generation_config.sales_orders_per_customer_cap)
+            target_orders = min(target_orders, customer_cap)
+        target_lines = max(
+            target_orders,
+            self._target_rows(schema, "SalesOrderLine", target_orders),
+            self._target_rows(schema, "SalesInventoryReservation", target_orders),
+            self._target_rows(schema, "SalesPickListLine", target_orders),
+            self._target_rows(schema, "SalesShipmentLine", target_orders),
+        )
         rows: dict[str, list[dict[str, Any]]] = {table_name: [] for table_name in SALES_PHASE4_TRANSACTION_TABLES}
         year_start = date(self.operating_scope.calendar_year, 1, 1)
+        line_id = 1
 
         for order_id in range(1, target_orders + 1):
-            allocation = self._next_allocation(context, order_id, rng)
-            if allocation is None:
+            if line_id > target_lines:
                 break
-
             customer = context["customers"].iloc[(order_id - 1) % len(context["customers"])]
             location_pair = context["locations_by_customer"][customer.CustomerID]
             channel = context["channels"].iloc[(order_id - 1) % len(context["channels"])]
@@ -696,8 +710,100 @@ class SalesTransactionGenerator:
             promised_ship_date = requested_ship_date + timedelta(days=1)
             pick_date = order_date + timedelta(days=1)
             shipment_date = pick_date + timedelta(days=1 + (order_id % 3))
+            remaining_orders = max(1, target_orders - order_id + 1)
+            remaining_lines = max(1, target_lines - line_id + 1)
+            lines_this_order = max(1, math.ceil(remaining_lines / remaining_orders))
+            order_line_statuses: list[str] = []
+            first_allocation: dict[str, Any] | None = None
 
-            line_status = _line_status(allocation["ordered_quantity"], allocation["reserved_quantity"], allocation["shipped_quantity"])
+            for _line_index in range(lines_this_order):
+                if line_id > target_lines:
+                    break
+                allocation = self._next_allocation(context, line_id, rng)
+                if allocation is None:
+                    break
+                if first_allocation is None:
+                    first_allocation = allocation
+
+                line_status = _line_status(allocation["ordered_quantity"], allocation["reserved_quantity"], allocation["shipped_quantity"])
+                order_line_statuses.append(line_status)
+                line_amount = round(allocation["ordered_quantity"] * allocation["unit_price"], 2)
+                discount_amount = round(line_amount * allocation["discount_pct"] / 100.0, 2)
+                rows["SalesOrderLine"].append(
+                    {
+                        "SalesOrderLineID": line_id,
+                        "SalesOrderID": order_id,
+                        "ProductID": allocation["product_id"],
+                        "PlantID": allocation["plant_id"],
+                        "WarehouseID": allocation["warehouse_id"],
+                        "OrderedQuantity": allocation["ordered_quantity"],
+                        "ReservedQuantity": allocation["reserved_quantity"],
+                        "ShippedQuantity": allocation["shipped_quantity"],
+                        "BackorderQuantity": round(allocation["ordered_quantity"] - allocation["shipped_quantity"], 2),
+                        "UOM": allocation["uom"],
+                        "UnitPrice": allocation["unit_price"],
+                        "DiscountPct": allocation["discount_pct"],
+                        "LineAmount": line_amount,
+                        "DiscountAmount": discount_amount,
+                        "NetLineAmount": round(line_amount - discount_amount, 2),
+                        "LineStatus": line_status,
+                    }
+                )
+
+                rows["SalesInventoryReservation"].append(
+                    {
+                        "ReservationID": line_id,
+                        "SalesOrderLineID": line_id,
+                        "FinishedGoodsInventoryID": allocation["finished_goods_inventory_id"],
+                        "ProductID": allocation["product_id"],
+                        "PlantID": allocation["plant_id"],
+                        "WarehouseID": allocation["warehouse_id"],
+                        "ReservationDate": order_date,
+                        "ReservedQuantity": allocation["reserved_quantity"],
+                        "ReleasedQuantity": round(allocation["reserved_quantity"] - allocation["shipped_quantity"], 2)
+                        if not _quantity_equal(allocation["shipped_quantity"], allocation["reserved_quantity"])
+                        else 0.0,
+                        "ReservationStatus": "Consumed"
+                        if _quantity_equal(allocation["shipped_quantity"], allocation["reserved_quantity"])
+                        else "Released",
+                    }
+                )
+
+                rows["SalesPickListLine"].append(
+                    {
+                        "PickListLineID": line_id,
+                        "PickListID": order_id,
+                        "SalesOrderLineID": line_id,
+                        "ReservationID": line_id,
+                        "ProductID": allocation["product_id"],
+                        "PickedQuantity": allocation["picked_quantity"],
+                        "UOM": allocation["uom"],
+                        "PickLineStatus": "Picked" if _quantity_equal(allocation["picked_quantity"], allocation["reserved_quantity"]) else "ShortPicked",
+                    }
+                )
+
+                rows["SalesShipmentLine"].append(
+                    {
+                        "ShipmentLineID": line_id,
+                        "ShipmentID": order_id,
+                        "SalesOrderLineID": line_id,
+                        "PickListLineID": line_id,
+                        "FinishedGoodsInventoryID": allocation["finished_goods_inventory_id"],
+                        "FinishedGoodsReceiptID": allocation["finished_goods_receipt_id"],
+                        "ProductionBatchID": allocation["production_batch_id"],
+                        "ProductID": allocation["product_id"],
+                        "ShippedQuantity": allocation["shipped_quantity"],
+                        "UOM": allocation["uom"],
+                        "UnitCost": allocation["unit_cost"],
+                        "COGSValue": round(allocation["shipped_quantity"] * allocation["unit_cost"], 2),
+                        "ShipmentLineStatus": "Delivered" if order_id % 2 == 0 else "Shipped",
+                    }
+                )
+                line_id += 1
+
+            if first_allocation is None:
+                break
+
             rows["SalesOrderHdr"].append(
                 {
                     "SalesOrderID": order_id,
@@ -710,50 +816,7 @@ class SalesTransactionGenerator:
                     "RequestedShipDate": requested_ship_date,
                     "PromisedShipDate": promised_ship_date,
                     "CurrencyCode": self.profile_values.default_currency,
-                    "OrderStatus": _order_status((line_status,)),
-                }
-            )
-
-            line_id = order_id
-            line_amount = round(allocation["ordered_quantity"] * allocation["unit_price"], 2)
-            discount_amount = round(line_amount * allocation["discount_pct"] / 100.0, 2)
-            rows["SalesOrderLine"].append(
-                {
-                    "SalesOrderLineID": line_id,
-                    "SalesOrderID": order_id,
-                    "ProductID": allocation["product_id"],
-                    "PlantID": allocation["plant_id"],
-                    "WarehouseID": allocation["warehouse_id"],
-                    "OrderedQuantity": allocation["ordered_quantity"],
-                    "ReservedQuantity": allocation["reserved_quantity"],
-                    "ShippedQuantity": allocation["shipped_quantity"],
-                    "BackorderQuantity": round(allocation["ordered_quantity"] - allocation["shipped_quantity"], 2),
-                    "UOM": allocation["uom"],
-                    "UnitPrice": allocation["unit_price"],
-                    "DiscountPct": allocation["discount_pct"],
-                    "LineAmount": line_amount,
-                    "DiscountAmount": discount_amount,
-                    "NetLineAmount": round(line_amount - discount_amount, 2),
-                    "LineStatus": line_status,
-                }
-            )
-
-            rows["SalesInventoryReservation"].append(
-                {
-                    "ReservationID": order_id,
-                    "SalesOrderLineID": line_id,
-                    "FinishedGoodsInventoryID": allocation["finished_goods_inventory_id"],
-                    "ProductID": allocation["product_id"],
-                    "PlantID": allocation["plant_id"],
-                    "WarehouseID": allocation["warehouse_id"],
-                    "ReservationDate": order_date,
-                    "ReservedQuantity": allocation["reserved_quantity"],
-                    "ReleasedQuantity": round(allocation["reserved_quantity"] - allocation["shipped_quantity"], 2)
-                    if allocation["shipped_quantity"] < allocation["reserved_quantity"]
-                    else 0.0,
-                    "ReservationStatus": "Consumed"
-                    if allocation["shipped_quantity"] == allocation["reserved_quantity"]
-                    else "Released",
+                    "OrderStatus": _order_status(tuple(order_line_statuses)),
                 }
             )
 
@@ -761,21 +824,9 @@ class SalesTransactionGenerator:
                 {
                     "PickListID": order_id,
                     "SalesOrderID": order_id,
-                    "WarehouseID": allocation["warehouse_id"],
+                    "WarehouseID": first_allocation["warehouse_id"],
                     "PickDate": pick_date,
                     "PickStatus": "Picked",
-                }
-            )
-            rows["SalesPickListLine"].append(
-                {
-                    "PickListLineID": order_id,
-                    "PickListID": order_id,
-                    "SalesOrderLineID": line_id,
-                    "ReservationID": order_id,
-                    "ProductID": allocation["product_id"],
-                    "PickedQuantity": allocation["picked_quantity"],
-                    "UOM": allocation["uom"],
-                    "PickLineStatus": "Picked" if allocation["picked_quantity"] == allocation["reserved_quantity"] else "ShortPicked",
                 }
             )
 
@@ -786,28 +837,11 @@ class SalesTransactionGenerator:
                     "SalesOrderID": order_id,
                     "CustomerID": int(customer.CustomerID),
                     "ShipToLocationID": int(location_pair["ship_to"]),
-                    "WarehouseID": allocation["warehouse_id"],
+                    "WarehouseID": first_allocation["warehouse_id"],
                     "ShipmentDate": shipment_date,
                     "CarrierName": context["carrier_names"][(order_id - 1) % len(context["carrier_names"])],
                     "TrackingNumber": f"TRK{self.operating_scope.calendar_year}{order_id:08d}",
                     "ShipmentStatus": "Delivered" if order_id % 2 == 0 else "Shipped",
-                }
-            )
-            rows["SalesShipmentLine"].append(
-                {
-                    "ShipmentLineID": order_id,
-                    "ShipmentID": order_id,
-                    "SalesOrderLineID": line_id,
-                    "PickListLineID": order_id,
-                    "FinishedGoodsInventoryID": allocation["finished_goods_inventory_id"],
-                    "FinishedGoodsReceiptID": allocation["finished_goods_receipt_id"],
-                    "ProductionBatchID": allocation["production_batch_id"],
-                    "ProductID": allocation["product_id"],
-                    "ShippedQuantity": allocation["shipped_quantity"],
-                    "UOM": allocation["uom"],
-                    "UnitCost": allocation["unit_cost"],
-                    "COGSValue": round(allocation["shipped_quantity"] * allocation["unit_cost"], 2),
-                    "ShipmentLineStatus": "Delivered" if order_id % 2 == 0 else "Shipped",
                 }
             )
 
@@ -1066,12 +1100,13 @@ class SalesTransactionGenerator:
         return loaded
 
     def _target_rows(self, schema: SchemaContract | None, table_name: str, default: int) -> int:
+        default = planned_target_rows(self.generation_config, table_name, default)
         if schema is None:
             return default
         table = schema.tables.get(table_name)
         if table is None:
             return default
-        return _table_target_rows(table, default)
+        return planned_target_rows(self.generation_config, table_name, _table_target_rows(table, default))
 
 
 def _require_table_columns(
@@ -1354,13 +1389,17 @@ def _bounded_quantity(capacity: float, rng: random.Random) -> float:
 
 
 def _line_status(ordered_quantity: float, reserved_quantity: float, shipped_quantity: float) -> str:
-    if shipped_quantity == ordered_quantity:
+    if _quantity_equal(shipped_quantity, ordered_quantity):
         return "Closed"
-    if shipped_quantity > 0 and reserved_quantity < ordered_quantity:
+    if shipped_quantity > 0 and reserved_quantity + SALES_QUANTITY_TOLERANCE < ordered_quantity:
         return "Backordered"
     if shipped_quantity > 0:
         return "PartiallyShipped"
     return "Backordered"
+
+
+def _quantity_equal(left: float, right: float) -> bool:
+    return abs(float(left) - float(right)) <= SALES_QUANTITY_TOLERANCE
 
 
 def _order_status(line_statuses: tuple[str, ...]) -> str:

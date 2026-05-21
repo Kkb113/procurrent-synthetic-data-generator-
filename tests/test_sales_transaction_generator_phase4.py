@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from procurement_data_generator.core.config import GenerationConfig, OperatingScope
+from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.modules.sales.master_generator import SalesMasterDataGenerator
 from procurement_data_generator.modules.sales.transaction_generator import (
     SALES_PHASE4_TRANSACTION_TABLES,
@@ -258,6 +259,32 @@ def test_sales_phase4_generation_is_deterministic_for_same_inputs() -> None:
         pd.testing.assert_frame_equal(first[table_name], second[table_name])
 
 
+def test_phase1_sales_order_target_respects_metadata_without_customer_cap() -> None:
+    dataframes = _generator().generate_transaction_data(schema=_schema_with_sales_order_target(20))
+
+    assert len(dataframes["SalesOrderHdr"]) == 20
+
+
+def test_phase1_sales_order_customer_cap_is_config_driven() -> None:
+    sales_master = _sales_master_data()
+    sales_master["CustomerMaster"] = sales_master["CustomerMaster"].head(3).copy()
+    sales_master["CustomerLocation"] = sales_master["CustomerLocation"][
+        sales_master["CustomerLocation"]["CustomerID"].isin(sales_master["CustomerMaster"]["CustomerID"])
+    ].copy()
+    config = GenerationConfig(
+        seed=42,
+        profile_id="food_manufacturing",
+        limit_sales_orders_by_customer=True,
+        sales_orders_per_customer_cap=2,
+    )
+
+    dataframes = _generator(sales_master_data=sales_master, generation_config=config).generate_transaction_data(
+        schema=_schema_with_sales_order_target(20)
+    )
+
+    assert len(dataframes["SalesOrderHdr"]) == 6
+
+
 def test_sales_phase4_missing_required_inputs_fail_clearly() -> None:
     sales_master = _sales_master_data()
     upstream = _upstream_data()
@@ -281,13 +308,14 @@ def test_sales_phase4_food_profile_transaction_text_has_no_ev_vocabulary() -> No
 def _generator(
     sales_master_data: dict[str, pd.DataFrame] | None = None,
     upstream_data: dict[str, pd.DataFrame] | None = None,
+    generation_config: GenerationConfig | None = None,
 ) -> SalesTransactionGenerator:
     return SalesTransactionGenerator(
         sales_master_data=sales_master_data if sales_master_data is not None else _sales_master_data(),
         upstream_data=upstream_data if upstream_data is not None else _upstream_data(),
         industry_profile=FOOD_MANUFACTURING_PROFILE,
         operating_scope=OperatingScope(calendar_year=2025),
-        generation_config=GenerationConfig(seed=42, profile_id="food_manufacturing"),
+        generation_config=generation_config or GenerationConfig(seed=42, profile_id="food_manufacturing"),
     )
 
 
@@ -359,6 +387,29 @@ def _merged_lifecycle(dataframes: dict[str, pd.DataFrame]) -> pd.DataFrame:
         .merge(dataframes["SalesInventoryReservation"], on="SalesOrderLineID", suffixes=("", "_reservation"))
         .merge(dataframes["SalesPickListLine"], on=["SalesOrderLineID", "ReservationID"], suffixes=("", "_pick"))
         .merge(dataframes["SalesShipmentLine"], on=["SalesOrderLineID", "PickListLineID"], suffixes=("", "_shipment"))
+    )
+
+
+def _schema_with_sales_order_target(target_rows: int) -> SchemaContract:
+    return SchemaContract(
+        tables={
+            "SalesOrderHdr": TableContract(
+                table_name="SalesOrderHdr",
+                process_order=200,
+                area="Sales",
+                table_role="sales_order_header",
+                target_rows=target_rows,
+                columns=[
+                    ColumnContract(
+                        column_name="SalesOrderID",
+                        data_type="int",
+                        key_type="PK",
+                        nullable="No",
+                        generation_type="sequence_id",
+                    )
+                ],
+            )
+        }
     )
 
 

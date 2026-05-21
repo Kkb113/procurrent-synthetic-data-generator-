@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -44,6 +45,39 @@ def test_generic_runner_executes_procurement_production_sales(full_chain_result)
     assert result.status in {"passed", "passed_with_warnings"}
     assert result.module_ids == ("procurement", "production", "sales")
     assert tuple(result.module_results) == ("procurement", "production", "sales")
+
+
+@pytest.mark.pipeline
+def test_phase0_full_chain_smoke_guardrail(full_chain_result) -> None:
+    result = full_chain_result
+    audit_path = Path(result.output_folder) / "reports" / "row_count_audit.json"
+
+    assert result.status in {"passed", "passed_with_warnings"}
+    assert result.module_results["procurement"].tables_generated == 25
+    assert result.module_results["production"].tables_generated == 21
+    assert result.module_results["sales"].tables_generated == 18
+    assert result.row_count_audit_paths["json"] == str(audit_path)
+    assert audit_path.exists()
+
+
+@pytest.mark.pipeline
+def test_phase1_sales_metadata_schema_wiring_uses_sales_order_target(full_chain_result) -> None:
+    sales_result = full_chain_result.module_results["sales"]
+
+    assert sales_result.report.row_counts_by_table["SalesOrderHdr"] > 12
+
+
+@pytest.mark.pipeline
+def test_phase1_row_count_audit_reports_sales_expected_and_actual_rows(full_chain_result) -> None:
+    audit_path = Path(full_chain_result.row_count_audit_paths["json"])
+    payload = json.loads(audit_path.read_text(encoding="utf-8"))
+    sales_module = next(module for module in payload["modules"] if module["module_id"] == "sales")
+    sales_order = next(table for table in sales_module["tables"] if table["table_name"] == "SalesOrderHdr")
+
+    assert sales_order["expected_rows"] == 500
+    assert sales_order["actual_rows"] == full_chain_result.module_results["sales"].report.row_counts_by_table["SalesOrderHdr"]
+    assert sales_order["delta_rows"] == sales_order["actual_rows"] - sales_order["expected_rows"]
+    assert sales_order["status"] in {"matched", "below_target", "above_target"}
 
 
 @pytest.mark.pipeline
@@ -215,7 +249,12 @@ def _full_chain_spec(
         load_sql=load_sql,
         build_prompt=False,
         model_version="v2",
-        generation_config=GenerationConfig(seed=42, profile_id="food_manufacturing"),
+        generation_config=GenerationConfig(
+            seed=42,
+            profile_id="food_manufacturing",
+            max_production_orders=200,
+            max_production_requirements=1200,
+        ),
         module_inputs={
             "procurement": ModulePipelineInput(
                 metadata_path=str(PROC_METADATA),

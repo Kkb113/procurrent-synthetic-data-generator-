@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json
+from procurement_data_generator.core.config import GenerationConfig
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 from procurement_data_generator.modules.production.master_generator import ProductionMasterDataGenerator
 from procurement_data_generator.modules.production.transaction_generator import (
@@ -183,7 +184,24 @@ def test_dates_uom_precision_determinism_and_export(tmp_path: Path) -> None:
     assert {path.name for path in paths} == {f"{table}.csv" for table in PRODUCTION_TRANSACTION_TABLES}
 
 
-def _generate(tmp_path: Path, seed: int):
+def test_phase1_production_order_and_requirement_caps_are_config_driven(tmp_path: Path) -> None:
+    dataframes, report, _master, _upstream = _generate(
+        tmp_path,
+        seed=42,
+        generation_config=GenerationConfig(
+            seed=42,
+            max_production_orders=3,
+            max_production_requirements=10,
+        ),
+    )
+
+    assert report.is_valid
+    assert len(dataframes["ProductionOrderHdr"]) <= 3
+    assert len(dataframes["ProductionOrderLine"]) <= 3
+    assert len(dataframes["ProductionMaterialRequirement"]) <= 10
+
+
+def _generate(tmp_path: Path, seed: int, generation_config: GenerationConfig | None = None):
     schema_result = load_metadata_schema(METADATA)
     assert schema_result.report.is_valid
     assert schema_result.schema is not None
@@ -200,7 +218,7 @@ def _generate(tmp_path: Path, seed: int):
     )
     assert master_report.is_valid
     upstream = _execution_upstream_fixture(tmp_path, master_data)
-    generator = ProductionTransactionGenerator()
+    generator = ProductionTransactionGenerator(generation_config=generation_config)
     dataframes, report = generator.generate_transaction_data(
         schema_result.schema,
         plan_result.plan,

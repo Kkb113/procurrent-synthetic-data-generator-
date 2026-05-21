@@ -150,8 +150,9 @@ def test_current_procurement_metadata_has_sales_traceability_columns() -> None:
 
 
 @pytest.mark.unit
-def test_sales_preflight_report_keeps_sales_unimplemented() -> None:
+def test_sales_preflight_report_records_sales_currently_implemented() -> None:
     text = REPORT_PATH.read_text(encoding="utf-8")
 
-    assert "Proceed to Sales Phase 1: add the Sales module skeleton only." in text
-    assert not Path("procurement_data_generator/modules/sales").exists()
+    assert "Sales Phase 10 enabled generic backend execution" in text
+    assert "Sales Phase 11 activated Sales in the browser/API generic workflow" in text
+    assert Path("procurement_data_generator/modules/sales").exists()

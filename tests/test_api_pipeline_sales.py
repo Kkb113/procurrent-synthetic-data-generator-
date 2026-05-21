@@ -111,6 +111,7 @@ def test_generic_sales_api_response_includes_sales_counts_validation_and_adjuste
                         report=SimpleNamespace(adjusted_finished_goods_inventory_path=str(adjusted_path)),
                     ),
                 },
+                row_count_audit_paths={"json": str(tmp_path / "row_count_audit.json")},
             )
 
     service = PipelineService(base_folder=tmp_path, generic_runner_factory=lambda: FakeGenericRunner())
@@ -134,6 +135,7 @@ def test_generic_sales_api_response_includes_sales_counts_validation_and_adjuste
     assert payload["module_results"]["sales"]["tables_generated"] == 18
     assert payload["adjusted_finished_goods_inventory"]["available"] is True
     assert payload["adjusted_finished_goods_inventory"]["path"] == str(adjusted_path)
+    assert payload["row_count_audit_paths"]["json"] == str(tmp_path / "row_count_audit.json")
 
 
 def test_generic_sales_metadata_split_normalizes_generation_type_aliases(tmp_path) -> None:

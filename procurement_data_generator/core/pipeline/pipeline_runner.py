@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -12,21 +13,29 @@ import pandas as pd
 
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.audit.audit_report import AuditReportBuilder
+from procurement_data_generator.core.audit.row_count_audit import RowCountAuditBuilder
 from procurement_data_generator.core.contracts.pipeline_report import PipelineRunReport, PipelineStageReport, utc_now_iso
 from procurement_data_generator.core.erd.erd_validator import validate_erd_relationships
 from procurement_data_generator.core.erd.mermaid_parser import parse_mermaid_erd_file
 from procurement_data_generator.core.formulas.formula_engine import SafeFormulaEngine
 from procurement_data_generator.core.llm.azure_openai_client import AzureOpenAIClient, AzureOpenAIConfig
+from procurement_data_generator.core.llm.industry_scenario_prompt_builder import build_industry_scenario_prompt
+from procurement_data_generator.core.llm.industry_scenario_service import IndustryScenarioPlanningService
 from procurement_data_generator.core.llm.llm_client_base import LLMClientBase
 from procurement_data_generator.core.llm.plan_loader import load_llm_plan_json
 from procurement_data_generator.core.llm.plan_normalizer import normalize_column_generation_dependencies
 from procurement_data_generator.core.llm.plan_validator import validate_generation_plan
+from procurement_data_generator.core.llm.plan_synthesizer import PlanSynthesizer
 from procurement_data_generator.core.llm.prompt_builder import build_llm_planning_prompt
 from procurement_data_generator.core.metadata.metadata_reader import load_metadata_schema
 from procurement_data_generator.core.modules.contracts import MESModulePlugin
+from procurement_data_generator.core.row_budget import RowBudgetPlan, RowBudgetPlanner
 from procurement_data_generator.core.sql.db_config import DatabaseConfig
 from procurement_data_generator.core.sql.sql_loader import SQLServerLoader, save_sql_load_report
 from procurement_data_generator.modules.procurement.plugin import ProcurementModulePlugin
+from procurement_data_generator.modules.shared.industry_profiles.generated_profile_adapter import (
+    build_generated_industry_profile,
+)
 
 
 SQLLoaderFactory = Callable[[DatabaseConfig], SQLServerLoader]
@@ -102,6 +111,7 @@ class ProcurementPipelineRunner:
         data_quality_path: Path | None = None
         sql_report_path: Path | None = None
         active_plan_path: str | None = plan_path
+        row_budget_plan: RowBudgetPlan | None = None
 
         try:
             if generate_plan and plan_path and not use_existing_plan:
@@ -126,6 +136,8 @@ class ProcurementPipelineRunner:
                 return self._fail(report, "metadata_validation", "Metadata validation failed.", run_folder)
             schema = metadata_result.schema
             report.expected_tables = [table.table_name for table in schema.ordered_tables]
+            row_budget_plan = RowBudgetPlanner().plan_modules({self.module_plugin.module_id: schema}, self.generation_config)
+            self.generation_config = replace(self.generation_config, planned_row_targets=row_budget_plan.planned_row_targets)
 
             role_result = self.module_plugin.validate_roles(schema, model_version=model_version)
             self._stage_from_validation_report(
@@ -154,15 +166,19 @@ class ProcurementPipelineRunner:
             if generate_plan and not use_existing_plan:
                 if not scenario_path:
                     return self._fail(report, "prompt_building", "Scenario path is required when generate_plan is true.", run_folder)
-                prompt_text = self._run_prompt_stage(report, schema, relationships, scenario_path, run_folder, model_version)
-                if self._last_stage_failed(report):
-                    return self._fail(report, "prompt_building", "Prompt building failed.", run_folder)
-                generated_plan_path = self._run_llm_plan_generation(report, prompt_text, run_folder)
+                generated_plan_path = self._run_industry_scenario_planning(
+                    report,
+                    schema,
+                    relationships,
+                    scenario_path,
+                    run_folder,
+                    model_version,
+                )
                 if self._last_stage_failed(report) or generated_plan_path is None:
-                    message = "Azure OpenAI plan generation failed."
-                    if report.stages and report.stages[-1].stage_name == "llm_plan_generation" and report.stages[-1].message:
+                    message = "Industry scenario planning failed."
+                    if report.stages and report.stages[-1].stage_name == "industry_scenario_planning" and report.stages[-1].message:
                         message = report.stages[-1].message
-                    return self._fail(report, "llm_plan_generation", message, run_folder)
+                    return self._fail(report, "industry_scenario_planning", message, run_folder)
                 active_plan_path = str(generated_plan_path)
             elif build_prompt:
                 self._run_prompt_stage(report, schema, relationships, scenario_path, run_folder, model_version)
@@ -213,6 +229,8 @@ class ProcurementPipelineRunner:
             final_data = self._run_final_data_merge(report, master_data, transaction_data, formula_data, run_folder)
             report.tables_generated = len(final_data)
             report.total_rows_generated = sum(len(dataframe) for dataframe in final_data.values())
+            self._run_row_count_audit(report, schema, final_data, run_folder)
+            self._run_row_budget_report(report, row_budget_plan, final_data, run_folder)
 
             data_quality_path = self._run_data_quality_validation(report, final_data, schema, plan, run_folder, model_version)
             data_quality_report = json.loads(data_quality_path.read_text(encoding="utf-8"))
@@ -318,6 +336,112 @@ class ProcurementPipelineRunner:
             stage.finish("failed", f"Azure OpenAI plan generation failed: {exc}", errors_count=1, output_paths=[str(response_report_path)])
             return None
 
+    def _run_industry_scenario_planning(
+        self,
+        report,
+        schema,
+        relationships,
+        scenario_path,
+        run_folder: Path,
+        model_version: str = "v2",
+    ) -> Path | None:
+        stage = PipelineStageReport("industry_scenario_planning")
+        report.add_stage(stage)
+        stage.start()
+        prompt_path = run_folder / "prompt" / "industry_scenario_prompt.txt"
+        raw_path = run_folder / "prompt" / "industry_scenario_raw_response.json"
+        validated_path = run_folder / "prompt" / "industry_scenario_validated.json"
+        generated_profile_path = run_folder / "prompt" / "generated_industry_profile.json"
+        synthesized_path = run_folder / "prompt" / "synthesized_execution_plan.json"
+        planning_report_path = run_folder / "reports" / "llm_planning_report.json"
+        compat_raw_path = run_folder / "prompt" / "azure_openai_raw_response.txt"
+        compat_plan_path = run_folder / "prompt" / "generated_llm_plan.json"
+        compat_report_path = run_folder / "reports" / "llm_response_report.json"
+        try:
+            scenario = Path(scenario_path).read_text(encoding="utf-8") if scenario_path and Path(scenario_path).exists() else ""
+            prompt = build_industry_scenario_prompt(schema, relationships, scenario)
+            prompt_path.write_text(prompt, encoding="utf-8")
+
+            service = IndustryScenarioPlanningService(self.llm_client_factory)
+            scenario_result = service.generate(prompt)
+            raw_path.write_text(
+                json.dumps([attempt.to_dict() for attempt in scenario_result.attempts], indent=2, default=str),
+                encoding="utf-8",
+            )
+            validated_path.write_text(
+                json.dumps(scenario_result.plan.model_dump(mode="json"), indent=2, default=str),
+                encoding="utf-8",
+            )
+            planning_report = scenario_result.report()
+            planning_report["reason"] = (
+                scenario_result.validation_errors[-1]
+                if scenario_result.fallback_used and scenario_result.validation_errors
+                else None
+            )
+            planning_report_path.write_text(json.dumps(planning_report, indent=2, default=str), encoding="utf-8")
+
+            generated_profile = build_generated_industry_profile(
+                scenario_result.plan,
+                fallback_used=scenario_result.fallback_used,
+                source="fallback" if scenario_result.fallback_used else "llm_scenario",
+            )
+            generated_profile_path.write_text(
+                json.dumps(generated_profile.to_artifact_dict(), indent=2, default=str),
+                encoding="utf-8",
+            )
+            self.generation_config = replace(self.generation_config, profile_file=generated_profile_path)
+            planning_report["generated_profile_path"] = str(generated_profile_path)
+            planning_report_path.write_text(json.dumps(planning_report, indent=2, default=str), encoding="utf-8")
+
+            executable_plan = PlanSynthesizer().synthesize(schema, relationships, scenario_result.plan, model_version=model_version)
+            executable_plan_json = json.dumps(executable_plan.model_dump(mode="json"), indent=2, default=str)
+            synthesized_path.write_text(executable_plan_json, encoding="utf-8")
+
+            latest_raw_text = scenario_result.attempts[-1].raw_text if scenario_result.attempts else ""
+            compat_raw_path.write_text(latest_raw_text, encoding="utf-8")
+            compat_plan_path.write_text(executable_plan_json, encoding="utf-8")
+            compat_report_path.write_text(json.dumps(planning_report, indent=2, default=str), encoding="utf-8")
+
+            warning_count = int(scenario_result.repair_needed) + int(scenario_result.fallback_used)
+            if scenario_result.fallback_used:
+                report.warnings.append("Industry scenario planning used deterministic fallback after LLM validation failed.")
+            stage.finish(
+                "passed_with_warnings" if warning_count else "passed",
+                "Industry scenario plan validated and executable plan synthesized by Python.",
+                warnings_count=warning_count,
+                output_paths=[
+                    str(prompt_path),
+                    str(raw_path),
+                    str(validated_path),
+                    str(generated_profile_path),
+                    str(synthesized_path),
+                    str(planning_report_path),
+                    str(compat_plan_path),
+                ],
+            )
+            return synthesized_path
+        except Exception as exc:
+            planning_report_path.write_text(
+                json.dumps(
+                    {
+                        "azure_openai_used": True,
+                        "validation_passed": False,
+                        "fallback_used": False,
+                        "error_message": str(exc),
+                    },
+                    indent=2,
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
+            stage.finish(
+                "failed",
+                f"Industry scenario planning failed: {exc}",
+                errors_count=1,
+                output_paths=[str(planning_report_path)],
+            )
+            return None
+
     def _run_plan_normalization(self, report, plan, schema, run_folder) -> tuple[Any, str]:
         stage = PipelineStageReport("plan_normalization")
         report.add_stage(stage)
@@ -417,6 +541,50 @@ class ProcurementPipelineRunner:
         report.final_data_tables = sorted(final_data)
         stage.finish("passed", "Final data merged using master -> transaction -> formula override order.", output_paths=[str(run_folder / "final_data")])
         return final_data
+
+    def _run_row_count_audit(self, report, schema, final_data, run_folder) -> None:
+        stage = PipelineStageReport("row_count_audit")
+        report.add_stage(stage)
+        stage.start()
+        try:
+            result = RowCountAuditBuilder().build_for_schema(
+                module_id=self.module_plugin.module_id,
+                schema=schema,
+                actual_counts={table_name: len(dataframe) for table_name, dataframe in final_data.items()},
+                output_folder=run_folder / "reports",
+            )
+            stage.finish(
+                "passed",
+                "Row-count audit artifact generated.",
+                output_paths=[str(result.json_path), str(result.markdown_path)],
+            )
+        except Exception as exc:
+            message = f"Row-count audit failed: {exc}"
+            report.warnings.append(message)
+            stage.finish("passed_with_warnings", message, warnings_count=1)
+
+    def _run_row_budget_report(self, report, row_budget_plan, final_data, run_folder) -> None:
+        stage = PipelineStageReport("row_budget_report")
+        report.add_stage(stage)
+        stage.start()
+        if row_budget_plan is None:
+            stage.finish("skipped", "Row budget planning was not available.")
+            return
+        try:
+            result_path = row_budget_plan.write_report(
+                run_folder / "reports",
+                {
+                    self.module_plugin.module_id: {
+                        table_name: len(dataframe)
+                        for table_name, dataframe in final_data.items()
+                    }
+                },
+            )
+            stage.finish("passed", "Row budget report artifact generated.", output_paths=[str(result_path)])
+        except Exception as exc:
+            message = f"Row budget report failed: {exc}"
+            report.warnings.append(message)
+            stage.finish("passed_with_warnings", message, warnings_count=1)
 
     def _run_data_quality_validation(self, report, final_data, schema, plan, run_folder, model_version: str = "v2") -> Path:
         stage = PipelineStageReport("data_quality_validation")

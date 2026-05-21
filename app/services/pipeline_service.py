@@ -509,6 +509,7 @@ class PipelineService:
                 for module_id, module_result in result.module_results.items()
             },
             "adjusted_finished_goods_inventory": self._adjusted_inventory_summary(result),
+            "row_count_audit_paths": result.row_count_audit_paths,
             "warnings": result.warnings,
             "errors": self._errors_with_hints(result.errors),
         }

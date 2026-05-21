@@ -11,6 +11,7 @@ import pandas as pd
 
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract, TableContract
+from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
 from procurement_data_generator.modules.shared.industry_profiles.profile_value_provider import IndustryProfileValueProvider
@@ -38,7 +39,10 @@ class SalesMasterDataGenerator:
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
         effective_profile_id = profile_id or self.generation_config.profile_id
-        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
+        self.industry_profile = industry_profile or get_industry_profile_or_default(
+            effective_profile_id,
+            self.generation_config.profile_file,
+        )
         self.profile_values = IndustryProfileValueProvider(self.industry_profile)
 
     def generate_master_data(
@@ -308,12 +312,13 @@ class SalesMasterDataGenerator:
         return {}
 
     def _target_rows(self, schema: SchemaContract | None, table_name: str, default: int) -> int:
+        default = planned_target_rows(self.generation_config, table_name, default)
         if schema is None:
             return default
         table = schema.tables.get(table_name)
         if table is None:
             return default
-        return _table_target_rows(table, default)
+        return planned_target_rows(self.generation_config, table_name, _table_target_rows(table, default))
 
     @staticmethod
     def _customer_status(index: int) -> str:

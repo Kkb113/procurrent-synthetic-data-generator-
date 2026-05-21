@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -154,6 +154,7 @@ class SalesModulePlugin:
 
         if output_folder is None:
             raise ValueError("Sales pipeline execution requires output_folder.")
+        schema = read_metadata_schema(metadata_path) if metadata_path else None
 
         upstream = (
             _validate_upstream_data_mapping(upstream_data, self.get_upstream_requirements())
@@ -176,7 +177,11 @@ class SalesModulePlugin:
             operating_scope=operating_scope,
             generation_config=generation_config,
         )
-        sales_master_data = master_generator.generate_master_data(seed=seed, upstream_data=upstream)
+        sales_master_data = master_generator.generate_master_data(
+            schema=schema,
+            seed=seed,
+            upstream_data=upstream,
+        )
 
         transaction_generator = self.create_transaction_generator(
             sales_master_data=sales_master_data,
@@ -184,7 +189,7 @@ class SalesModulePlugin:
             operating_scope=operating_scope,
             generation_config=generation_config,
         )
-        phase4 = transaction_generator.generate_transaction_data(seed=seed)
+        phase4 = transaction_generator.generate_transaction_data(schema=schema, seed=seed)
         phase5 = transaction_generator.generate_invoice_payment_data(
             seed=seed,
             sales_master_data=sales_master_data,
@@ -319,13 +324,7 @@ def _coerce_generation_config(value: GenerationConfig | None, seed: int | None) 
     if value is None:
         return GenerationConfig(seed=seed if seed is not None else 42)
     if seed is not None and value.seed != seed:
-        return GenerationConfig(
-            seed=seed,
-            output_dir=value.output_dir,
-            allow_demo_fallback=value.allow_demo_fallback,
-            run_name=value.run_name,
-            profile_id=value.profile_id,
-        )
+        return replace(value, seed=seed)
     return value
 
 

@@ -29,5 +29,5 @@ def test_future_module_template_exists_and_documents_required_files() -> None:
 def test_future_module_template_is_not_registered() -> None:
     registry = create_default_module_registry()
 
-    assert registry.list_modules() == ("procurement", "production")
+    assert registry.list_modules() == ("procurement", "production", "sales")
     assert "example" not in registry.list_modules()

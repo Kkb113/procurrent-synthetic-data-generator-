@@ -222,7 +222,7 @@ def _check_row_count_warnings(production_data, target_row_counts, warnings) -> N
                 "PROD_ROW_COUNT_BELOW_TARGET",
                 table_name,
                 None,
-                f"{table_name} row count is below metadata target because generation is constrained by available inventory or actual scrap/rework events.",
+                f"{table_name} row count is below planned target because generation is constrained by available inventory or actual scrap/rework events.",
                 "Accept when all lineage, formulas, and rollups pass; otherwise increase upstream inventory or lower target rows.",
             )
 

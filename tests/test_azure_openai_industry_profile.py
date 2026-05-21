@@ -38,7 +38,9 @@ def test_profile_prompt_builder_requires_json_only_and_no_rows() -> None:
 
     assert "Return JSON only" in prompt
     assert "Do not generate table rows" in prompt
-    assert "Production Execution within MES context" in prompt
+    assert "Procurement -> Production Execution -> Sales" in prompt
+    assert '"supported_domains": ["procurement", "production", "sales"]' in prompt
+    assert "customer/channel/payment/region/return vocabulary" in prompt
     assert "OEE" in prompt
 
 

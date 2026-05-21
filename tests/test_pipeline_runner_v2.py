@@ -8,7 +8,6 @@ import pytest
 
 from procurement_data_generator.core.llm.llm_client_base import LLMResponse
 from procurement_data_generator.core.pipeline.pipeline_runner import ProcurementPipelineRunner
-import procurement_data_generator.core.pipeline.pipeline_runner as pipeline_runner_module
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +66,12 @@ def test_v2_pipeline_runs_with_manual_plan_and_inventory(v2_pipeline_run) -> Non
     assert v2_pipeline_run.status in {"passed", "passed_with_warnings"}
 
 
+def test_phase0_procurement_only_smoke_guardrail(v2_pipeline_run) -> None:
+    assert v2_pipeline_run.tables_generated == 25
+    assert v2_pipeline_run.total_rows_generated > 0
+    assert Path(v2_pipeline_run.output_folder, "reports", "row_count_audit.json").exists()
+
+
 def test_v2_pipeline_creates_run_and_data_folders(v2_pipeline_run) -> None:
     run_folder = Path(v2_pipeline_run.output_folder)
     assert run_folder.exists()
@@ -113,6 +118,8 @@ def test_v2_pipeline_report_artifacts_exist(v2_pipeline_run) -> None:
     assert (reports / "data_quality_report.json").exists()
     assert (reports / "audit_report.md").exists()
     assert (reports / "audit_report.json").exists()
+    assert (reports / "row_count_audit.md").exists()
+    assert (reports / "row_count_audit.json").exists()
     assert (reports / "pipeline_run_report.json").exists()
 
 
@@ -172,15 +179,19 @@ def test_v2_final_row_counts_match_expected_targets(v2_pipeline_run) -> None:
     assert row_counts["PaymentTransaction"] == 1700
 
 
-def test_v2_generate_plan_mode_uses_model_version_and_saves_artifacts(tmp_path: Path, monkeypatch) -> None:
+def test_v2_generate_plan_mode_uses_industry_scenario_path_and_saves_artifacts(tmp_path: Path) -> None:
     calls: dict[str, object] = {}
-    plan_payload = json.loads(PLAN.read_text(encoding="utf-8"))
-    plan_payload["column_generation_rules"][0]["depends_on_columns"] = ["NotAColumn"]
-    raw_plan = json.dumps(plan_payload)
-
-    def fake_prompt_builder(schema, relationships, scenario, model_version="v2"):
-        calls["model_version"] = model_version
-        return f"mock prompt for {model_version}"
+    scenario_payload = {
+        "industry_id": "ev_manufacturing",
+        "industry_name": "EV Manufacturing",
+        "business_summary": "Electric vehicle component manufacturing with OEM customers.",
+        "supported_domains": ["procurement", "production", "sales"],
+        "procurement": {"supplier_types": ["battery supplier"], "component_categories": ["battery cells"]},
+        "production": {"product_families": ["battery packs"]},
+        "sales": {"customer_types": ["OEM"]},
+        "shared": {"geography_terms": ["USA"], "currency": "USD"},
+    }
+    raw_plan = json.dumps(scenario_payload)
 
     class FakeLLMClient:
         def generate_plan(self, prompt: str):
@@ -191,12 +202,11 @@ def test_v2_generate_plan_mode_uses_model_version_and_saves_artifacts(tmp_path: 
                 status="passed",
                 raw_text=raw_plan,
                 extracted_json_text=raw_plan,
-                parsed_json=plan_payload,
+                parsed_json=scenario_payload,
             )
             response.complete()
             return response
 
-    monkeypatch.setattr(pipeline_runner_module, "build_llm_planning_prompt", fake_prompt_builder)
     report = ProcurementPipelineRunner(llm_client_factory=lambda: FakeLLMClient()).run_pipeline(
         metadata_path=str(METADATA),
         erd_path=str(ERD),
@@ -213,34 +223,39 @@ def test_v2_generate_plan_mode_uses_model_version_and_saves_artifacts(tmp_path: 
     run_folder = Path(report.output_folder)
     original_plan = json.loads((run_folder / "prompt" / "generated_llm_plan.json").read_text(encoding="utf-8"))
     normalized_plan = json.loads((run_folder / "prompt" / "generated_llm_plan_normalized.json").read_text(encoding="utf-8"))
+    planning_report = json.loads((run_folder / "reports" / "llm_planning_report.json").read_text(encoding="utf-8"))
 
     assert report.status in {"passed", "passed_with_warnings"}
-    assert calls["model_version"] == "v2"
-    assert calls["prompt"] == "mock prompt for v2"
+    assert "You are not generating data rows." in calls["prompt"]
+    assert "You are not generating an executable plan." in calls["prompt"]
+    assert (run_folder / "prompt" / "industry_scenario_prompt.txt").exists()
+    assert (run_folder / "prompt" / "industry_scenario_raw_response.json").exists()
+    assert (run_folder / "prompt" / "industry_scenario_validated.json").exists()
+    assert (run_folder / "prompt" / "generated_industry_profile.json").exists()
+    assert (run_folder / "prompt" / "synthesized_execution_plan.json").exists()
     assert (run_folder / "prompt" / "azure_openai_raw_response.txt").exists()
     assert (run_folder / "prompt" / "generated_llm_plan.json").exists()
     assert (run_folder / "prompt" / "generated_llm_plan_normalized.json").exists()
     assert (run_folder / "metadata" / "plan_normalization_report.json").exists()
     assert (run_folder / "reports" / "llm_response_report.json").exists()
-    assert original_plan["column_generation_rules"][0]["depends_on_columns"] == ["NotAColumn"]
-    assert normalized_plan["column_generation_rules"][0]["depends_on_columns"] == []
-    assert any(stage.stage_name == "plan_normalization" and stage.status == "passed_with_warnings" for stage in report.stages)
+    assert original_plan["module"] == "procurement"
+    assert normalized_plan["module"] == "procurement"
+    assert planning_report["validation_passed"] is True
+    assert planning_report["final_industry_id"] == "ev_manufacturing"
+    assert planning_report["generated_profile_path"].endswith("generated_industry_profile.json")
+    assert any(stage.stage_name == "industry_scenario_planning" and stage.status == "passed" for stage in report.stages)
 
 
-def test_v2_generate_plan_mode_stops_when_semantic_validation_fails(tmp_path: Path) -> None:
-    plan_payload = json.loads(PLAN.read_text(encoding="utf-8"))
-    plan_payload["generation_order"].append("InventoryBalance")
-    raw_plan = json.dumps(plan_payload)
-
+def test_v2_generate_plan_mode_falls_back_when_scenario_validation_fails(tmp_path: Path) -> None:
     class FakeLLMClient:
         def generate_plan(self, prompt: str):
             response = LLMResponse(
                 provider="Azure OpenAI",
                 deployment="mock-v2",
                 status="passed",
-                raw_text=raw_plan,
-                extracted_json_text=raw_plan,
-                parsed_json=plan_payload,
+                raw_text="{not json",
+                extracted_json_text="{not json",
+                parsed_json=None,
             )
             response.complete()
             return response
@@ -257,5 +272,11 @@ def test_v2_generate_plan_mode_stops_when_semantic_validation_fails(tmp_path: Pa
         model_version="v2",
     )
 
-    assert report.status == "failed"
-    assert report.current_stage == "plan_semantic_validation"
+    planning_report = json.loads((Path(report.output_folder) / "reports" / "llm_planning_report.json").read_text(encoding="utf-8"))
+    scenario_plan = json.loads((Path(report.output_folder) / "prompt" / "industry_scenario_validated.json").read_text(encoding="utf-8"))
+
+    assert report.status in {"passed", "passed_with_warnings"}
+    assert planning_report["fallback_used"] is True
+    assert planning_report["reason"]
+    assert planning_report["final_industry_id"] == "general_manufacturing"
+    assert scenario_plan["industry_id"] == "general_manufacturing"

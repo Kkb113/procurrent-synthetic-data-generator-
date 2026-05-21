@@ -17,6 +17,7 @@ from procurement_data_generator.core.contracts.schema_contract import ColumnCont
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.llm.plan_validator import is_date_type, is_numeric_type, is_string_type
+from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.procurement.financial_realism_profiles import (
     generate_contract_price,
     generate_standard_cost,
@@ -102,7 +103,10 @@ class ProcurementMasterDataGenerator:
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
         effective_profile_id = profile_id or self.generation_config.profile_id
-        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
+        self.industry_profile = industry_profile or get_industry_profile_or_default(
+            effective_profile_id,
+            self.generation_config.profile_file,
+        )
         self.profile_values = IndustryProfileValueProvider(self.industry_profile)
 
     def generate_master_data(
@@ -133,8 +137,8 @@ class ProcurementMasterDataGenerator:
 
         for row_count in plan.row_count_plan:
             if row_count.table_name == table.table_name:
-                return row_count.target_rows
-        return table.target_rows
+                return planned_target_rows(self.generation_config, table.table_name, row_count.target_rows)
+        return planned_target_rows(self.generation_config, table.table_name, table.target_rows)
 
     def generate_table(
         self,

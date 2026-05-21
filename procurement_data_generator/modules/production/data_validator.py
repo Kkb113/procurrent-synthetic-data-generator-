@@ -9,6 +9,8 @@ from pathlib import Path
 import pandas as pd
 
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract
+from procurement_data_generator.core.config import GenerationConfig
+from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.production.reconciler_rules import (
     PRODUCTION_MASTER_TABLES,
     PRODUCTION_TABLES,
@@ -24,6 +26,7 @@ def validate_production_generated_data(
     master_data_folder: str | Path,
     transaction_data_folder: str | Path,
     upstream_data_folder: str | Path,
+    generation_config: GenerationConfig | None = None,
 ) -> ProductionQualityResult:
     """Load generated Production data and upstream Procurement data, then reconcile it."""
 
@@ -31,7 +34,10 @@ def validate_production_generated_data(
     production_data.update(_load_tables(master_data_folder, PRODUCTION_MASTER_TABLES))
     production_data.update(_load_tables(transaction_data_folder, PRODUCTION_TRANSACTION_TABLES))
     upstream_data = _load_tables(upstream_data_folder, UPSTREAM_TABLES)
-    target_row_counts = {table_name: table.target_rows for table_name, table in schema.tables.items()}
+    target_row_counts = {
+        table_name: planned_target_rows(generation_config, table_name, table.target_rows)
+        for table_name, table in schema.tables.items()
+    }
     return reconcile_production_data(production_data, upstream_data, target_row_counts=target_row_counts)
 
 
