@@ -30,6 +30,10 @@ from procurement_data_generator.modules.shared.industry_profiles.profile_loader 
     load_industry_profile_from_dict,
     load_industry_profile_from_json,
 )
+from procurement_data_generator.modules.shared.industry_profiles.generated_profile_adapter import (
+    GeneratedIndustryProfile,
+    build_generated_industry_profile,
+)
 
 __all__ = [
     "EV_MANUFACTURING_PROFILE",
@@ -39,6 +43,7 @@ __all__ = [
     "IndustryProfile",
     "IndustryProfileValidationResult",
     "IndustryProfileValueProvider",
+    "GeneratedIndustryProfile",
     "LEGACY_MANUFACTURING_LOCATIONS",
     "ProcurementProfile",
     "ProductionProfile",
@@ -54,4 +59,5 @@ __all__ = [
     "load_industry_profile_from_dict",
     "load_industry_profile_from_json",
     "validate_industry_profile",
+    "build_generated_industry_profile",
 ]

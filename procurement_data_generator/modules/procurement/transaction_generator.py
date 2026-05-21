@@ -17,6 +17,7 @@ from procurement_data_generator.core.contracts.llm_plan_contract import LLMGener
 from procurement_data_generator.core.contracts.schema_contract import ColumnContract, SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
+from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.procurement.financial_realism_profiles import (
     generate_order_quantity,
     generate_quote_price,
@@ -97,7 +98,10 @@ class ProcurementTransactionGenerator:
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
         effective_profile_id = profile_id or self.generation_config.profile_id
-        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
+        self.industry_profile = industry_profile or get_industry_profile_or_default(
+            effective_profile_id,
+            self.generation_config.profile_file,
+        )
         self.profile_values = IndustryProfileValueProvider(self.industry_profile)
 
     def generate_transaction_data(
@@ -1980,30 +1984,31 @@ class ProcurementTransactionGenerator:
         }
         for table in self.get_transaction_tables(schema, model_version="v2"):
             dataframe = dataframes.get(table.table_name)
+            target_rows = planned_target_rows(self.generation_config, table.table_name, table.target_rows)
             if dataframe is None:
                 report.add_error(table_name=table.table_name, message="V2 transaction table DataFrame was not generated.", suggested_fix="Generate every v2 transaction lifecycle table.")
                 continue
-            if len(dataframe) != table.target_rows:
+            if len(dataframe) != target_rows:
                 if table.table_role == "inventory":
                     report.add_warning(
                         table_name=table.table_name,
-                        message=f"Inventory generated {len(dataframe)} grouped rows; metadata target is {table.target_rows}.",
+                        message=f"Inventory generated {len(dataframe)} grouped rows; planned target is {target_rows}.",
                         suggested_fix="This is acceptable because Inventory is derived from natural InventoryTransaction groups.",
                     )
-                elif table.table_role == "inventory_transaction" and len(dataframe) < table.target_rows:
+                elif table.table_role == "inventory_transaction" and len(dataframe) < target_rows:
                     report.add_warning(
                         table_name=table.table_name,
-                        message=f"InventoryTransaction generated {len(dataframe)} StockIn rows; metadata target is {table.target_rows}.",
+                        message=f"InventoryTransaction generated {len(dataframe)} StockIn rows; planned target is {target_rows}.",
                         suggested_fix="This is acceptable when accepted inspection quantities are exhausted before the target row count.",
                     )
-                elif table.table_role in lifecycle_exhaustion_roles and len(dataframe) < table.target_rows:
+                elif table.table_role in lifecycle_exhaustion_roles and len(dataframe) < target_rows:
                     report.add_warning(
                         table_name=table.table_name,
-                        message=f"{table.table_name} generated {len(dataframe)} lifecycle-valid rows; metadata target is {table.target_rows}.",
+                        message=f"{table.table_name} generated {len(dataframe)} lifecycle-valid rows; planned target is {target_rows}.",
                         suggested_fix="This is acceptable when upstream quoted/ordered quantity is exhausted before the target row count.",
                     )
                 else:
-                    report.add_error(table_name=table.table_name, message=f"Generated row count {len(dataframe)} does not match target {table.target_rows}.", suggested_fix="Generate the v2 metadata TargetRows count.")
+                    report.add_error(table_name=table.table_name, message=f"Generated row count {len(dataframe)} does not match target {target_rows}.", suggested_fix="Generate the planned v2 target row count.")
             for column in table.columns:
                 if column.column_name not in dataframe.columns:
                     report.add_error(table_name=table.table_name, column_name=column.column_name, message="Metadata column missing from generated transaction DataFrame.", suggested_fix="Generate every metadata column.")
@@ -2334,15 +2339,15 @@ class ProcurementTransactionGenerator:
         if plan is not None:
             for row_count in plan.row_count_plan:
                 if row_count.table_name == table.table_name:
-                    return row_count.target_rows
-        return table.target_rows
+                    return planned_target_rows(self.generation_config, table.table_name, row_count.target_rows)
+        return planned_target_rows(self.generation_config, table.table_name, table.target_rows)
 
     def _v2_target_rows_by_table_name(self, plan: LLMGenerationPlan | None, table_name: str, default: int) -> int:
         if plan is not None:
             for row_count in plan.row_count_plan:
                 if row_count.table_name == table_name:
-                    return row_count.target_rows
-        return default
+                    return planned_target_rows(self.generation_config, table_name, row_count.target_rows)
+        return planned_target_rows(self.generation_config, table_name, default)
 
     def _column_values(self, dataframe: pd.DataFrame, preferred_column: str) -> list[Any]:
         if dataframe is None or dataframe.empty:

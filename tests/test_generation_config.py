@@ -26,14 +26,25 @@ def test_generation_config_defaults_are_deterministic_and_conservative() -> None
     assert config.allow_demo_fallback is False
     assert config.run_name is None
     assert config.profile_id is None
+    assert config.row_scale_factor == 1.0
+    assert config.target_total_rows is None
+    assert config.max_rows_per_table is None
+    assert config.max_production_orders is None
+    assert config.max_production_requirements is None
+    assert config.limit_sales_orders_by_customer is False
+    assert config.sales_orders_per_customer_cap == 50
+    assert config.profile_file is None
+    assert config.planned_row_targets is None
 
 
 def test_generation_config_normalizes_output_dir_to_path(tmp_path: Path) -> None:
-    config = GenerationConfig(output_dir=str(tmp_path), run_name=" phase-5 ", profile_id=" food_manufacturing ")
+    profile_file = tmp_path / "profile.json"
+    config = GenerationConfig(output_dir=str(tmp_path), run_name=" phase-5 ", profile_id=" food_manufacturing ", profile_file=str(profile_file))
 
     assert config.output_dir == tmp_path
     assert config.run_name == "phase-5"
     assert config.profile_id == "food_manufacturing"
+    assert config.profile_file == profile_file
 
 
 @pytest.mark.parametrize("seed", [None, True, "42"])
@@ -45,6 +56,32 @@ def test_generation_config_rejects_invalid_seed(seed: object) -> None:
 def test_generation_config_rejects_blank_run_name() -> None:
     with pytest.raises(ValueError, match="run_name"):
         GenerationConfig(run_name=" ")
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("row_scale_factor", 0),
+        ("row_scale_factor", True),
+        ("target_total_rows", 0),
+        ("max_rows_per_table", -1),
+        ("max_production_orders", "20"),
+        ("max_production_requirements", False),
+        ("limit_sales_orders_by_customer", "false"),
+        ("sales_orders_per_customer_cap", 0),
+        ("planned_row_targets", {"SalesOrderHdr": 0}),
+        ("planned_row_targets", {" ": 10}),
+    ],
+)
+def test_generation_config_rejects_invalid_phase1_row_controls(field_name: str, value: object) -> None:
+    with pytest.raises(ValueError, match=field_name):
+        GenerationConfig(**{field_name: value})  # type: ignore[arg-type]
+
+
+def test_generation_config_normalizes_planned_row_targets() -> None:
+    config = GenerationConfig(planned_row_targets={"SalesOrderHdr": 25})
+
+    assert config.planned_row_targets == {"SalesOrderHdr": 25}
 
 
 def test_procurement_generators_accept_optional_phase5_config_objects(tmp_path: Path) -> None:

@@ -9,7 +9,7 @@ def build_industry_profile_prompt(industry: str, description: str | None = None,
     industry_text = str(industry or "").strip()
     description_text = str(description or "").strip()
     suggested_id = str(profile_id or "").strip()
-    context_line = f"Context: {description_text}" if description_text else "Context: Procurement and Production Execution synthetic data profile."
+    context_line = f"Context: {description_text}" if description_text else "Context: Procurement, Production Execution, and Sales synthetic data profile."
     profile_id_line = f'Use industry_id "{suggested_id}".' if suggested_id else "Create a lowercase snake_case industry_id."
 
     return f"""
@@ -24,9 +24,10 @@ Do not generate table rows.
 Do not generate sample CSV data.
 Generate only catalog/profile content.
 
-The profile must support Procurement plus Production Execution within MES context.
+The profile must support the full MES lifecycle: Procurement -> Production Execution -> Sales.
 Keep schemas, lifecycle logic, formulas, reconciliation, and operating scope outside the profile.
-Do not include full MES modules such as OEE, downtime, maintenance execution, labor tracking, warranty, service, sales, customer, or distribution.
+Include procurement supplier/component/raw material vocabulary, production product/BOM/work center/routing vocabulary, and sales customer/channel/payment/region/return vocabulary.
+Do not include unrelated MES areas such as OEE, downtime, maintenance execution, labor tracking, warranty, or service operations.
 Keep the profile compatible with 2025-only synthetic data generation.
 Respect countable vs measurable UOM concepts.
 
@@ -35,7 +36,7 @@ Return one JSON object with this shape:
   "industry_id": "snake_case_id",
   "industry_name": "Readable Industry Name",
   "industry_description": "Short description of catalog and realism hints.",
-  "supported_domains": ["procurement", "production"],
+  "supported_domains": ["procurement", "production", "sales"],
   "procurement": {{
     "supplier_name_patterns": ["{{category}} Supply Co", "{{region}} Components"],
     "component_categories": ["Category A", "Category B"],
@@ -79,6 +80,20 @@ Return one JSON object with this shape:
     "default_currency": "USD",
     "date_scope_notes": ["Generated scenarios remain in calendar year 2025."],
     "realism_notes": ["Industry-specific catalog hints only; Python generates rows."]
+  }},
+  "sales": {{
+    "customer_types": ["Distributor", "Retail Customer", "Institutional Customer"],
+    "customer_industries": ["Distribution", "Retail", "Healthcare"],
+    "customer_name_terms": ["Industry customer naming terms"],
+    "sales_channels": ["DIRECT", "DISTRIBUTOR", "RETAIL"],
+    "payment_terms": ["Net 30", "Net 45"],
+    "regions": ["North", "South", "East", "West"],
+    "carrier_names": ["Regional Logistics"],
+    "payment_methods": ["BankTransfer", "Card"],
+    "return_reasons": ["Quality Complaint", "Shipping Damage"],
+    "price_margin_pct_range": [20.0, 45.0],
+    "minimum_order_quantity_range": [1.0, 100.0],
+    "fallback_price_range": [10.0, 100.0]
   }}
 }}
 """.strip()

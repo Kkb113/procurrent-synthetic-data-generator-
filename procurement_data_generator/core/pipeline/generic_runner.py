@@ -8,19 +8,21 @@ without moving module business logic into core.
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
 
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
+from procurement_data_generator.core.audit.row_count_audit import RowCountAuditBuilder, RowCountAuditInput
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract
 from procurement_data_generator.core.contracts.pipeline_report import PipelineRunReport
 from procurement_data_generator.core.llm.llm_client_base import LLMClientBase
 from procurement_data_generator.core.metadata.metadata_reader import read_metadata_schema
 from procurement_data_generator.core.modules.contracts import MESModulePlugin
 from procurement_data_generator.core.modules.registry import ModuleRegistry, create_default_module_registry
+from procurement_data_generator.core.row_budget import RowBudgetPlan, RowBudgetPlanner
 from procurement_data_generator.core.sql.db_config import DatabaseConfig
 from procurement_data_generator.core.sql.sql_loader import SQLServerLoader, save_sql_load_report
 
@@ -104,6 +106,7 @@ class GenericPipelineRunResult:
     module_results: dict[str, ModulePipelineRunResult]
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    row_count_audit_paths: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -124,6 +127,7 @@ class GenericPipelineRunResult:
             },
             "warnings": self.warnings,
             "errors": self.errors,
+            "row_count_audit_paths": self.row_count_audit_paths,
         }
 
 
@@ -245,13 +249,23 @@ class SyntheticDataPipelineRunner:
         warnings: list[str] = []
         errors: list[str] = []
         upstream_paths: dict[str, Path] = {}
+        runtime_generation_config = spec.generation_config or self.generation_config
+        row_budget_plan = self._plan_row_budget(spec, resolution, runtime_generation_config, warnings)
+        if row_budget_plan is not None:
+            runtime_generation_config = replace(
+                runtime_generation_config,
+                planned_row_targets=row_budget_plan.planned_row_targets,
+            )
 
         for plugin in resolution.plugins:
             module_input = self._module_input(spec, plugin.module_id)
             module_output_root = root_output / plugin.module_id
 
             if plugin.module_id == "procurement":
-                procurement_spec = self._with_module_output(spec, plugin.module_id, module_output_root)
+                procurement_spec = replace(
+                    self._with_module_output(spec, plugin.module_id, module_output_root),
+                    generation_config=runtime_generation_config,
+                )
                 procurement_report = self._run_procurement(procurement_spec, plugin)
                 module_results["procurement"] = ModulePipelineRunResult(
                     module_id="procurement",
@@ -267,6 +281,9 @@ class SyntheticDataPipelineRunner:
                     errors.extend(procurement_report.errors)
                     break
                 upstream_paths["procurement"] = Path(procurement_report.output_folder) / "final_data"
+                generated_profile_path = Path(procurement_report.output_folder) / "prompt" / "generated_industry_profile.json"
+                if generated_profile_path.exists():
+                    runtime_generation_config = replace(runtime_generation_config, profile_file=generated_profile_path)
                 continue
 
             if plugin.module_id == "production":
@@ -283,9 +300,9 @@ class SyntheticDataPipelineRunner:
                     allow_unvalidated_sql_load=spec.allow_unvalidated_sql_load,
                     if_table_exists=spec.if_table_exists,
                     sql_loader_factory=self.sql_loader_factory,
-                    allow_demo_fallback=(spec.generation_config or self.generation_config).allow_demo_fallback,
+                    allow_demo_fallback=runtime_generation_config.allow_demo_fallback,
                     operating_scope=spec.operating_scope or self.operating_scope,
-                    generation_config=spec.generation_config or self.generation_config,
+                    generation_config=runtime_generation_config,
                 )
                 module_results["production"] = ModulePipelineRunResult(
                     module_id="production",
@@ -318,7 +335,7 @@ class SyntheticDataPipelineRunner:
                     if_table_exists=spec.if_table_exists,
                     sql_loader_factory=self.sql_loader_factory,
                     operating_scope=spec.operating_scope or self.operating_scope,
-                    generation_config=spec.generation_config or self.generation_config,
+                    generation_config=runtime_generation_config,
                 )
                 module_results["sales"] = ModulePipelineRunResult(
                     module_id="sales",
@@ -369,6 +386,8 @@ class SyntheticDataPipelineRunner:
                 f"Module '{plugin.module_id}' is registered but generic execution is not implemented."
             )
 
+        row_count_audit_paths = self._write_row_count_audit(root_output, spec, module_results, warnings)
+        self._write_row_budget_report(root_output, row_budget_plan, module_results, warnings)
         status = _combined_status(module_results, errors, warnings)
         return GenericPipelineRunResult(
             status=status,
@@ -377,7 +396,25 @@ class SyntheticDataPipelineRunner:
             module_results=module_results,
             warnings=warnings,
             errors=errors,
+            row_count_audit_paths=row_count_audit_paths,
         )
+
+    def _plan_row_budget(
+        self,
+        spec: PipelineRunSpec,
+        resolution: ModuleResolution,
+        generation_config: GenerationConfig,
+        warnings: list[str],
+    ) -> RowBudgetPlan | None:
+        schemas: dict[str, SchemaContract] = {}
+        try:
+            for module_id in resolution.module_ids:
+                module_input = self._module_input(spec, module_id)
+                schemas[module_id] = read_metadata_schema(module_input.metadata_path)
+            return RowBudgetPlanner().plan_modules(schemas, generation_config)
+        except Exception as exc:
+            warnings.append(f"Row budget planning failed: {exc}")
+            return None
 
     def _resolve_sales_upstream_paths(
         self,
@@ -528,6 +565,61 @@ class SyntheticDataPipelineRunner:
         errors = [f"Adjusted FinishedGoodsInventory SQL load error: {error}" for error in sql_report.errors]
         return sql_report.status, warnings, errors
 
+    def _write_row_count_audit(
+        self,
+        root_output: Path,
+        spec: PipelineRunSpec,
+        module_results: dict[str, ModulePipelineRunResult],
+        warnings: list[str],
+    ) -> dict[str, str]:
+        if not module_results:
+            return {}
+        audit_inputs: list[RowCountAuditInput] = []
+        for module_id, module_result in module_results.items():
+            data_folder = Path(module_result.output_folder) / "final_data" if module_result.output_folder else None
+            module_input = self._module_input(spec, module_id)
+            audit_inputs.append(
+                RowCountAuditInput(
+                    module_id=module_id,
+                    metadata_path=module_input.metadata_path,
+                    data_folder=data_folder,
+                )
+            )
+        try:
+            result = RowCountAuditBuilder().build_for_inputs(
+                audit_inputs,
+                root_output / "reports",
+            )
+        except Exception as exc:
+            warnings.append(f"Row-count audit failed: {exc}")
+            return {}
+        return {
+            "json": str(result.json_path),
+            "markdown": str(result.markdown_path),
+        }
+
+    def _write_row_budget_report(
+        self,
+        root_output: Path,
+        row_budget_plan: RowBudgetPlan | None,
+        module_results: dict[str, ModulePipelineRunResult],
+        warnings: list[str],
+    ) -> str | None:
+        if row_budget_plan is None or not module_results:
+            return None
+        try:
+            report_path = row_budget_plan.write_report(
+                root_output / "reports",
+                {
+                    module_id: _collect_module_actual_counts(module_result)
+                    for module_id, module_result in module_results.items()
+                },
+            )
+            return str(report_path)
+        except Exception as exc:
+            warnings.append(f"Row budget report failed: {exc}")
+            return None
+
     def _validate_supported_execution_order(self, resolution: ModuleResolution) -> None:
         module_ids = resolution.module_ids
         if module_ids in {
@@ -613,3 +705,21 @@ def _combined_sql_load_status(*statuses: str) -> str:
     if any(status == "not_run" for status in normalized):
         return "passed_with_warnings"
     return "passed"
+
+
+def _collect_module_actual_counts(module_result: ModulePipelineRunResult) -> dict[str, int]:
+    if module_result.report is not None:
+        row_counts = getattr(module_result.report, "row_counts_by_table", None)
+        if isinstance(row_counts, dict):
+            return {str(table_name): int(row_count) for table_name, row_count in row_counts.items()}
+        summary = getattr(module_result.report, "generation_summary", None)
+        if isinstance(summary, dict):
+            by_table = summary.get("row_counts_by_table")
+            if isinstance(by_table, dict):
+                return {str(table_name): int(row_count) for table_name, row_count in by_table.items()}
+    if not module_result.output_folder:
+        return {}
+    final_folder = Path(module_result.output_folder) / "final_data"
+    if not final_folder.exists():
+        return {}
+    return {csv_path.stem: len(pd.read_csv(csv_path)) for csv_path in final_folder.glob("*.csv")}

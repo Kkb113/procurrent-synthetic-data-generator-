@@ -298,6 +298,7 @@ def run_production_pipeline(
         upstream_context,
         seed=seed,
     )
+    _write_performance_profile(transaction_generator, reports_folder)
     if not transaction_report.is_valid:
         errors.extend(issue.message for issue in transaction_report.errors)
     warnings.extend(issue.message for issue in transaction_report.warnings)
@@ -322,7 +323,13 @@ def run_production_pipeline(
     transaction_generator.export_transaction_data(transaction_data, transaction_folder)
 
     _merge_final_data(master_folder, transaction_folder, final_folder)
-    quality_result = validate_production_generated_data(schema, master_folder, transaction_folder, upstream_data_path)
+    quality_result = validate_production_generated_data(
+        schema,
+        master_folder,
+        transaction_folder,
+        upstream_data_path,
+        generation_config=generation_config,
+    )
     quality_json_path, _quality_md_path = write_production_quality_reports(quality_result, reports_folder)
     errors.extend(f"{issue.check_type}: {issue.message}" for issue in quality_result.errors)
     warnings.extend(f"{issue.check_type}: {issue.message}" for issue in quality_result.warnings)
@@ -537,6 +544,16 @@ def _write_pipeline_reports(result: ProductionPipelineResult, reports_folder: Pa
     json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     md_path.write_text(_format_pipeline_markdown(payload), encoding="utf-8")
     return json_path, md_path
+
+
+def _write_performance_profile(transaction_generator: ProductionTransactionGenerator, reports_folder: Path) -> Path | None:
+    payload = getattr(transaction_generator, "performance_summary", None)
+    if not payload:
+        return None
+    reports_folder.mkdir(parents=True, exist_ok=True)
+    path = reports_folder / "performance_profile_phase4.json"
+    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    return path
 
 
 def _format_pipeline_markdown(payload: dict[str, Any]) -> str:

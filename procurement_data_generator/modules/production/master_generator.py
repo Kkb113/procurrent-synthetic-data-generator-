@@ -14,6 +14,7 @@ from procurement_data_generator.core.contracts.llm_plan_contract import LLMGener
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract, TableContract
 from procurement_data_generator.core.contracts.validation_report import ValidationReport
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
+from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.shared.quantity_precision import (
     apply_quantity_precision,
     is_whole_quantity,
@@ -104,7 +105,10 @@ class ProductionMasterDataGenerator:
         self.operating_scope = operating_scope or DEFAULT_OPERATING_SCOPE
         self.generation_config = generation_config or GenerationConfig()
         effective_profile_id = profile_id or self.generation_config.profile_id
-        self.industry_profile = industry_profile or get_industry_profile_or_default(effective_profile_id)
+        self.industry_profile = industry_profile or get_industry_profile_or_default(
+            effective_profile_id,
+            self.generation_config.profile_file,
+        )
         self.fallback_components = _fallback_components_from_profile(self.industry_profile)
         self.fallback_plants = _fallback_plants_from_profile(self.industry_profile)
         self.fallback_warehouses = _fallback_warehouses_from_profile(self.industry_profile)
@@ -214,8 +218,8 @@ class ProductionMasterDataGenerator:
 
         for row_count in plan.row_count_plan:
             if row_count.table_name == table.table_name:
-                return row_count.target_rows
-        return table.target_rows
+                return planned_target_rows(self.generation_config, table.table_name, row_count.target_rows)
+        return planned_target_rows(self.generation_config, table.table_name, table.target_rows)
 
     def validate_generated_master_data(
         self,

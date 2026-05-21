@@ -20,7 +20,15 @@ INTEGRATION_TEST_FILES = {
     "test_sql_loader.py",
 }
 
-CATEGORY_MARKERS = {"unit", "integration", "pipeline", "sql", "llm"}
+SLOW_TEST_FILES = {
+    "test_production_data_validator.py",
+    "test_production_reconciler.py",
+    "test_production_transaction_generator.py",
+    "test_transaction_generator.py",
+    "test_transaction_generator_v2.py",
+}
+
+CATEGORY_MARKERS = {"unit", "integration", "pipeline", "slow", "sql", "llm"}
 
 
 def pytest_collection_modifyitems(config, items):
@@ -28,12 +36,22 @@ def pytest_collection_modifyitems(config, items):
         filename = Path(str(item.fspath)).name
         marker_names = {marker.name for marker in item.iter_markers()}
 
+        if filename in SLOW_TEST_FILES and "slow" not in marker_names:
+            item.add_marker("slow")
+            marker_names.add("slow")
+
         if filename in PIPELINE_TEST_FILES:
             if "pipeline" not in marker_names:
                 item.add_marker("pipeline")
+            if "slow" not in marker_names:
+                item.add_marker("slow")
             if "integration" not in marker_names:
                 item.add_marker("integration")
             continue
+
+        if "pipeline" in marker_names and "slow" not in marker_names:
+            item.add_marker("slow")
+            marker_names.add("slow")
 
         if filename in INTEGRATION_TEST_FILES:
             if "integration" not in marker_names:

@@ -56,4 +56,5 @@ def test_docs_include_phase9_run_and_test_commands() -> None:
     testing = (ROOT / "TESTING.md").read_text(encoding="utf-8")
 
     assert "python scripts/run_pipeline.py --modules procurement,production" in readme
-    assert 'pytest -m "not sql and not llm" -q' in testing
+    assert 'pytest -m "not slow and not sql and not llm" -q' in testing
+    assert 'pytest -m "pipeline and slow and not sql and not llm" -q' in testing
