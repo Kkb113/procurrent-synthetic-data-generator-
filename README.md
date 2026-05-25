@@ -22,11 +22,24 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Open `http://127.0.0.1:8000` and run the default team flow:
-Procurement + Production + Sales. Sales depends on Production finished goods and
-Procurement/Production lineage, so the UI auto-selects those dependencies.
-Run without SQL first, then test SQL load separately. After loading the full
-chain to SQL Server, run `sql/mes_procurement_production_sales_validation.sql`;
-the final readiness status should be `SALES_E2E_VALIDATED`.
+Procurement -> Production -> Sales. The main UI asks for:
+
+- Metadata XLSX
+- Mermaid ERD
+- Business Scenario
+
+The product checkboxes are:
+
+- Azure OpenAI: use the small IndustryScenarioPlan planning flow before deterministic Python generation.
+- Build Prompt: save prompt/planning artifacts where supported.
+- Load SQL: run the configured SQL load path; leave unchecked for local data generation.
+
+Advanced settings include `target_total_rows`, `row_scale_factor`, `seed`, and
+SQL `if_table_exists`. The main UI always runs the full MES lifecycle and hides
+developer-only module/version/plan controls. Run without SQL first, then test SQL
+load separately. After loading the full chain to SQL Server, run
+`sql/mes_procurement_production_sales_validation.sql`; the final readiness status
+should be `SALES_E2E_VALIDATED`.
 
 Run Procurement only:
 
@@ -81,7 +94,8 @@ Shift A, calendar year 2025.
 Normal local baseline:
 
 ```powershell
-pytest -m "not sql and not llm" -q
+pytest -m "not slow and not sql and not llm" -q
+pytest -m "pipeline and slow and not sql and not llm" -q
 pytest -q -x
 ```
 
@@ -91,6 +105,7 @@ Focused marker runs:
 pytest -m unit -q
 pytest -m integration -q
 pytest -m pipeline -q
+pytest -m slow -q
 pytest -m sql -q
 pytest -m llm -q
 ```
@@ -107,11 +122,9 @@ upstream requirements, and tests before being added to the built-in registry.
 
 Frontend acceptance checks:
 
-- Procurement only: select Procurement and run; the result should include 25 Procurement tables.
-- Procurement to Production: select Procurement and Production; the result should include 25 Procurement tables and 21 Production tables.
-- Procurement to Production to Sales: select all three modules; the result should include 25 Procurement tables, 21 Production tables, and 18 Sales tables.
-- Production only without fallback: expect a clear dependency error.
-- Production only with demo fallback: enable demo fallback and expect a fallback warning.
-- Food manufacturing: use `profile_id=food_manufacturing` for packaged food/snack scenarios.
+- Main UI: upload metadata, paste Mermaid ERD, enter a business scenario, and run the full Procurement -> Production -> Sales lifecycle.
+- Result panel: verify status, total rows, per-module rows, validation status, SQL status, warnings/errors, and artifact paths.
+- Artifacts: expect final data, `row_budget_report.json`, `row_count_audit.json`, generated industry profile when Azure planning/profile generation runs, LLM planning report when Azure OpenAI is used, and Phase 4 performance profile when generated.
+- Developer routes: explicit plan JSON, module selectors, profile IDs, demo fallback, and model-version controls remain backend/developer concepts and are not part of the main UI.
 - SQL validation for the full Sales chain: run `sql/mes_procurement_production_sales_validation.sql` after SQL load.
 - Sales v1 excludes `SalesCreditMemo`.

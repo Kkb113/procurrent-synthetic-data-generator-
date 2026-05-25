@@ -751,11 +751,11 @@ class ProcurementMasterDataGenerator:
             if extra:
                 report.add_error(message=f"Procurement v2 master generation produced non-master tables: {', '.join(extra)}.", suggested_fix="Do not generate transaction tables in V2-5.")
 
-        self._validate_constant_value(dataframes, "SupplierMaster", "SupplierCountry", self._schema_column_value_or_default(schema, "SupplierMaster", "SupplierCountry", self.profile_values.default_country), report)
-        self._validate_constant_value(dataframes, "Plant", "PlantCountry", self._schema_column_value_or_default(schema, "Plant", "PlantCountry", self.profile_values.default_country), report)
-        self._validate_constant_value(dataframes, "Warehouse", "WarehouseCountry", self._schema_column_value_or_default(schema, "Warehouse", "WarehouseCountry", self.profile_values.default_country), report)
-        self._validate_constant_value(dataframes, "ComponentMaster", "CurrencyCode", self._schema_column_value_or_default(schema, "ComponentMaster", "CurrencyCode", self.profile_values.default_currency), report)
-        self._validate_constant_value(dataframes, "SupplierComponent", "CurrencyCode", self._schema_column_value_or_default(schema, "SupplierComponent", "CurrencyCode", self.profile_values.default_currency), report)
+        self._validate_constant_value(dataframes, "SupplierMaster", "SupplierCountry", self._schema_column_constant_or_default(schema, "SupplierMaster", "SupplierCountry", self.profile_values.default_country), report)
+        self._validate_constant_value(dataframes, "Plant", "PlantCountry", self._schema_column_constant_or_default(schema, "Plant", "PlantCountry", self.profile_values.default_country), report)
+        self._validate_constant_value(dataframes, "Warehouse", "WarehouseCountry", self._schema_column_constant_or_default(schema, "Warehouse", "WarehouseCountry", self.profile_values.default_country), report)
+        self._validate_constant_value(dataframes, "ComponentMaster", "CurrencyCode", self._schema_column_constant_or_default(schema, "ComponentMaster", "CurrencyCode", self.profile_values.default_currency), report)
+        self._validate_constant_value(dataframes, "SupplierComponent", "CurrencyCode", self._schema_column_constant_or_default(schema, "SupplierComponent", "CurrencyCode", self.profile_values.default_currency), report)
         self._validate_unique_column(dataframes, "SupplierMaster", "SupplierName", report)
         self._validate_unique_column(dataframes, "ComponentMaster", "ComponentName", report)
         self._validate_unique_column(dataframes, "Plant", "PlantName", report)
@@ -782,9 +782,11 @@ class ProcurementMasterDataGenerator:
         dataframes: dict[str, pd.DataFrame],
         table_name: str,
         column_name: str,
-        expected_value: str,
+        expected_value: str | None,
         report: ValidationReport,
     ) -> None:
+        if expected_value is None:
+            return
         dataframe = dataframes.get(table_name)
         if dataframe is None or column_name not in dataframe.columns:
             return
@@ -914,6 +916,15 @@ class ProcurementMasterDataGenerator:
         if table is None:
             return default
         return self._column_value_or_default(table, column_name, default)
+
+    def _schema_column_constant_or_default(self, schema: SchemaContract, table_name: str, column_name: str, default: str) -> str | None:
+        table = schema.tables.get(table_name)
+        if table is None:
+            return default
+        values = self._column_allowed_values(table, column_name)
+        if len(values) > 1:
+            return None
+        return str(values[0]) if values else default
 
     def _repeat_allowed_or_location(
         self,

@@ -35,8 +35,10 @@ class ArtifactService:
             "pipeline_json": pipeline_folder / "reports" / "pipeline_run_report.json",
             "generated_plan": pipeline_folder / "prompt" / "generated_llm_plan.json",
             "raw_llm_response": pipeline_folder / "prompt" / "azure_openai_raw_response.txt",
+            "row_budget_report": pipeline_folder / "reports" / "row_budget_report.json",
+            "row_count_audit": pipeline_folder / "reports" / "row_count_audit.json",
         }
-        path = artifact_map.get(artifact_name)
+        path = artifact_map.get(artifact_name) or self._recursive_artifact_path(pipeline_folder, artifact_name)
         if path is None or not path.exists():
             raise ArtifactNotFoundError(f"Artifact {artifact_name} is not available for run {run_id}.")
         return self._safe_child(path)
@@ -60,6 +62,8 @@ class ArtifactService:
         direct_report = output_root / "reports" / "pipeline_run_report.json"
         if direct_report.exists():
             return self._safe_child(output_root)
+        if (output_root / "final_data").exists() or (output_root / "reports" / "row_count_audit.json").exists():
+            return self._safe_child(output_root)
 
         candidates = sorted(
             output_root.glob("run_*/reports/pipeline_run_report.json"),
@@ -69,6 +73,18 @@ class ArtifactService:
         if not candidates:
             raise ArtifactNotFoundError(f"Pipeline output is not available for run {run_id}.")
         return self._safe_child(candidates[0].parents[1])
+
+    def _recursive_artifact_path(self, pipeline_folder: Path, artifact_name: str) -> Path | None:
+        filename_by_artifact = {
+            "llm_planning_report": "llm_planning_report.json",
+            "generated_industry_profile": "generated_industry_profile.json",
+            "performance_profile_phase4": "performance_profile_phase4.json",
+        }
+        filename = filename_by_artifact.get(artifact_name)
+        if filename is None:
+            return None
+        matches = sorted(pipeline_folder.glob(f"**/{filename}"))
+        return matches[0] if matches else None
 
     def _run_workspace(self, run_id: str) -> Path:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", run_id) or ".." in run_id:

@@ -72,9 +72,14 @@ def test_ui_exposes_full_lifecycle_generic_workflow() -> None:
     text = UI_TEMPLATE.read_text(encoding="utf-8")
 
     assert "Procurement &rarr; Production &rarr; Sales" in text
-    assert "Production consumes Procurement output" in text
-    assert 'value="production"' in text
-    assert 'value="sales"' in text
+    assert 'action="/api/pipeline/run-mes"' in text
+    assert 'name="metadata_xlsx"' in text
+    assert 'name="mermaid_erd"' in text
+    assert 'name="business_scenario"' in text
+    assert "Run MES Lifecycle" in text
+    assert "Production consumes Procurement output" not in text
+    assert 'value="production"' not in text
+    assert 'value="sales"' not in text
     assert "Sales - Coming soon" not in text
     assert 'value="production_v1"' not in text
     assert 'value="sales" disabled' not in text

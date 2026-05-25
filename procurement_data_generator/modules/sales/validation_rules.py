@@ -490,18 +490,21 @@ class SalesDataQualityEngine:
         )
         product_mask = merged["ProductID"].eq(merged["ProductID_shipment"])
         invoice_quantity_mask = _near(_num(merged["InvoiceQuantity"]), _num(merged["ShippedQuantity"]))
+        gross_line_amount = (_num(merged["InvoiceQuantity"]) * _num(merged["UnitPrice"])).round(2)
+        net_line_mask = _near(_num(merged["NetLineAmount"]), gross_line_amount - _num(merged["DiscountAmount"]))
         cogs_mask = _near(_num(merged["COGSValue"]), _num(merged["InvoiceQuantity"]) * _num(merged["UnitCost"]))
         margin_mask = _near(_num(merged["GrossMarginAmount"]), _num(merged["NetLineAmount"]) - _num(merged["COGSValue"]))
         expected_pct = (_num(merged["GrossMarginAmount"]) / _num(merged["NetLineAmount"]).replace(0, pd.NA)).fillna(0.0)
         pct_mask = _near(_num(merged["GrossMarginPct"]), expected_pct, tolerance=0.0001)
+        formula_mask = product_mask & invoice_quantity_mask & net_line_mask & cogs_mask & margin_mask & pct_mask
         _record(
             report,
-            bool((product_mask & invoice_quantity_mask & cogs_mask & margin_mask & pct_mask).all()),
+            bool(formula_mask.all()),
             "SALES_INVOICE_LINE_FORMULA",
-            "Invoice lines must match shipped quantities, COGS, and gross margin formulas.",
+            "Invoice lines must match shipped quantities, net amount, COGS, and gross margin formulas.",
             "Generate invoice lines directly from SalesShipmentLine and order pricing facts.",
             table_name="SalesInvoiceLine",
-            failed_rows=merged[~(product_mask & invoice_quantity_mask & cogs_mask & margin_mask & pct_mask)],
+            failed_rows=merged[~formula_mask],
             rule_id="sales_invoice_quantity_equals_shipped",
         )
         self._validate_invoice_header_totals(invoice_header, invoice_line, report)
@@ -522,9 +525,8 @@ class SalesDataQualityEngine:
 
     def _validate_invoice_header_totals(self, invoice_header: pd.DataFrame, invoice_line: pd.DataFrame, report: DataQualityReport) -> None:
         lines = invoice_line.copy()
-        lines["GrossLineAmount"] = _num(lines["InvoiceQuantity"]) * _num(lines["UnitPrice"])
         totals = lines.groupby("InvoiceID").agg(
-            Subtotal=("GrossLineAmount", "sum"),
+            Subtotal=("NetLineAmount", "sum"),
             Discount=("DiscountAmount", "sum"),
             Tax=("TaxAmount", "sum"),
         )
@@ -535,7 +537,7 @@ class SalesDataQualityEngine:
             & _near(_num(merged["TaxAmount"]), _num(merged["Tax"]))
             & _near(
                 _num(merged["TotalInvoiceAmount"]),
-                _num(merged["SubtotalAmount"]) - _num(merged["DiscountAmount"]) + _num(merged["TaxAmount"]) + _num(merged["FreightAmount"]),
+                _num(merged["SubtotalAmount"]) + _num(merged["TaxAmount"]) + _num(merged["FreightAmount"]),
             )
         )
         _record(
@@ -543,7 +545,7 @@ class SalesDataQualityEngine:
             bool(mask.all()),
             "SALES_INVOICE_TOTAL_FORMULA",
             "SalesInvoiceHeader totals must reconcile to invoice lines and freight.",
-            "Set TotalInvoiceAmount = SubtotalAmount - DiscountAmount + TaxAmount + FreightAmount.",
+            "Set SubtotalAmount = SUM(NetLineAmount) and TotalInvoiceAmount = SubtotalAmount + TaxAmount + FreightAmount.",
             table_name="SalesInvoiceHeader",
             failed_rows=merged[~mask],
             rule_id="sales_invoice_totals",

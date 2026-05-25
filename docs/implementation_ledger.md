@@ -1,0 +1,150 @@
+# MES Synthetic Data Generator Implementation Ledger
+
+This ledger tracks the phased hardening plan after the initial codebase review.
+It is intentionally scoped to preserve current working generation while adding
+guardrails before larger behavioral or structural changes.
+
+| Current issue | Affected files | Proposed fix | Phase | Risk | Validation/test needed |
+|---|---|---:|---:|---|---|
+| Full-chain regressions are hard to spot quickly. | `tests/test_generic_pipeline_sales.py`, `tests/conftest.py`, `pytest.ini`, new smoke tests | Add explicit procurement-only and Procurement -> Production -> Sales smoke guardrails, mark expensive lifecycle tests as `slow`, and document a fast default command. | 0 | Low | `pytest -m "not slow and not sql and not llm" -q`; targeted smoke test command |
+| Row-count drift is only visible indirectly in module reports. | `procurement_data_generator/core/audit/`, `core/pipeline/pipeline_runner.py`, `core/pipeline/generic_runner.py`, module reports | Add a row-count audit artifact with expected metadata TargetRows, actual generated rows, deltas, and totals. | 0 | Low | Unit tests for audit artifact plus pipeline smoke assertion that artifact is written |
+| Sales plugin receives `metadata_path` but does not pass schema to Sales generators. | `procurement_data_generator/modules/sales/plugin.py`, `modules/sales/master_generator.py`, `modules/sales/transaction_generator.py`, sales tests | Load Sales metadata schema once in the plugin and pass it into Sales master and transaction generation. | 1 | Medium | Sales metadata wiring test: `SalesOrderHdr` follows metadata target instead of fallback 12 |
+| Sales order volume is capped by customer count and can ignore metadata scale. | `procurement_data_generator/modules/sales/transaction_generator.py`, `core/config/generation_config.py` | Make the customer-count cap configurable and default to metadata-respecting generation when schema is present. | 1 | Medium | Sales transaction tests for metadata target and no overshipping |
+| Production order and material requirement caps suppress analytics volume. | `procurement_data_generator/modules/production/transaction_generator.py`, `core/config/generation_config.py` | Replace hard-coded 200 order and 1,200 requirement caps with configurable caps and safe defaults. | 1 | Medium | Production transaction tests for cap override and lifecycle validation |
+| Runtime config lacks row scaling and profile file inputs. | `procurement_data_generator/core/config/generation_config.py`, CLI/API request models | Extend config with row scale, target total rows, sales/production cap behavior, and `profile_file` support. | 1 | Medium | Config validation tests and CLI/API spec forwarding tests |
+| LLM prompt asks for deterministic execution details, increasing validation failures. | `core/llm/prompt_builder.py`, `core/contracts/llm_plan_contract.py`, shared industry profile modules | Introduce a smaller IndustryScenarioPlan/Profile contract, prompt only for business/industry planning, and synthesize executable plans in Python. | 2 | High | Contract tests, LLM failure fallback tests, strict synthesized plan validation tests |
+| Python plan synthesis is missing as a first-class boundary. | New `core/planning/plan_synthesizer.py`, existing plan validator/normalizer | Add PlanSynthesizer that converts validated profile/scenario objects into executable `LLMGenerationPlan`. | 2 | High | Plan semantic validation tests across Procurement, Production, Sales inputs |
+| Industry dynamics exist but are partially manual/profile-id driven. | `modules/shared/industry_profiles/*`, `modules/*/master_generator.py`, transaction generators | Pass generated profiles through all relevant module generators and save profile artifacts. | 3 | Medium | Food vs EV vs pharma tests proving changed master/dimension vocabulary across all modules |
+| 300k-400k analytics mode needs controlled scaling. | New row budget planner, config, generators, reports | Add RowBudgetPlanner using metadata targets, scale factor, target total rows, and parent-child ratios; avoid scaling natural balance/snapshot tables blindly. | 4 | High | Row-budget report tests, lifecycle integrity tests at scaled row targets |
+| Frontend exposes internal concepts and module switches. | `app/templates/index.html`, `app/static/js/app.js`, `app/services/pipeline_service.py`, API tests | Simplify to one full lifecycle workflow with basic inputs/checks and advanced settings hidden. | 5 | Medium | Frontend/API contract tests and browser verification |
+| Large generator/validator files mix responsibilities. | `modules/*/transaction_generator.py`, `modules/*/validation_rules.py`, validators | Split only after behavior is guarded; preserve public plugin interfaces and avoid behavior changes during extraction. | 6 | Medium | Existing tests plus focused equivalence tests before/after extraction |
+| Lifecycle validity must remain explicit as row volume and profiles expand. | `modules/*/validation_rules.py`, SQL validation pack, tests | Harden inventory consumption, finished goods, sales shipment, returns, reservations, and status derivation checks. | 7 | High | SQL validation pack, lifecycle integrity tests, row-volume tests |
+
+## Phase 1 Execution Ledger
+
+| Issue name | Affected files | Proposed fix | Risk level | Test/validation required | Status |
+|---|---|---|---|---|---|
+| Sales metadata/schema wiring | `procurement_data_generator/modules/sales/plugin.py`, `procurement_data_generator/core/pipeline/generic_runner.py`, Sales tests | Load `metadata_path` with `read_metadata_schema` in the Sales plugin and pass `schema` into Sales master and Phase 4 transaction generation. Verify generic lifecycle already forwards Sales metadata. | Medium | Generic Procurement -> Production -> Sales test proves `SalesOrderHdr` no longer falls back to 12 when Sales metadata target is higher. | Completed |
+| Hidden Sales customer-count cap | `procurement_data_generator/modules/sales/transaction_generator.py`, `procurement_data_generator/core/config/generation_config.py` | Add `limit_sales_orders_by_customer` and `sales_orders_per_customer_cap`; only apply the customer-based cap when explicitly enabled. | Medium | Unit test for uncapped metadata target behavior and explicit cap behavior while preserving no-overship validation. | Completed |
+| Hidden Production hard caps | `procurement_data_generator/modules/production/transaction_generator.py`, `procurement_data_generator/core/config/generation_config.py` | Add `max_production_orders` and `max_production_requirements`; apply caps only when configured. | Medium | Production transaction/config test demonstrates configured caps apply and smoke tests use explicit config caps instead of hidden generator caps. | Completed |
+| Phase 1 config expansion | `procurement_data_generator/core/config/generation_config.py`, config tests | Add Phase 1 config fields: row scale placeholders, max rows placeholders, production caps, Sales cap controls, and `profile_file`. Validate types/ranges conservatively. | Medium | GenerationConfig unit tests for defaults, path coercion, and invalid values. | Completed |
+| Sales row-count audit visibility | `procurement_data_generator/core/audit/row_count_audit.py`, generic lifecycle tests | Ensure existing Phase 0 audit reports Sales metadata expected rows and actual generated rows after schema wiring. | Low | Generic full-chain test inspects Sales audit table rows for expected/actual/delta/status. | Completed |
+| Higher Sales volume surfaced tolerance mismatch | `procurement_data_generator/modules/sales/transaction_generator.py`, Sales validation tests | Derive Sales line, pick, and reservation statuses with the same quantity tolerance used by validation. Do not weaken validation. | Medium | Existing Sales status validation and full-chain Sales validation pass with metadata-driven row counts. | Completed |
+
+## Phase 2 Execution Ledger
+
+Current LLM flow review:
+
+- Full executable prompts are built in `procurement_data_generator/core/llm/prompt_builder.py` by `build_llm_planning_prompt`.
+- Azure OpenAI is called from `procurement_data_generator/core/llm/azure_openai_client.py` through `AzureOpenAIClient.generate_plan`.
+- Strict executable-plan shape validation is performed in `procurement_data_generator/core/llm/plan_loader.py` with `LLMGenerationPlan`.
+- Semantic executable-plan validation is performed in `procurement_data_generator/core/llm/plan_validator.py` by `validate_generation_plan`.
+- The Procurement pipeline live LLM path is in `procurement_data_generator/core/pipeline/pipeline_runner.py` when `generate_plan=True`.
+- Explicit/bundled plan paths are loaded through `load_llm_plan_json` and must remain backward compatible for existing deterministic tests and CLI/API flows.
+- Generic `procurement,production,sales` currently keeps module-specific plan inputs; the Procurement live LLM path is the first backend path to switch to small scenario planning.
+
+| Issue name | Affected files | Proposed fix | Risk level | Test/validation required | Status |
+|---|---|---|---|---|---|
+| Reduce LLM validation failures by replacing direct executable-plan generation with small industry scenario planning and Python plan synthesis. | `procurement_data_generator/core/llm/industry_scenario_contract.py`, `procurement_data_generator/core/llm/industry_scenario_prompt_builder.py`, `procurement_data_generator/core/llm/industry_scenario_service.py`, `procurement_data_generator/core/llm/plan_synthesizer.py`, `procurement_data_generator/core/pipeline/pipeline_runner.py` | Added small `IndustryScenarioPlan` contract, prompt only for business/industry hints, validate/repair/fallback the small object, synthesize executable `LLMGenerationPlan` in Python, then run existing strict semantic validation. | High | Contract, prompt, synthesizer, fallback, and pipeline compatibility tests with mocked LLM clients. | Completed |
+| Preserve explicit executable plan backward compatibility. | `procurement_data_generator/core/pipeline/pipeline_runner.py`, `procurement_data_generator/core/llm/plan_loader.py`, existing tests | Kept the old plan-file path unchanged when `generate_plan=False` or `use_existing_plan=True`; only live Azure OpenAI planning uses the small scenario contract. Compatibility artifact names are still written for generated plans. | Medium | Existing Phase 0/1 smoke tests and fast suite still pass. | Completed |
+| Save LLM planning artifacts for diagnosis. | `procurement_data_generator/core/pipeline/pipeline_runner.py`, `procurement_data_generator/core/llm/industry_scenario_service.py` | Save industry scenario prompt, raw response attempts, validated scenario, synthesized execution plan, and planning report under run prompt/reports folders. | Medium | Unit/integration tests assert artifacts and report fields for success, repair, and fallback. | Completed |
+| Deterministic fallback keeps generation running. | `procurement_data_generator/core/llm/industry_scenario_contract.py`, `procurement_data_generator/core/llm/industry_scenario_service.py` | Added generic manufacturing fallback scenario with warning when LLM JSON parse/validation/repair fails. | Medium | Mock invalid JSON and invalid repaired response; assert fallback plan validates and report marks fallback. | Completed |
+
+## Phase 3 Execution Ledger
+
+Current industry profile flow review:
+
+- Static industry profiles live under `procurement_data_generator/modules/shared/industry_profiles/` and include EV, food, and generic MES profiles.
+- `GenerationConfig.profile_id` already selected static profiles. `GenerationConfig.profile_file` already existed and `profile_loader.get_industry_profile_or_default()` could load it, but Procurement, Production, and Sales generator constructors were not passing it through.
+- The existing profile contract, JSON loader, validator, and `IndustryProfileValueProvider` were reused for generated profiles.
+- Procurement master generation already consumes profile values for supplier/material names, component categories, plant/warehouse names, inspection terms, and currency/country defaults.
+- Production master generation already consumes profile values for product catalog, work centers, routing operations, fallback components/plants/warehouses, and quality/scrap/rework vocabulary.
+- Sales master generation already consumes profile values for customer types, industries, name terms, channels, payment terms, regions, currency, pricing ranges, and return vocabulary.
+- The existing profile prompt excluded Sales/customer/distribution; Phase 3 updates it to full Procurement -> Production -> Sales scope while still excluding unrelated MES areas.
+- Existing LLM scenario planning artifacts are written by `procurement_data_generator/core/pipeline/pipeline_runner.py`; Phase 3 adds `prompt/generated_industry_profile.json` and threads it through `GenerationConfig.profile_file`.
+
+| Issue name | Affected files | Proposed fix | Risk level | Test/validation required | Status |
+|---|---|---|---|---|---|
+| Make validated industry scenario/profile visible in Procurement, Production, and Sales Dimension/Master data. | `procurement_data_generator/core/pipeline/pipeline_runner.py`, `procurement_data_generator/core/pipeline/generic_runner.py`, `procurement_data_generator/modules/shared/industry_profiles/generated_profile_adapter.py`, `procurement_data_generator/modules/procurement/master_generator.py`, `procurement_data_generator/modules/production/master_generator.py`, `procurement_data_generator/modules/sales/master_generator.py`, Phase 3 tests | Converted validated `IndustryScenarioPlan` into a generated runtime industry profile, saved it as an artifact, loaded it through `GenerationConfig.profile_file`, and used profile vocabulary in all module master generators. | High | Food/EV/pharma tests prove generated master data text changes across Procurement, Production, and Sales while lifecycle smoke tests still pass. | Completed |
+| Preserve static profile backward compatibility and priority. | `procurement_data_generator/modules/*/*generator.py`, `procurement_data_generator/modules/shared/industry_profiles/profile_loader.py`, profile tests | Resolve profiles in priority order: generated/profile_file, explicit profile_id, existing deterministic default profile. Kept existing static profile_id behavior. | Medium | Profile loading priority tests for profile_file, profile_id, and default fallback. | Completed |
+| Correct profile prompt scope for full lifecycle. | `procurement_data_generator/modules/shared/industry_profiles/profile_prompt_builder.py`, LLM prompt tests | Removed procurement/production-only and sales-exclusion wording; require Procurement -> Production -> Sales vocabulary without unrelated MES areas. | Medium | Prompt cleanliness tests check Sales/customer/channel support and no obsolete Sales exclusion. | Completed |
+| Keep transaction/lifecycle logic stable while adding labels. | `procurement_data_generator/modules/procurement/transaction_generator.py`, `procurement_data_generator/modules/production/transaction_generator.py`, `procurement_data_generator/modules/sales/transaction_generator.py` | Only threaded `profile_file` into existing profile loading for safe descriptive vocabulary. No changes to quantities, inventory, status derivation, reconciliation, or shipment constraints. | Medium | Phase 0/1/2 regression tests plus full fast suite. | Completed |
+
+## Phase 4 Execution Ledger
+
+Current row target flow review:
+
+- Metadata `TargetRows` are read by `procurement_data_generator/core/metadata/metadata_reader.py` into `TableContract.target_rows`.
+- The Python-synthesized and bundled executable plans carry metadata row counts in `row_count_plan`; strict plan validation in `core/llm/plan_validator.py` still requires metadata-backed plan rows for existing plan compatibility.
+- Procurement master/transaction generators read targets through `get_target_rows()` / `_target_rows()`, but Procurement transaction validation still compares some outputs directly to metadata `table.target_rows`.
+- Production master/transaction generators read targets through `get_target_rows()`. Production quality warnings are produced in `modules/production/data_validator.py` / `reconciler_rules.py` from schema metadata targets.
+- Sales master/transaction generators read targets through `_target_rows(schema, table_name, default)`. Sales orders are lifecycle-limited by finished goods availability, not by the old customer-count cap unless explicitly configured.
+- Existing row-count audit reports metadata expected rows versus actual rows; it should remain unchanged and be complemented by a row-budget report.
+- Natural balance/snapshot or derived tables include Procurement `Inventory`, Production `FinishedGoodsInventory`, Sales-adjusted `FinishedGoodsInventory`, and event-derived rows such as scrap/rework, returns, shipment traceability, and production genealogy. These should be reported as naturally derived instead of blindly multiplied.
+- Parent-child ratios are currently implicit in generators: Procurement builds transaction child rows from upstream lifecycle records, Production builds requirements/issues/operations/receipts from orders/BOM/routings/inventory availability, and Sales builds order/shipment/invoice/return/traceability rows from finished goods availability and generated shipments.
+
+| Issue name | Affected files | Proposed fix | Risk level | Test/validation required | Status |
+|---|---|---|---|---|---|
+| Support 300k-400k analytics-scale full lifecycle generation using row budget planning while preserving Procurement -> Production -> Sales lifecycle validity. | New `procurement_data_generator/core/row_budget.py`, `core/config/generation_config.py`, `core/pipeline/pipeline_runner.py`, `core/pipeline/generic_runner.py`, module generators, tests | Add a deterministic RowBudgetPlanner that classifies tables, applies `target_total_rows` or `row_scale_factor`, caps with `max_rows_per_table`, and writes planned-vs-actual budget reports without replacing row-count audit. | High | Unit tests for planner/scaling/reporting plus a marked slow full-chain target around 350k rows with lifecycle validation. | Completed |
+| Planned row targets are not consumed consistently. | Procurement, Production, and Sales master/transaction generators plus Production/Procurement row-count validation paths | Add a small planned-target lookup priority: RowBudgetPlanner target -> executable plan target -> metadata TargetRows -> existing default. Keep defaults unchanged when no scaling config is supplied. | Medium | Generator target priority tests and Phase 0/1/2/3 regression tests. | Completed |
+| Analytics scaling can hide lifecycle shortfalls. | New row budget report, `core/audit/row_count_audit.py`, generic runner reports | Report table classification, metadata target, planned target, actual rows, delta, status, and notes for naturally derived or lifecycle-limited tables. Do not treat every shortfall as failure. | Medium | Row budget report tests assert statuses such as `within_tolerance`, `naturally_derived`, and `below_target` with notes. | Completed |
+| Scaling can expose performance hot spots. | Production/Sales transaction allocation loops | Optimize only obvious repeated scans where needed, using precomputed lookups while preserving lifecycle constraints. | Medium | 300k-400k run records runtime, row counts, and validation status. | Completed |
+
+### Phase 4 Performance Blocker
+
+| Issue | Observed runtime / partial rows | Suspected area | Affected files | Optimization plan | Tests/validation required | Status |
+|---|---|---|---|---|---|---|
+| Production transaction generation bottleneck at analytics scale | Before: 350k deterministic run ran 53+ minutes without completion. Procurement completed with 202,858 rows, Production master completed with 2,051 rows, Production transactions did not finish, and Sales never started. After optimization: 350k deterministic full lifecycle completed in 275.42 seconds with 304,972 total rows. | Production inventory/BOM allocation path, especially repeated DataFrame scans and per-allocation lookups in `ProductionTransactionGenerator`. | `procurement_data_generator/modules/production/transaction_generator.py`, `scripts/run_production_pipeline.py`, row budget/performance tests | Added controlled timing profile artifact, replaced repeated DataFrame filters/groupby/sample in production allocation with precomputed dictionaries and mutable inventory pools, added lifecycle-safe allocation rollback/stopping behavior, optimized shift lookup, and preserved validation. | Smaller 50k full-chain performance regression passed; full 350k no-SQL/no-live-LLM run passed with validation. Existing Phase 0/1/2/3 tests and fast suite passed. | Completed |
+
+## Phase 5 Execution Ledger
+
+Current frontend/API flow review:
+
+- The main UI is served by `app/templates/index.html` and currently posts to `POST /api/pipeline/run-generic`.
+- The UI currently exposes developer controls: module checkboxes, model version, explicit plan JSON upload, demo fallback, profile selector, upstream path, and separate Production inputs.
+- `app/static/js/app.js` currently enforces module dependencies in the browser and renders generic module results.
+- `app/routes/pipeline_routes.py` exposes the legacy Procurement-only `/api/pipeline/run` route and generic developer `/api/pipeline/run-generic` route.
+- `app/services/pipeline_service.py` already adapts combined metadata/ERD uploads into module-specific inputs and calls `SyntheticDataPipelineRunner`.
+- The full lifecycle runner is reached through `SyntheticDataPipelineRunner.run(PipelineRunSpec(module_ids=("procurement", "production", "sales"), ...))`.
+- Azure OpenAI, Build Prompt, Load SQL, and SQL `if_table_exists` are already forwarded through the generic service into the runner.
+- `target_total_rows`, `row_scale_factor`, and `max_rows_per_table` exist in `GenerationConfig` but are not yet exposed by the web service.
+- Backward-compatible developer flows that should remain available are `/api/pipeline/run`, `/api/pipeline/run-generic`, explicit/bundled plan paths, procurement-only runs, production-only fallback runs, and model-version arguments.
+
+| Issue name | Affected files | Proposed fix | Risk level | Validation/test required | Status |
+|---|---|---|---|---|---|
+| Simplify frontend into one clean MES lifecycle workflow and hide internal version/module controls. | `app/templates/index.html`, `app/static/js/app.js`, `app/static/css/style.css`, `app/routes/pipeline_routes.py`, `app/services/pipeline_service.py`, API/frontend tests | Added productized `/api/pipeline/run-mes` endpoint that always runs Procurement -> Production -> Sales, accepts metadata XLSX, Mermaid ERD text, business scenario, Azure/Prompt/SQL flags, and advanced row/seed settings. Replaced the main page with the simplified workflow while keeping developer routes intact. | Medium | New API validation/success/flag tests, frontend smoke tests proving hidden internals, and Phase 0-4 regression tests. | Completed |
+| Expose analytics row settings safely through UI/API. | `app/services/pipeline_service.py`, `app/routes/pipeline_routes.py`, `GenerationConfig` usage | Validated `target_total_rows`, `row_scale_factor`, optional seed, and SQL mode before constructing `GenerationConfig`; default generation behavior remains unchanged when settings are omitted. | Medium | API validation tests for invalid numeric settings and service tests proving config reaches the generic runner. | Completed |
+| Return user-friendly lifecycle results and artifacts. | `app/services/pipeline_service.py`, `app/routes/artifact_routes.py`, `app/services/artifact_service.py`, frontend JS | Summarizes total rows, module row counts, validation/SQL status, warning/error counts, output folder, and artifact paths/download links for row-budget, row-count audit, profile, LLM report, performance profile, and final data zip when available. | Medium | API response shape tests and artifact lookup tests for generic lifecycle runs. | Completed |
+| Preserve developer/backward-compatible endpoints. | Existing API route tests and developer service paths | Kept `/api/pipeline/run` and `/api/pipeline/run-generic` unchanged for explicit plan/module workflows; hidden only from the main UI. | Low | Existing API tests for legacy and generic routes remain passing. | Completed |
+
+## Phase 6 Execution Ledger
+
+Main issue: Behavior-preserving codebase cleanup and modular refactor after functional stabilization.
+
+Refactor inventory before coding:
+
+| File | Approx. lines | Mixed responsibilities | Proposed extraction modules | Public interface impacted | Risk |
+|---|---:|---|---|---|---|
+| `procurement_data_generator/modules/procurement/transaction_generator.py` | 2,359 | Procurement lifecycle generation, target lookup, status derivation, invoices/payments, inventory movement, output shaping | Defer broad split; only extract low-risk pure helpers if needed after higher-value areas | No | High |
+| `procurement_data_generator/modules/sales/transaction_generator.py` | 1,572 | Sales order/reservation/pick/ship, invoice/payment, returns, traceability, inventory recalculation, status rules | Extract pure status/quantity rules into `modules/sales/status_rules.py`; keep generator API unchanged | No | Medium |
+| `procurement_data_generator/modules/procurement/data_quality.py` | 1,524 | Procurement validation, reconciliation, row-count warnings, issue formatting | Defer broad split to avoid changing warning/error formats before Phase 7 | No | High |
+| `procurement_data_generator/core/llm/plan_validator.py` | 1,416 | Executable-plan semantic validation, table/column references, formula checks, reporting | Defer unless a tiny pure helper is obvious; Phase 2 path is stable and heavily validated | No | Medium |
+| `procurement_data_generator/modules/procurement/master_generator.py` | 1,318 | Master data generation, industry vocabulary, deterministic naming, output shaping | Defer; Phase 3 profile behavior is accepted and sensitive | No | Medium |
+| `procurement_data_generator/modules/production/transaction_generator.py` | 1,174 | Production order generation, BOM allocation, inventory pools, operations, quality, genealogy, validation, performance profile | Extract allocation pools/maps into `modules/production/allocation.py` and performance timing/report helpers into `modules/production/performance_profile.py`; keep `ProductionTransactionGenerator` import path unchanged | No | Medium |
+| `app/services/pipeline_service.py` | 634 | Upload adaptation, request validation, generic runner wiring, MES response shaping, artifact path formatting | Extract productized MES response shaping into `app/services/mes_lifecycle_response.py`; keep endpoint/service behavior unchanged | No | Low |
+
+Baseline to preserve:
+
+- Procurement-only Phase 0 smoke test must pass with final data, validation status, and row-count audit.
+- Full Procurement -> Production -> Sales smoke test must pass with module outputs, row-count audit, and row-budget report where scaling config applies.
+- Phase 1 Sales metadata/cap behavior, Phase 2 LLM planning tests, Phase 3 profile tests, Phase 4 row-budget/scale tests, and Phase 5 API/UI tests must remain green.
+- Public imports remain stable for transaction generators, plugins, runner classes, and plan validation functions.
+
+| Issue name | Affected files | Proposed refactor | Public interface impacted | Risk level | Validation/test required | Status |
+|---|---|---|---|---|---|---|
+| Behavior-preserving codebase cleanup and modular refactor after functional stabilization. | Production/Sales transaction helpers, web service response helpers, tests, architecture docs | Extracted focused helpers from high-value areas while preserving public classes, function names, outputs, validation behavior, row counts, and frontend/API behavior. | No | Medium | Phase 0-5 regression commands, new helper unit tests, import/backward compatibility tests, full fast suite. | Completed |
+| Production allocation/performance logic is embedded in transaction generator. | `modules/production/transaction_generator.py`, new `modules/production/allocation.py`, new `modules/production/performance_profile.py` | Moved mutable allocation lots, allocation context, BOM/inventory map building, component allocation, BOM allocation rollback, and timing profile helpers into focused modules. Generator wrapper methods preserve behavior. | No | Medium | Unit tests for allocation pool consumption/rollback and performance profile; Phase 4 tests. | Completed |
+| Sales status and quantity rules are buried in transaction generator. | `modules/sales/transaction_generator.py`, new `modules/sales/status_rules.py` | Moved pure status/tolerance rules into a focused module and imported them under existing private names. | No | Low | Unit tests for status helpers plus Phase 1 Sales tests. | Completed |
+| Productized MES response shaping is embedded in pipeline service. | `app/services/pipeline_service.py`, new `app/services/mes_lifecycle_response.py` | Moved artifact path discovery, download-map construction, and MES user response enrichment into a small helper module. | No | Low | Phase 5 API tests and artifact endpoint tests. | Completed |
+| Backward-compatible imports need explicit guardrails. | New `tests/test_phase6_import_compatibility.py` | Added import tests for `ProductionTransactionGenerator`, `SalesTransactionGenerator`, `ProcurementTransactionGenerator`, module plugins, generic runner, pipeline runner, and plan validator public APIs. | No | Low | New import compatibility tests. | Completed |
+| Developer handoff architecture needs a concise map. | New `docs/architecture_phase6.md` | Documented key entry points and where LLM planning, profiles, row budget, lifecycle generators, UI endpoint, and extracted helpers live. | No | Low | Documentation review and fast suite unaffected. | Completed |

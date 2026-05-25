@@ -113,7 +113,9 @@ def test_sales_phase5_invoice_line_quantities_cogs_and_margin_reconcile() -> Non
 
     for row in invoice_line.itertuples(index=False):
         shipment = shipment_line.loc[row.ShipmentLineID]
+        expected_gross = round(row.InvoiceQuantity * row.UnitPrice, 2)
         assert row.InvoiceQuantity == shipment["ShippedQuantity"]
+        assert row.NetLineAmount == pytest.approx(round(expected_gross - row.DiscountAmount, 2))
         assert row.COGSValue == round(row.InvoiceQuantity * shipment["UnitCost"], 2)
         assert row.GrossMarginAmount == round(row.NetLineAmount - row.COGSValue, 2)
         expected_pct = round(row.GrossMarginAmount / row.NetLineAmount, 4) if row.NetLineAmount > 0 else 0.0
@@ -124,15 +126,14 @@ def test_sales_phase5_invoice_line_quantities_cogs_and_margin_reconcile() -> Non
 def test_sales_phase5_invoice_header_totals_reconcile() -> None:
     phase5 = _generate_phase5()
     invoice_header = phase5["SalesInvoiceHeader"]
-    invoice_line = phase5["SalesInvoiceLine"].copy()
-    invoice_line["GrossLineAmount"] = (invoice_line["InvoiceQuantity"] * invoice_line["UnitPrice"]).round(2)
+    invoice_line = phase5["SalesInvoiceLine"]
 
     for header in invoice_header.itertuples(index=False):
         lines = invoice_line[invoice_line["InvoiceID"] == header.InvoiceID]
-        assert header.SubtotalAmount == pytest.approx(round(lines["GrossLineAmount"].sum(), 2))
+        assert header.SubtotalAmount == pytest.approx(round(lines["NetLineAmount"].sum(), 2))
         assert header.DiscountAmount == pytest.approx(round(lines["DiscountAmount"].sum(), 2))
         assert header.TaxAmount == pytest.approx(round(lines["TaxAmount"].sum(), 2))
-        expected_total = round(header.SubtotalAmount - header.DiscountAmount + header.TaxAmount + header.FreightAmount, 2)
+        expected_total = round(header.SubtotalAmount + header.TaxAmount + header.FreightAmount, 2)
         assert header.TotalInvoiceAmount == pytest.approx(expected_total)
 
 

@@ -46,6 +46,31 @@ async def raw_llm_response(run_id: str) -> FileResponse:
     return _file_response(run_id, "raw_llm_response", "azure_openai_raw_response.txt", "text/plain")
 
 
+@router.get("/{run_id}/row-budget-report")
+async def row_budget_report(run_id: str) -> FileResponse:
+    return _file_response(run_id, "row_budget_report", "row_budget_report.json", "application/json")
+
+
+@router.get("/{run_id}/row-count-audit")
+async def row_count_audit(run_id: str) -> FileResponse:
+    return _file_response(run_id, "row_count_audit", "row_count_audit.json", "application/json")
+
+
+@router.get("/{run_id}/llm-planning-report")
+async def llm_planning_report(run_id: str) -> FileResponse:
+    return _file_response(run_id, "llm_planning_report", "llm_planning_report.json", "application/json")
+
+
+@router.get("/{run_id}/generated-industry-profile")
+async def generated_industry_profile(run_id: str) -> FileResponse:
+    return _file_response(run_id, "generated_industry_profile", "generated_industry_profile.json", "application/json")
+
+
+@router.get("/{run_id}/performance-profile-phase4")
+async def performance_profile_phase4(run_id: str) -> FileResponse:
+    return _file_response(run_id, "performance_profile_phase4", "performance_profile_phase4.json", "application/json")
+
+
 def _file_response(run_id: str, artifact_name: str, filename: str, media_type: str) -> FileResponse:
     try:
         path = artifact_service.get_artifact_path(run_id, artifact_name)

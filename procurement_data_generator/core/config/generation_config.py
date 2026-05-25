@@ -25,6 +25,7 @@ class GenerationConfig:
     sales_orders_per_customer_cap: int = 50
     profile_file: Path | None = None
     planned_row_targets: Mapping[str, int] | None = None
+    use_local_scenario_planner: bool = False
 
     def __post_init__(self) -> None:
         if isinstance(self.seed, bool) or not isinstance(self.seed, int):
@@ -33,6 +34,8 @@ class GenerationConfig:
             object.__setattr__(self, "output_dir", Path(self.output_dir))
         if not isinstance(self.limit_sales_orders_by_customer, bool):
             raise ValueError("limit_sales_orders_by_customer must be a boolean.")
+        if not isinstance(self.use_local_scenario_planner, bool):
+            raise ValueError("use_local_scenario_planner must be a boolean.")
         row_scale_factor = self.row_scale_factor
         if isinstance(row_scale_factor, bool) or not isinstance(row_scale_factor, (int, float)) or float(row_scale_factor) <= 0:
             raise ValueError("row_scale_factor must be a positive number.")

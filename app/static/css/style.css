@@ -111,10 +111,14 @@ textarea {
 
 .options {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   align-items: end;
   margin: 16px 0;
+}
+
+.primary-options {
+  align-items: center;
 }
 
 .check {
@@ -171,6 +175,23 @@ textarea {
 
 .model-help p {
   margin: 8px 0 0;
+}
+
+.advanced-options {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 16px;
+  background: #fbfcfd;
+}
+
+.advanced-options summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.advanced-grid {
+  margin-top: 14px;
 }
 
 button {
@@ -252,6 +273,28 @@ th {
   color: var(--accent-dark);
   text-decoration: none;
   font-weight: 700;
+}
+
+.artifact-paths {
+  display: grid;
+  gap: 8px;
+}
+
+.artifact-paths div {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+}
+
+.artifact-paths span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.artifact-paths strong {
+  display: block;
+  overflow-wrap: anywhere;
 }
 
 .status-passed {

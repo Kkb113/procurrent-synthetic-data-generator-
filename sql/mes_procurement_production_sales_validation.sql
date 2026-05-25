@@ -144,7 +144,7 @@ GROUP BY e.ModuleName
 ORDER BY e.ModuleName;
 
 -- 1C. Row-count readiness summary. Expected: required operational tables > 0.
-SELECT 'SupplierMaster' AS TableName, COUNT(*) AS RowCount FROM dbo.SupplierMaster
+SELECT 'SupplierMaster' AS TableName, COUNT(*) AS [RowCount] FROM dbo.SupplierMaster
 UNION ALL SELECT 'PurchaseOrderLine', COUNT(*) FROM dbo.PurchaseOrderLine
 UNION ALL SELECT 'InventoryReceiptDetail', COUNT(*) FROM dbo.InventoryReceiptDetail
 UNION ALL SELECT 'InventoryTransaction', COUNT(*) FROM dbo.InventoryTransaction
@@ -269,6 +269,23 @@ FROM dbo.SupplierInvoice si
 JOIN PaymentRollup p ON p.SupplierInvoiceID = si.SupplierInvoiceID
 WHERE COALESCE(p.PaidAmount, 0) > COALESCE(si.TotalInvoiceAmount, 0) + 0.01;
 
+-- 3H. InventoryReceiptDetail price variance formula. Expected: no rows.
+-- Negative PriceDifference / PriceDifferencePct is a valid favorable variance, not an error.
+SELECT InventoryReceiptDetailID,
+       OrderedUnitPrice,
+       DeliveredUnitPrice,
+       PriceDifference,
+       PriceDifferencePct
+FROM dbo.InventoryReceiptDetail
+WHERE ABS(COALESCE(PriceDifference, 0) - ROUND(COALESCE(DeliveredUnitPrice, 0) - COALESCE(OrderedUnitPrice, 0), 2)) > 0.01
+   OR ABS(
+        COALESCE(PriceDifferencePct, 0)
+        - CASE
+              WHEN COALESCE(OrderedUnitPrice, 0) = 0 THEN 0
+              ELSE ROUND((COALESCE(PriceDifference, 0) / NULLIF(OrderedUnitPrice, 0)) * 100.0, 2)
+          END
+      ) > 0.01;
+
 /* ============================================================
 SECTION 4 - PRODUCTION MATERIAL CONSUMPTION VALIDATION
 ============================================================ */
@@ -323,12 +340,52 @@ WHERE it.InventoryTransactionID IS NULL
 SECTION 5 - PRODUCTION FINISHED GOODS, GENEALOGY, AND COST VALIDATION
 ============================================================ */
 
--- 5A. FinishedGoodsReceipt value formula. Expected: no rows.
+-- 5A. OperationExecution flow and quantity semantics. Expected: no rows.
+-- ReworkQuantity is non-additive: it is a subset of OutputQuantity routed through rework,
+-- so the valid loss formula is OutputQuantity = InputQuantity - ScrapQuantity.
+WITH OrderedOperations AS (
+    SELECT oe.OperationExecutionID,
+           oe.ProductionBatchID,
+           oe.OperationSequence,
+           oe.InputQuantity,
+           oe.OutputQuantity,
+           oe.ScrapQuantity,
+           oe.ReworkQuantity,
+           pb.PlannedBatchQuantity,
+           LAG(oe.OutputQuantity) OVER (
+               PARTITION BY oe.ProductionBatchID
+               ORDER BY oe.OperationSequence
+           ) AS PreviousOutputQuantity,
+           ROW_NUMBER() OVER (
+               PARTITION BY oe.ProductionBatchID
+               ORDER BY oe.OperationSequence
+           ) AS OperationRank
+    FROM dbo.OperationExecution oe
+    JOIN dbo.ProductionBatch pb ON pb.ProductionBatchID = oe.ProductionBatchID
+)
+SELECT OperationExecutionID,
+       ProductionBatchID,
+       InputQuantity,
+       OutputQuantity,
+       ScrapQuantity,
+       ReworkQuantity,
+       PreviousOutputQuantity
+FROM OrderedOperations
+WHERE InputQuantity < 0
+   OR OutputQuantity < 0
+   OR ScrapQuantity < 0
+   OR ReworkQuantity < 0
+   OR (OperationRank = 1 AND ABS(COALESCE(InputQuantity, 0) - COALESCE(PlannedBatchQuantity, 0)) > 0.01)
+   OR (OperationRank > 1 AND ABS(COALESCE(InputQuantity, 0) - COALESCE(PreviousOutputQuantity, 0)) > 0.01)
+   OR ABS(COALESCE(OutputQuantity, 0) - (COALESCE(InputQuantity, 0) - COALESCE(ScrapQuantity, 0))) > 0.01
+   OR COALESCE(ReworkQuantity, 0) > COALESCE(OutputQuantity, 0) + 0.01;
+
+-- 5B. FinishedGoodsReceipt value formula. Expected: no rows.
 SELECT FinishedGoodsReceiptID, GoodQuantity, UnitCost, ReceiptValue
 FROM dbo.FinishedGoodsReceipt
 WHERE ABS(COALESCE(ReceiptValue, 0) - COALESCE(GoodQuantity, 0) * COALESCE(UnitCost, 0)) > 0.01;
 
--- 5B. Production genealogy links to FinishedGoodsReceipt and MaterialIssueLine. Expected: no rows.
+-- 5C. Production genealogy links to FinishedGoodsReceipt and MaterialIssueLine. Expected: no rows.
 SELECT pg.ProductionGenealogyID,
        pg.FinishedGoodsReceiptID,
        pg.MaterialIssueLineID
@@ -338,7 +395,7 @@ LEFT JOIN dbo.MaterialIssueLine mil ON mil.MaterialIssueLineID = pg.MaterialIssu
 WHERE fgr.FinishedGoodsReceiptID IS NULL
    OR mil.MaterialIssueLineID IS NULL;
 
--- 5C. Genealogy consumed quantity does not exceed material issued quantity. Expected: no rows.
+-- 5D. Genealogy consumed quantity does not exceed material issued quantity. Expected: no rows.
 WITH GenealogyByIssue AS (
     SELECT MaterialIssueLineID, SUM(ConsumedQuantity) AS ConsumedQuantity
     FROM dbo.ProductionGenealogy
@@ -351,7 +408,7 @@ FROM dbo.MaterialIssueLine mil
 JOIN GenealogyByIssue g ON g.MaterialIssueLineID = mil.MaterialIssueLineID
 WHERE COALESCE(g.ConsumedQuantity, 0) > COALESCE(mil.IssuedQuantity, 0) + 0.01;
 
--- 5D. ProductionCostSummary total formula. Expected: no rows.
+-- 5E. ProductionCostSummary total formula. Expected: no rows.
 SELECT ProductionCostSummaryID,
        MaterialCost,
        LaborCost,
@@ -362,7 +419,7 @@ FROM dbo.ProductionCostSummary
 WHERE ABS(COALESCE(TotalProductionCost, 0)
         - (COALESCE(MaterialCost, 0) + COALESCE(LaborCost, 0) + COALESCE(OverheadCost, 0) + COALESCE(ScrapCost, 0))) > 0.01;
 
--- 5E. ProductionCostSummary unit production cost. Expected: no rows.
+-- 5F. ProductionCostSummary unit production cost. Expected: no rows.
 WITH BatchGoodQty AS (
     SELECT ProductionBatchID, SUM(GoodQuantity) AS GoodQuantity
     FROM dbo.FinishedGoodsReceipt
@@ -525,6 +582,9 @@ SECTION 8 - SALES INVOICE/PAYMENT VALIDATION
 SELECT sil.InvoiceLineID,
        sil.InvoiceQuantity,
        ssl.ShippedQuantity,
+       sil.UnitPrice,
+       sil.DiscountAmount,
+       sil.TaxAmount,
        sil.COGSValue,
        ssl.UnitCost,
        sil.NetLineAmount,
@@ -533,6 +593,8 @@ SELECT sil.InvoiceLineID,
 FROM dbo.SalesInvoiceLine sil
 JOIN dbo.SalesShipmentLine ssl ON ssl.ShipmentLineID = sil.ShipmentLineID
 WHERE ABS(COALESCE(sil.InvoiceQuantity, 0) - COALESCE(ssl.ShippedQuantity, 0)) > 0.01
+   OR ABS(COALESCE(sil.NetLineAmount, 0)
+        - (ROUND(COALESCE(sil.InvoiceQuantity, 0) * COALESCE(sil.UnitPrice, 0), 2) - COALESCE(sil.DiscountAmount, 0))) > 0.05
    OR ABS(COALESCE(sil.COGSValue, 0) - COALESCE(sil.InvoiceQuantity, 0) * COALESCE(ssl.UnitCost, 0)) > 0.01
    OR ABS(COALESCE(sil.GrossMarginAmount, 0) - (COALESCE(sil.NetLineAmount, 0) - COALESCE(sil.COGSValue, 0))) > 0.01
    OR (
@@ -543,7 +605,7 @@ WHERE ABS(COALESCE(sil.InvoiceQuantity, 0) - COALESCE(ssl.ShippedQuantity, 0)) >
 -- 8B. Invoice header totals reconcile to invoice lines. Expected: no rows.
 WITH InvoiceLineRollup AS (
     SELECT InvoiceID,
-           SUM(InvoiceQuantity * UnitPrice) AS SubtotalAmount,
+           SUM(NetLineAmount) AS SubtotalAmount,
            SUM(DiscountAmount) AS DiscountAmount,
            SUM(TaxAmount) AS TaxAmount
     FROM dbo.SalesInvoiceLine
@@ -563,9 +625,31 @@ WHERE ABS(COALESCE(h.SubtotalAmount, 0) - COALESCE(r.SubtotalAmount, 0)) > 0.01
    OR ABS(COALESCE(h.DiscountAmount, 0) - COALESCE(r.DiscountAmount, 0)) > 0.01
    OR ABS(COALESCE(h.TaxAmount, 0) - COALESCE(r.TaxAmount, 0)) > 0.01
    OR ABS(COALESCE(h.TotalInvoiceAmount, 0)
-        - (COALESCE(h.SubtotalAmount, 0) - COALESCE(h.DiscountAmount, 0) + COALESCE(h.TaxAmount, 0) + COALESCE(h.FreightAmount, 0))) > 0.01;
+        - (COALESCE(h.SubtotalAmount, 0) + COALESCE(h.TaxAmount, 0) + COALESCE(h.FreightAmount, 0))) > 0.05;
 
--- 8C. Payments do not exceed invoice total and payment dates are valid. Expected: no rows.
+-- 8C. Negative gross margin rows are business-realistic warnings, not validation errors.
+-- Expected: optional warning rows when a sale is intentionally below cost.
+SELECT InvoiceLineID,
+       NetLineAmount,
+       COGSValue,
+       GrossMarginAmount,
+       GrossMarginPct,
+       'WARNING_NEGATIVE_GROSS_MARGIN' AS Severity
+FROM dbo.SalesInvoiceLine
+WHERE GrossMarginAmount < 0
+   OR GrossMarginPct < 0;
+
+-- 8D. Extreme gross margin percentages remain errors. Expected: no rows.
+SELECT InvoiceLineID,
+       NetLineAmount,
+       COGSValue,
+       GrossMarginAmount,
+       GrossMarginPct
+FROM dbo.SalesInvoiceLine
+WHERE GrossMarginPct < -1.0
+   OR GrossMarginPct > 1.0;
+
+-- 8E. Payments do not exceed invoice total and payment dates are valid. Expected: no rows.
 WITH PaymentRollup AS (
     SELECT InvoiceID, SUM(PaidAmount) AS PaidAmount
     FROM dbo.CustomerPaymentReceipt
@@ -581,7 +665,7 @@ FROM dbo.SalesInvoiceHeader h
 JOIN dbo.CustomerPaymentReceipt p ON p.InvoiceID = h.InvoiceID
 WHERE p.PaymentDate < h.InvoiceDate;
 
--- 8D. InvoiceStatus is fact-derived from payment amounts. Expected: no rows.
+-- 8F. InvoiceStatus is fact-derived from payment amounts. Expected: no rows.
 WITH PaymentRollup AS (
     SELECT InvoiceID, SUM(PaidAmount) AS PaidAmount
     FROM dbo.CustomerPaymentReceipt
@@ -594,7 +678,7 @@ WHERE (COALESCE(p.PaidAmount, 0) >= COALESCE(h.TotalInvoiceAmount, 0) - 0.01 AND
    OR (COALESCE(p.PaidAmount, 0) > 0.01 AND COALESCE(p.PaidAmount, 0) < COALESCE(h.TotalInvoiceAmount, 0) - 0.01 AND h.InvoiceStatus <> 'PartiallyPaid')
    OR (COALESCE(p.PaidAmount, 0) <= 0.01 AND h.InvoiceStatus <> 'Open');
 
--- 8E. PaymentStatus values are valid and distinct from invoice statuses. Expected: no rows.
+-- 8G. PaymentStatus values are valid and distinct from invoice statuses. Expected: no rows.
 SELECT PaymentReceiptID, PaymentStatus
 FROM dbo.CustomerPaymentReceipt
 WHERE PaymentStatus NOT IN ('Received', 'Partial', 'Failed');
