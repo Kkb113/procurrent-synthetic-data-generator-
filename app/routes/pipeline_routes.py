@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.services.pipeline_service import GenericPipelineWebRequest, PipelineService, PipelineWebRequest
+from app.services.pipeline_service import GenericPipelineWebRequest, MESLifecycleWebRequest, PipelineService, PipelineWebRequest
 from app.services.upload_service import UploadValidationError
 
 
@@ -48,6 +48,45 @@ async def run_pipeline(
         raise HTTPException(status_code=500, detail=f"Pipeline request failed: {exc}") from exc
 
 
+@router.post("/run-mes")
+async def run_mes_lifecycle(
+    metadata_xlsx: UploadFile | None = File(default=None),
+    mermaid_erd: str | None = Form(default=None),
+    business_scenario: str | None = Form(default=None),
+    use_azure_openai: bool = Form(default=False),
+    build_prompt: bool = Form(default=False),
+    load_sql: bool = Form(default=False),
+    target_total_rows: str | None = Form(default=None),
+    row_scale_factor: str | None = Form(default=None),
+    seed: str | None = Form(default=None),
+    sql_if_table_exists: str = Form(default="replace"),
+    max_rows_per_table: str | None = Form(default=None),
+    profile_id: str | None = Form(default=None),
+) -> dict:
+    try:
+        request = MESLifecycleWebRequest(
+            metadata_file=metadata_xlsx,
+            erd_text=mermaid_erd,
+            scenario_text=business_scenario,
+            use_azure_openai=use_azure_openai,
+            build_prompt=build_prompt,
+            load_sql=load_sql,
+            target_total_rows=_optional_positive_int(target_total_rows, "target_total_rows"),
+            row_scale_factor=_optional_positive_float(row_scale_factor, "row_scale_factor"),
+            seed=_optional_int(seed),
+            if_table_exists=sql_if_table_exists,
+            max_rows_per_table=_optional_positive_int(max_rows_per_table, "max_rows_per_table"),
+            profile_id=profile_id,
+        )
+        return await pipeline_service.run_mes_lifecycle(request)
+    except UploadValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="MES lifecycle request failed. Check server logs for details.") from exc
+
+
 @router.post("/run-generic")
 async def run_generic_pipeline(request: Request) -> dict:
     try:
@@ -68,6 +107,9 @@ async def run_generic_pipeline(request: Request) -> dict:
             load_sql=_as_bool(payload.get("load_sql", False)),
             if_table_exists=payload.get("if_table_exists") or "replace",
             profile_id=payload.get("profile_id"),
+            target_total_rows=_optional_int(payload.get("target_total_rows")),
+            row_scale_factor=_optional_float(payload.get("row_scale_factor")),
+            max_rows_per_table=_optional_int(payload.get("max_rows_per_table")),
             metadata_file=_upload(payload.get("metadata_file")),
             erd_file=_upload(payload.get("erd_file")),
             plan_file=_upload(payload.get("plan_file")),
@@ -114,6 +156,26 @@ def _optional_int(value) -> int | None:
     if value in {None, ""}:
         return None
     return int(value)
+
+
+def _optional_float(value) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value)
+
+
+def _optional_positive_int(value, field_name: str) -> int | None:
+    parsed = _optional_int(value)
+    if parsed is not None and parsed <= 0:
+        raise ValueError(f"{field_name} must be a positive integer.")
+    return parsed
+
+
+def _optional_positive_float(value, field_name: str) -> float | None:
+    parsed = _optional_float(value)
+    if parsed is not None and parsed <= 0:
+        raise ValueError(f"{field_name} must be a positive number.")
+    return parsed
 
 
 def _upload(value):

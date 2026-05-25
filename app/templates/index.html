@@ -10,196 +10,99 @@
   <header class="app-header">
     <div>
       <h1>MES Synthetic Data Generator</h1>
-      <p>Generate validated Procurement &rarr; Production &rarr; Sales synthetic MES data using metadata, ERD, business scenario, and optional LLM planning.</p>
+      <p>Generate lifecycle-valid Procurement &rarr; Production &rarr; Sales synthetic data from metadata, ERD, and business scenario.</p>
     </div>
   </header>
 
   <main class="page">
     <section class="panel">
-      <h2>Pipeline Inputs</h2>
-      <form id="pipeline-form" action="/api/pipeline/run-generic" method="post" enctype="multipart/form-data" data-endpoint="/api/pipeline/run-generic" autocomplete="off">
-        <input type="hidden" name="modules" id="modules-field" value="procurement,production,sales">
-        <fieldset class="module-selector">
-          <legend>Modules</legend>
-          <label class="check module-check">
-            <input type="checkbox" name="module_procurement" value="procurement" checked>
-            Procurement
-          </label>
-          <label class="check module-check">
-            <input type="checkbox" name="module_production" value="production" checked>
-            Production
-          </label>
-          <label class="check module-check">
-            <input type="checkbox" name="module_sales" value="sales" checked>
-            Sales
-          </label>
-          <p id="module-helper" class="muted">Default team flow: Procurement &rarr; Production &rarr; Sales.</p>
-        </fieldset>
+      <h2>Run MES Lifecycle</h2>
+      <form id="pipeline-form" action="/api/pipeline/run-mes" method="post" enctype="multipart/form-data" data-endpoint="/api/pipeline/run-mes" autocomplete="off">
         <div class="grid">
           <label>
-            Model Version
-            <select id="model-version" name="model_version">
-              <option value="v2" selected>Procurement v2 - active 25-table RFQ/quotation/receipt/inventory model</option>
-            </select>
-          </label>
-          <label>
             Metadata XLSX
-            <input type="file" name="metadata_file" accept=".xlsx">
+            <input type="file" name="metadata_xlsx" accept=".xlsx" required>
           </label>
           <label>
-            Mermaid ERD File
-            <input type="file" name="erd_file" accept=".mmd,.txt">
-          </label>
-          <label>
-            LLM Plan JSON
-            <input type="file" name="plan_file" accept=".json">
-          </label>
-          <label>
-            Seed
-            <input type="number" name="seed" value="42">
-          </label>
-          <label>
-            Output Directory
-            <input type="text" name="output_dir" placeholder="output/web_runs/custom_run">
-          </label>
-          <label>
-            Profile ID
-            <select name="profile_id">
-              <option value="food_manufacturing" selected>food_manufacturing - packaged food/snack flow</option>
-              <option value="ev_manufacturing">ev_manufacturing</option>
-              <option value="generic_mes">generic_mes</option>
-            </select>
-            <span class="hint">Choose food_manufacturing for packaged food or snack scenarios. This controls deterministic Python vocabulary after the LLM planning step.</span>
-          </label>
-          <label>
-            Upstream Procurement final_data
-            <input type="text" name="upstream_data" placeholder="Only needed for Production-only without running Procurement">
+            Business Scenario
+            <textarea name="business_scenario" rows="6" required placeholder="Describe the industry, products, suppliers, production process, customers, and sales channels."></textarea>
           </label>
         </div>
 
-        <details id="v2-model-help" class="model-help" hidden>
-          <summary>Procurement v2 is the active Procurement model</summary>
-          <p>Use SupplierMaster, SupplierComponent, ComponentMaster, Plant, Warehouse, PurchaseRequisition, PurchaseReqLine, RFQHeader, RFQLine, SupplierQuotation, SupplierQuotationLn, PurchaseOrderHdr, PurchaseOrderLine, POSchedule, ShipmentHdr, ShipmentLine, GoodsReceiptHeader, GoodsReceiptLine, IncomingInspection, InspectionResult, InventoryReceiptDetail, InventoryTransaction, Inventory, SupplierInvoice, and PaymentTransaction.</p>
-          <p>InventoryReceiptDetail captures receipt-level supplier, component, PO, receipt, date, and price variance traceability. InventoryTransaction is the inbound StockIn ledger sourced from InventoryReceiptDetail. Inventory stores the calculated stock balance by Component, Plant, and Warehouse. InventoryBalance is not part of v2. Procurement v2 uses 2025 dates, US locations, USD values, one Plant, and one Warehouse.</p>
-        </details>
-
-        <details class="model-help" open>
-          <summary>Module dependency behavior</summary>
-          <p>Default team flow: Procurement &rarr; Production &rarr; Sales.</p>
-          <p>Production consumes Procurement output. Procurement will run first.</p>
-          <p>Sales requires Production finished goods and Procurement/Production lineage. Procurement and Production will run first.</p>
-        </details>
-
-        <details class="model-help">
-          <summary>Production-specific inputs</summary>
-          <div class="grid">
-            <label>
-              Production Metadata XLSX
-              <input type="file" name="production_metadata_file" accept=".xlsx">
-            </label>
-            <label>
-              Production Mermaid ERD File
-              <input type="file" name="production_erd_file" accept=".mmd,.txt">
-            </label>
-            <label>
-              Production Plan JSON
-              <input type="file" name="production_plan_file" accept=".json">
-            </label>
-          </div>
-          <label>
-            Production Mermaid ERD Text
-            <textarea name="production_erd_text" rows="5" placeholder="Optional Production ERD text override."></textarea>
-          </label>
-          <label>
-            Production Scenario
-            <textarea name="production_scenario_text" rows="5" placeholder="Optional Production scenario override."></textarea>
-          </label>
-        </details>
-
         <label>
-          Mermaid ERD Text
-          <textarea name="erd_text" rows="7" placeholder="Paste erDiagram text here if no ERD file is uploaded."></textarea>
+          Mermaid ERD
+          <textarea name="mermaid_erd" rows="9" required placeholder="Paste Mermaid erDiagram text here."></textarea>
         </label>
 
-        <label>
-          Business Scenario
-          <textarea name="scenario_text" rows="7" placeholder="Describe the MES scenario to generate, such as packaged food/snack manufacturing. Defaults are used when blank."></textarea>
-        </label>
-
-        <div class="options">
+        <div class="options primary-options" aria-label="Run options">
           <label class="check">
             <input type="checkbox" name="use_azure_openai" autocomplete="off">
-            Generate plan using Azure OpenAI
+            Azure OpenAI
           </label>
-          <span id="azure-openai-hint" class="hint options-hint">Leave unchecked for local deterministic runs. Check only when Azure OpenAI environment variables are configured.</span>
           <label class="check">
             <input type="checkbox" name="build_prompt" checked>
-            Build prompt
+            Build Prompt
           </label>
           <label class="check">
             <input type="checkbox" name="load_sql">
-            Load to SQL
-          </label>
-          <label class="check">
-            <input type="checkbox" name="allow_demo_fallback">
-            Allow demo fallback
-          </label>
-          <label>
-            If table exists
-            <select name="if_table_exists">
-              <option value="replace">replace</option>
-              <option value="append">append</option>
-              <option value="fail">fail</option>
-            </select>
+            Load SQL
           </label>
         </div>
 
-        <button id="run-button" type="submit">Run Generic Pipeline</button>
+        <details class="advanced-options">
+          <summary>Advanced settings</summary>
+          <div class="grid advanced-grid">
+            <label>
+              Target total rows
+              <input type="number" name="target_total_rows" min="1" step="1" placeholder="350000">
+            </label>
+            <label>
+              Row scale factor
+              <input type="number" name="row_scale_factor" min="0.01" step="0.01" placeholder="1.0">
+            </label>
+            <label>
+              Seed
+              <input type="number" name="seed" step="1" placeholder="42">
+            </label>
+            <label>
+              SQL if_table_exists
+              <select name="sql_if_table_exists">
+                <option value="replace">replace</option>
+                <option value="append">append</option>
+                <option value="fail">fail</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <button id="run-button" type="submit">Run MES Lifecycle</button>
       </form>
     </section>
 
     <section class="panel" id="status-panel">
       <h2>Status</h2>
       <div id="status-message" class="muted">Ready.</div>
-      <table id="stage-table">
-        <thead>
-          <tr>
-            <th>Stage</th>
-            <th>Status</th>
-            <th>Errors</th>
-            <th>Warnings</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
     </section>
 
     <section class="panel hidden" id="results-panel">
       <h2>Results</h2>
       <div class="metrics">
-        <div><span>Model Version</span><strong id="result-model-version">-</strong></div>
-        <div><span>Modules</span><strong id="result-modules">-</strong></div>
-        <div><span>Final Status</span><strong id="result-status">-</strong></div>
-        <div><span>Tables</span><strong id="result-tables">-</strong></div>
+        <div><span>Status</span><strong id="result-status">-</strong></div>
         <div><span>Total Rows</span><strong id="result-rows">-</strong></div>
-        <div><span>Data Quality</span><strong id="result-quality">-</strong></div>
+        <div><span>Procurement Rows</span><strong id="result-procurement-rows">-</strong></div>
+        <div><span>Production Rows</span><strong id="result-production-rows">-</strong></div>
+        <div><span>Sales Rows</span><strong id="result-sales-rows">-</strong></div>
+        <div><span>Validation</span><strong id="result-validation">-</strong></div>
         <div><span>SQL Load</span><strong id="result-sql">-</strong></div>
-        <div><span>Execution Order</span><strong id="result-execution-order">-</strong></div>
-        <div><span>Adjusted FinishedGoodsInventory</span><strong id="result-adjusted-fgi">-</strong></div>
+        <div><span>Warnings / Errors</span><strong id="result-issues">-</strong></div>
       </div>
-      <h3>Module Results</h3>
-      <table id="module-table">
-        <thead>
-          <tr>
-            <th>Module</th>
-            <th>Status</th>
-            <th>Tables</th>
-            <th>Validation</th>
-            <th>Output</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+
+      <h3>Artifacts</h3>
+      <div id="artifact-paths" class="artifact-paths"></div>
+
+      <h3>Downloads</h3>
+      <div id="download-links" class="downloads"></div>
+
       <div class="issues">
         <h3>Warnings</h3>
         <ul id="warnings-list"></ul>
@@ -207,13 +110,8 @@
         <ul id="errors-list"></ul>
       </div>
     </section>
-
-    <section class="panel hidden" id="downloads-panel">
-      <h2>Downloads</h2>
-      <div id="download-links" class="downloads"></div>
-    </section>
   </main>
 
-  <script src="/static/js/app.js?v=phase11-azure-hint"></script>
+  <script src="/static/js/app.js?v=phase5-mes-lifecycle"></script>
 </body>
 </html>

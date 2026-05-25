@@ -108,23 +108,24 @@ class FakeRunner:
         return _fake_report(kwargs["model_version"], str(output_folder))
 
 
-def test_ui_contains_generic_mes_module_selector_and_procurement_v2_model() -> None:
+def test_ui_contains_productized_mes_lifecycle_workflow() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
     assert "MES Synthetic Data Generator" in response.text
-    assert "module_procurement" in response.text
-    assert "module_production" in response.text
-    assert 'name="module_sales" value="sales" checked' in response.text
+    assert "Procurement &rarr; Production &rarr; Sales" in response.text
+    assert 'action="/api/pipeline/run-mes"' in response.text
+    assert 'name="metadata_xlsx"' in response.text
+    assert 'name="mermaid_erd"' in response.text
+    assert 'name="business_scenario"' in response.text
+    assert "Run MES Lifecycle" in response.text
+    assert "module_procurement" not in response.text
+    assert "module_production" not in response.text
+    assert "module_sales" not in response.text
     assert "Sales - Coming soon" not in response.text
-    assert 'name="model_version"' in response.text
-    assert '<option value="v2" selected>' in response.text
+    assert 'name="model_version"' not in response.text
     assert 'option value="v1"' not in response.text
-    assert "25-table" in response.text
-    assert "InventoryReceiptDetail captures receipt-level" in response.text
-    assert "InventoryTransaction is the inbound StockIn ledger sourced from InventoryReceiptDetail" in response.text
-    assert "Inventory stores the calculated stock balance" in response.text
-    assert "InventoryBalance is not part of v2" in response.text
+    assert "LLM Plan JSON" not in response.text
 
 
 def test_run_defaults_model_version_to_v2(tmp_path: Path, monkeypatch) -> None:

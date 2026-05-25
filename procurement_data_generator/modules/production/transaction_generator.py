@@ -17,13 +17,25 @@ from procurement_data_generator.core.contracts.validation_report import Validati
 from procurement_data_generator.core.config import DEFAULT_OPERATING_SCOPE, GenerationConfig, OperatingScope
 from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.shared.quantity_precision import (
-    apply_quantity_precision,
     is_whole_quantity,
     requires_integer_quantity,
 )
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
 from procurement_data_generator.modules.shared.industry_profiles.profile_value_provider import IndustryProfileValueProvider
+from procurement_data_generator.modules.production.allocation import (
+    InventoryLot,
+    InventoryTransactionLot,
+    ProductionAllocationContext,
+    allocate_bom,
+    allocate_component,
+    build_allocation_context,
+    component_uom_lookup as _component_uom_lookup,
+)
+from procurement_data_generator.modules.production.performance_profile import (
+    profile_stage,
+    summarize_profile,
+)
 
 
 PRODUCTION_TRANSACTION_TABLES = (
@@ -78,44 +90,6 @@ class ProcurementExecutionContext:
     inventory_receipt_detail: pd.DataFrame
     supplier_master: pd.DataFrame
     used_fallback: bool = False
-
-
-@dataclass
-class InventoryLot:
-    """Mutable allocation lot for Production raw-material consumption."""
-
-    inventory_id: int
-    component_id: int
-    plant_id: int
-    warehouse_id: int
-    available_quantity: float
-
-
-@dataclass
-class InventoryTransactionLot:
-    """Mutable inventory transaction lot aligned to an inventory bucket."""
-
-    transaction_id: int
-    component_id: int
-    plant_id: int
-    warehouse_id: int
-    remaining_quantity: float
-    unit_price: float
-    inventory_receipt_detail_id: int
-    receipt_row: Any
-
-
-@dataclass(frozen=True)
-class ProductionAllocationContext:
-    """Precomputed allocation maps used by Production transaction generation."""
-
-    products: tuple[Any, ...]
-    bom_by_product: dict[int, tuple[Any, ...]]
-    routing_by_product: dict[int, tuple[Any, ...]]
-    bom_lines_by_bom: dict[int, tuple[Any, ...]]
-    inventory_lots_by_component: dict[int, list[InventoryLot]]
-    txn_lots_by_inventory_key: dict[tuple[int, int, int], list[InventoryTransactionLot]]
-    component_uom: dict[int, str]
 
 
 class ProductionTransactionGenerator:
@@ -254,28 +228,14 @@ class ProductionTransactionGenerator:
             lambda: self.validate_generated_transaction_data(dataframes, master, upstream, report),
             input_rows={table_name: len(dataframe) for table_name, dataframe in dataframes.items()},
         )
-        total_elapsed = round(time.perf_counter() - total_start, 6)
-        slowest = max(self.performance_profile, key=lambda item: item["elapsed_seconds"], default=None)
-        self.performance_summary = {
-            "total_elapsed_seconds": total_elapsed,
-            "top_suspected_bottleneck": slowest["stage_name"] if slowest else None,
-            "stages": self.performance_profile,
-        }
+        self.performance_summary = summarize_profile(
+            self.performance_profile,
+            time.perf_counter() - total_start,
+        )
         return dataframes, report
 
     def _profile_stage(self, stage_name: str, action, input_rows: dict[str, int] | None = None):
-        start = time.perf_counter()
-        result = action()
-        elapsed = round(time.perf_counter() - start, 6)
-        self.performance_profile.append(
-            {
-                "stage_name": stage_name,
-                "row_count_input": input_rows or {},
-                "row_count_output": _profile_row_counts(result),
-                "elapsed_seconds": elapsed,
-            }
-        )
-        return result
+        return profile_stage(self.performance_profile, stage_name, action, input_rows)
 
     def load_master_data(self, folder: str | Path) -> ProductionMasterContext:
         """Load Production master/setup CSV files from a folder."""
@@ -561,35 +521,7 @@ class ProductionTransactionGenerator:
         allocation_context: ProductionAllocationContext,
         rng: random.Random,
     ) -> list[tuple[Any, float, float, InventoryLot, InventoryTransactionLot, Any]] | None:
-        allocations = []
-        for bom_line in bom_lines:
-            uom = str(bom_line.UOM)
-            required_quantity = float(bom_line.ComponentQuantity) * planned_quantity
-            scrap_adjusted = required_quantity * (1 + float(bom_line.ScrapFactorPct) / 100)
-            scrap_adjusted = apply_quantity_precision(
-                scrap_adjusted,
-                uom,
-                minimum=1 if requires_integer_quantity(uom) else 0.01,
-            )
-            required_quantity = apply_quantity_precision(
-                required_quantity,
-                uom,
-                minimum=1 if requires_integer_quantity(uom) else 0.01,
-            )
-            allocation = self._allocate_component(
-                component_id=int(bom_line.ComponentID),
-                quantity=scrap_adjusted,
-                allocation_context=allocation_context,
-                rng=rng,
-            )
-            if allocation is None:
-                for _, _, consumed_quantity, inventory_lot, txn_lot, _ in reversed(allocations):
-                    inventory_lot.available_quantity += consumed_quantity
-                    txn_lot.remaining_quantity += consumed_quantity
-                return None
-            inventory_lot, txn_lot, receipt_row = allocation
-            allocations.append((bom_line, required_quantity, scrap_adjusted, inventory_lot, txn_lot, receipt_row))
-        return allocations
+        return allocate_bom(bom_lines, planned_quantity, allocation_context, rng)
 
     def _allocate_component(
         self,
@@ -598,99 +530,14 @@ class ProductionTransactionGenerator:
         allocation_context: ProductionAllocationContext,
         rng: random.Random,
     ) -> tuple[InventoryLot, InventoryTransactionLot, Any] | None:
-        inventory_candidates = allocation_context.inventory_lots_by_component.get(component_id)
-        if not inventory_candidates:
-            return None
-        start_index = rng.randrange(len(inventory_candidates))
-        for offset in range(len(inventory_candidates)):
-            inventory_lot = inventory_candidates[(start_index + offset) % len(inventory_candidates)]
-            if inventory_lot.available_quantity + 0.0001 < quantity:
-                continue
-            txn_candidates = allocation_context.txn_lots_by_inventory_key.get(
-                (component_id, inventory_lot.plant_id, inventory_lot.warehouse_id),
-                [],
-            )
-            for txn_lot in txn_candidates:
-                if txn_lot.remaining_quantity + 0.0001 < quantity:
-                    continue
-                inventory_lot.available_quantity = round(inventory_lot.available_quantity - quantity, 6)
-                txn_lot.remaining_quantity = round(txn_lot.remaining_quantity - quantity, 6)
-                return inventory_lot, txn_lot, txn_lot.receipt_row
-        return None
+        return allocate_component(component_id, quantity, allocation_context, rng)
 
     def _build_allocation_context(
         self,
         master: ProductionMasterContext,
         upstream: ProcurementExecutionContext,
     ) -> ProductionAllocationContext:
-        receipts_by_id = {
-            int(row.InventoryReceiptDetailID): row
-            for row in upstream.inventory_receipt_detail.itertuples(index=False)
-        }
-        receipts_by_inspection = {
-            int(row.InspectionResultID): row
-            for row in upstream.inventory_receipt_detail.itertuples(index=False)
-            if hasattr(row, "InspectionResultID")
-        }
-        inventory_lots_by_component: dict[int, list[InventoryLot]] = {}
-        for row in upstream.inventory.sort_values(["ComponentID", "InventoryID"]).itertuples(index=False):
-            available_quantity = float(getattr(row, "AvailableQuantity", 0.0) or 0.0)
-            if available_quantity <= 0:
-                continue
-            component_id = int(row.ComponentID)
-            inventory_lots_by_component.setdefault(component_id, []).append(
-                InventoryLot(
-                    inventory_id=int(row.InventoryID),
-                    component_id=component_id,
-                    plant_id=int(row.PlantID),
-                    warehouse_id=int(row.WarehouseID),
-                    available_quantity=available_quantity,
-                )
-            )
-
-        txn_lots_by_inventory_key: dict[tuple[int, int, int], list[InventoryTransactionLot]] = {}
-        for row in upstream.inventory_transaction.sort_values(["ComponentID", "PlantID", "WarehouseID", "InventoryTransactionID"]).itertuples(index=False):
-            remaining_quantity = float(getattr(row, "TransactionQuantity", 0.0) or 0.0)
-            if remaining_quantity <= 0:
-                continue
-            receipt_id = _receipt_id_from_reference(getattr(row, "ReferenceDocument", None))
-            receipt_row = receipts_by_id.get(receipt_id) or receipts_by_inspection.get(int(getattr(row, "InspectionResultID", -1)))
-            if receipt_row is None:
-                continue
-            component_id = int(row.ComponentID)
-            plant_id = int(row.PlantID)
-            warehouse_id = int(row.WarehouseID)
-            txn_lots_by_inventory_key.setdefault((component_id, plant_id, warehouse_id), []).append(
-                InventoryTransactionLot(
-                    transaction_id=int(row.InventoryTransactionID),
-                    component_id=component_id,
-                    plant_id=plant_id,
-                    warehouse_id=warehouse_id,
-                    remaining_quantity=remaining_quantity,
-                    unit_price=float(getattr(row, "UnitPrice", 0.0) or 0.0),
-                    inventory_receipt_detail_id=int(receipt_row.InventoryReceiptDetailID),
-                    receipt_row=receipt_row,
-                )
-            )
-
-        return ProductionAllocationContext(
-            products=tuple(master.product_master.itertuples(index=False)),
-            bom_by_product={
-                int(product_id): tuple(rows.itertuples(index=False))
-                for product_id, rows in master.bom_header.groupby("ProductID", sort=False)
-            },
-            routing_by_product={
-                int(product_id): tuple(rows.itertuples(index=False))
-                for product_id, rows in master.routing_header.groupby("ProductID", sort=False)
-            },
-            bom_lines_by_bom={
-                int(bom_id): tuple(rows.itertuples(index=False))
-                for bom_id, rows in master.bom_line.groupby("BOMID", sort=False)
-            },
-            inventory_lots_by_component=inventory_lots_by_component,
-            txn_lots_by_inventory_key=txn_lots_by_inventory_key,
-            component_uom=_component_uom_lookup(upstream.component_master),
-        )
+        return build_allocation_context(master, upstream)
 
     def _generate_batches(self, table: TableContract, plan: LLMGenerationPlan, generated: dict[str, pd.DataFrame], rng: random.Random) -> pd.DataFrame:
         rows = []
@@ -1169,21 +1016,8 @@ def _fallback_upstream_context(master: ProductionMasterContext | None) -> Procur
     return ProcurementExecutionContext(component_master, plant, warehouse, inventory, inventory_transaction, inventory_receipt_detail, supplier_master, True)
 
 
-def _component_uom_lookup(component_master: pd.DataFrame) -> dict[int, str]:
-    uom_column = next((column for column in ["UOM", "UnitOfMeasure", "Unit_Of_Measure"] if column in component_master.columns), None)
-    if uom_column is None:
-        return {int(row.ComponentID): "EA" for row in component_master.itertuples(index=False)}
-    return {int(row.ComponentID): str(getattr(row, uom_column)) for row in component_master.itertuples(index=False)}
-
-
 def _weighted_choice(rng: random.Random, values: list[str], weights: list[float]) -> str:
     return rng.choices(values, weights=weights, k=1)[0]
-
-
-def _receipt_id_from_reference(reference: Any) -> int:
-    text = str(reference or "")
-    digits = "".join(character for character in text if character.isdigit())
-    return int(digits) if digits else -1
 
 
 def _shift_lookup(production_shift: pd.DataFrame) -> tuple[dict[tuple[int, date], int], dict[int, int]]:
@@ -1195,26 +1029,6 @@ def _shift_lookup(production_shift: pd.DataFrame) -> tuple[dict[tuple[int, date]
         default_by_work_center.setdefault(work_center_id, shift_id)
         by_work_center_date[(work_center_id, pd.to_datetime(row.ShiftDate).date())] = shift_id
     return by_work_center_date, default_by_work_center
-
-
-def _profile_row_counts(value: Any) -> dict[str, int]:
-    if value is None:
-        return {}
-    if isinstance(value, pd.DataFrame):
-        return {"rows": len(value)}
-    if isinstance(value, tuple):
-        counts: dict[str, int] = {}
-        for index, item in enumerate(value, start=1):
-            if isinstance(item, pd.DataFrame):
-                counts[f"item_{index}"] = len(item)
-        return counts
-    if isinstance(value, dict):
-        return {
-            str(name): len(dataframe)
-            for name, dataframe in value.items()
-            if isinstance(dataframe, pd.DataFrame)
-        }
-    return {}
 
 
 def _shift_for_work_center(shifts_by_wc: dict[int, pd.DataFrame], work_center_id: int, target_date: date) -> int:

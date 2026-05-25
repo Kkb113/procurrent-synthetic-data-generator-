@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import UploadFile
 
 from app.services.upload_service import UploadValidationError, save_text_input, save_upload_file
+from app.services.mes_lifecycle_response import enrich_mes_lifecycle_summary
 from procurement_data_generator.core.metadata.metadata_reader import METADATA_SHEET_NAME
 from procurement_data_generator.core.modules.registry import create_default_module_registry
 from procurement_data_generator.core.erd.mermaid_parser import RELATIONSHIP_PATTERN
@@ -93,6 +94,10 @@ class GenericPipelineWebRequest:
     load_sql: bool = False
     if_table_exists: str = "replace"
     profile_id: str | None = None
+    target_total_rows: int | None = None
+    row_scale_factor: float | None = None
+    max_rows_per_table: int | None = None
+    use_local_scenario_planner: bool = False
     metadata_file: UploadFile | None = None
     erd_file: UploadFile | None = None
     plan_file: UploadFile | None = None
@@ -103,6 +108,24 @@ class GenericPipelineWebRequest:
     production_plan_file: UploadFile | None = None
     production_erd_text: str | None = None
     production_scenario_text: str | None = None
+
+
+@dataclass(frozen=True)
+class MESLifecycleWebRequest:
+    """Productized web request for the full MES lifecycle workflow."""
+
+    metadata_file: UploadFile | None
+    erd_text: str | None
+    scenario_text: str | None
+    use_azure_openai: bool = False
+    build_prompt: bool = False
+    load_sql: bool = False
+    target_total_rows: int | None = None
+    row_scale_factor: float | None = None
+    seed: int | None = None
+    if_table_exists: str = "replace"
+    max_rows_per_table: int | None = None
+    profile_id: str | None = None
 
 
 class PipelineService:
@@ -162,6 +185,33 @@ class PipelineService:
         )
         return self._summary(run_id, report)
 
+    async def run_mes_lifecycle(self, request: MESLifecycleWebRequest) -> dict:
+        """Run the productized Procurement -> Production -> Sales workflow.
+
+        Developer routes still support individual modules and explicit plan
+        files. This method is intentionally narrower for the main UI.
+        """
+
+        self._validate_mes_lifecycle_request(request)
+        generic_request = GenericPipelineWebRequest(
+            modules=("procurement", "production", "sales"),
+            seed=request.seed,
+            use_azure_openai=True,
+            build_prompt=request.build_prompt,
+            load_sql=request.load_sql,
+            if_table_exists=request.if_table_exists,
+            profile_id=request.profile_id,
+            target_total_rows=request.target_total_rows,
+            row_scale_factor=request.row_scale_factor,
+            max_rows_per_table=request.max_rows_per_table,
+            use_local_scenario_planner=not request.use_azure_openai,
+            metadata_file=request.metadata_file,
+            erd_text=request.erd_text,
+            scenario_text=request.scenario_text,
+        )
+        summary = await self.run_generic_pipeline(generic_request)
+        return enrich_mes_lifecycle_summary(summary)
+
     async def run_generic_pipeline(self, request: GenericPipelineWebRequest) -> dict:
         self._validate_generic_request(request)
         run_id = self._new_run_id()
@@ -173,6 +223,10 @@ class PipelineService:
             seed=request.seed if request.seed is not None else 42,
             allow_demo_fallback=request.allow_demo_fallback,
             profile_id=request.profile_id,
+            target_total_rows=request.target_total_rows,
+            row_scale_factor=request.row_scale_factor if request.row_scale_factor is not None else 1.0,
+            max_rows_per_table=request.max_rows_per_table,
+            use_local_scenario_planner=request.use_local_scenario_planner,
         )
         runner = self.generic_runner_factory()
         module_inputs = await self._generic_module_inputs(request, uploads)
@@ -222,6 +276,8 @@ class PipelineService:
             production_erd = erd_by_module.get("production")
         production_plan = await self._optional_upload(request.production_plan_file, uploads / "production_plan.json", {".json"}) or production.plan_path
         production_scenario = save_text_input(request.production_scenario_text, uploads / "production_scenario.txt", "production_scenario_text", required=False) if request.production_scenario_text and request.production_scenario_text.strip() else None
+        if production_scenario is None and procurement_scenario is not None:
+            production_scenario = procurement_scenario
         sales_metadata = metadata_by_module.get("sales") or sales.metadata_path
         sales_erd = erd_by_module.get("sales") or sales.erd_path
 
@@ -394,6 +450,22 @@ class PipelineService:
         if not request.use_azure_openai and (request.plan_file is None or not request.plan_file.filename):
             raise UploadValidationError("plan_file is required when Azure OpenAI generation is disabled.")
 
+    def _validate_mes_lifecycle_request(self, request: MESLifecycleWebRequest) -> None:
+        if request.metadata_file is None or not request.metadata_file.filename:
+            raise UploadValidationError("Please upload metadata XLSX.")
+        if not request.erd_text or not request.erd_text.strip():
+            raise UploadValidationError("Please provide Mermaid ERD.")
+        if not request.scenario_text or not request.scenario_text.strip():
+            raise UploadValidationError("Please enter a business scenario.")
+        if request.if_table_exists not in {"replace", "append", "fail"}:
+            raise UploadValidationError("sql_if_table_exists must be replace, append, or fail.")
+        if request.target_total_rows is not None and request.target_total_rows <= 0:
+            raise UploadValidationError("target_total_rows must be a positive integer.")
+        if request.row_scale_factor is not None and request.row_scale_factor <= 0:
+            raise UploadValidationError("row_scale_factor must be a positive number.")
+        if request.max_rows_per_table is not None and request.max_rows_per_table <= 0:
+            raise UploadValidationError("max_rows_per_table must be a positive integer.")
+
     def _validate_generic_request(self, request: GenericPipelineWebRequest) -> None:
         if not request.modules:
             raise UploadValidationError("modules must include at least one module.")
@@ -502,6 +574,7 @@ class PipelineService:
                 module_id: {
                     "status": module_result.status,
                     "tables_generated": module_result.tables_generated,
+                    "total_rows_generated": module_result.total_rows_generated,
                     "data_quality_status": module_result.data_quality_status,
                     "sql_load_status": module_result.sql_load_status,
                     "output_folder": module_result.output_folder,

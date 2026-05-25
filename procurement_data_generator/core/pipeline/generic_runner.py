@@ -19,6 +19,7 @@ from procurement_data_generator.core.audit.row_count_audit import RowCountAuditB
 from procurement_data_generator.core.contracts.schema_contract import SchemaContract
 from procurement_data_generator.core.contracts.pipeline_report import PipelineRunReport
 from procurement_data_generator.core.llm.llm_client_base import LLMClientBase
+from procurement_data_generator.core.llm.deterministic_industry_client import DeterministicIndustryScenarioClient
 from procurement_data_generator.core.metadata.metadata_reader import read_metadata_schema
 from procurement_data_generator.core.modules.contracts import MESModulePlugin
 from procurement_data_generator.core.modules.registry import ModuleRegistry, create_default_module_registry
@@ -221,7 +222,7 @@ class SyntheticDataPipelineRunner:
         module_input = self._module_input(spec, "procurement")
         runner = ProcurementPipelineRunner(
             sql_loader_factory=self.sql_loader_factory,
-            llm_client_factory=self.llm_client_factory,
+            llm_client_factory=self._llm_client_factory_for_config(spec.generation_config or self.generation_config),
             module_plugin=plugin,
             operating_scope=spec.operating_scope or self.operating_scope,
             generation_config=spec.generation_config or self.generation_config,
@@ -241,6 +242,11 @@ class SyntheticDataPipelineRunner:
             if_table_exists=spec.if_table_exists,
             model_version=module_input.model_version or spec.model_version or plugin.module_version,
         )
+
+    def _llm_client_factory_for_config(self, generation_config: GenerationConfig) -> LLMClientFactory | None:
+        if generation_config.use_local_scenario_planner:
+            return DeterministicIndustryScenarioClient
+        return self.llm_client_factory
 
     def _run_generic_modules(self, spec: PipelineRunSpec, resolution: ModuleResolution) -> GenericPipelineRunResult:
         root_output = Path(spec.output_folder)

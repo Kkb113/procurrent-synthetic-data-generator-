@@ -76,13 +76,16 @@ class IndustryScenarioPlanningService:
     def generate(self, prompt: str) -> IndustryScenarioPlanningResult:
         attempts: list[IndustryScenarioAttempt] = []
         validation_errors: list[str] = []
+        azure_openai_used = True
         try:
             llm_client = self.llm_client_factory()
+            azure_openai_used = bool(getattr(llm_client, "uses_azure_openai", True))
         except Exception as exc:
             error_message = f"LLM client initialization failed: {exc}"
             return IndustryScenarioPlanningResult(
                 plan=fallback_industry_scenario_plan(error_message),
                 attempts=attempts,
+                azure_openai_used=azure_openai_used,
                 validation_passed=False,
                 repair_needed=False,
                 fallback_used=True,
@@ -126,6 +129,7 @@ class IndustryScenarioPlanningService:
                 return IndustryScenarioPlanningResult(
                     plan=plan,
                     attempts=attempts,
+                    azure_openai_used=azure_openai_used,
                     validation_passed=True,
                     repair_needed=attempt_number > 1,
                     fallback_used=False,
@@ -141,6 +145,7 @@ class IndustryScenarioPlanningService:
         return IndustryScenarioPlanningResult(
             plan=fallback_industry_scenario_plan(fallback_reason),
             attempts=attempts,
+            azure_openai_used=azure_openai_used,
             validation_passed=False,
             repair_needed=bool(attempts),
             fallback_used=True,

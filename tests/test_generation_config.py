@@ -35,6 +35,7 @@ def test_generation_config_defaults_are_deterministic_and_conservative() -> None
     assert config.sales_orders_per_customer_cap == 50
     assert config.profile_file is None
     assert config.planned_row_targets is None
+    assert config.use_local_scenario_planner is False
 
 
 def test_generation_config_normalizes_output_dir_to_path(tmp_path: Path) -> None:

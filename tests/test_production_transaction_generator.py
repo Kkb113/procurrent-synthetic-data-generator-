@@ -103,6 +103,7 @@ def test_batches_operations_quality_and_scrap_are_consistent(tmp_path: Path) -> 
         sorted_rows = rows.sort_values("OperationSequence")
         assert list(sorted_rows["OperationSequence"]) == sorted(list(sorted_rows["OperationSequence"]))
         assert (abs(sorted_rows["OutputQuantity"] - (sorted_rows["InputQuantity"] - sorted_rows["ScrapQuantity"])) <= 0.0001).all()
+        assert (sorted_rows["ReworkQuantity"] <= sorted_rows["OutputQuantity"] + 0.0001).all()
     assert set(inspections["ProductionBatchID"]).issubset(set(batches["ProductionBatchID"]))
     assert set(inspections["OperationExecutionID"]).issubset(set(operations["OperationExecutionID"]))
     assert set(quality["ProductionInspectionID"]).issubset(set(inspections["ProductionInspectionID"]))

@@ -16,6 +16,15 @@ from procurement_data_generator.core.row_budget import planned_target_rows
 from procurement_data_generator.modules.shared.industry_profiles.profile_contract import IndustryProfile
 from procurement_data_generator.modules.shared.industry_profiles.profile_loader import get_industry_profile_or_default
 from procurement_data_generator.modules.shared.industry_profiles.profile_value_provider import IndustryProfileValueProvider
+from procurement_data_generator.modules.sales.status_rules import (
+    SALES_QUANTITY_TOLERANCE,
+    finished_goods_inventory_status as _finished_goods_inventory_status,
+    invoice_status as _invoice_status,
+    line_status as _line_status,
+    order_status as _order_status,
+    quantity_equal as _quantity_equal,
+    return_line_status as _return_line_status,
+)
 
 
 SALES_PHASE4_TRANSACTION_TABLES = (
@@ -73,9 +82,6 @@ SALES_PHASE8_UPSTREAM_TABLES = (
     "FinishedGoodsInventory",
     "FinishedGoodsReceipt",
 )
-SALES_QUANTITY_TOLERANCE = 0.011
-
-
 class SalesTransactionGenerator:
     """Generate Sales v1 transactions through shipment without inventory mutation."""
 
@@ -634,12 +640,12 @@ class SalesTransactionGenerator:
                         "LineStatus": "Invoiced",
                     }
                 )
-                subtotal = round(subtotal + gross_line_amount, 2)
+                subtotal = round(subtotal + net_line_amount, 2)
                 invoice_discount = round(invoice_discount + discount_amount, 2)
                 invoice_tax = round(invoice_tax + tax_amount, 2)
 
             freight_amount = round(rng.uniform(freight_low, freight_high), 2)
-            total_invoice_amount = round(subtotal - invoice_discount + invoice_tax + freight_amount, 2)
+            total_invoice_amount = round(subtotal + invoice_tax + freight_amount, 2)
             paid_amount = _payment_amount(invoice_id, total_invoice_amount, partial_low, partial_high, rng)
             invoice_status = _invoice_status(total_invoice_amount, paid_amount)
             rows["SalesInvoiceHeader"].append(
@@ -1228,16 +1234,6 @@ def _validate_inventory_balance(
         )
 
 
-def _finished_goods_inventory_status(on_hand_quantity: float, reserved_quantity: float, available_quantity: float) -> str:
-    if on_hand_quantity <= 0:
-        return "OutOfStock"
-    if reserved_quantity > 0 and available_quantity <= 0:
-        return "Hold"
-    if available_quantity > 0 and available_quantity <= on_hand_quantity * 0.1:
-        return "LowStock"
-    return "Available"
-
-
 def _last_sales_update_date(transactions: Mapping[str, pd.DataFrame], fallback: date) -> date:
     candidates: list[date] = []
     if "SalesShipmentHeader" in transactions and "ShipmentDate" in transactions["SalesShipmentHeader"].columns:
@@ -1313,14 +1309,6 @@ def _payment_amount(
     return round(total_invoice_amount, 2)
 
 
-def _invoice_status(total_invoice_amount: float, paid_amount: float) -> str:
-    if paid_amount >= round(total_invoice_amount, 2):
-        return "Paid"
-    if paid_amount > 0:
-        return "PartiallyPaid"
-    return "Open"
-
-
 def _payment_date(invoice_date: date, due_date: date, invoice_id: int) -> date:
     window = max(0, (due_date - invoice_date).days)
     if window == 0:
@@ -1344,14 +1332,6 @@ def _return_unit_value(shipment_line: Any, invoice_line: Any | None) -> float:
             return round(net_line_amount / invoice_quantity, 2)
     unit_cost = float(getattr(shipment_line, "UnitCost", 0.0) or 0.0)
     return round(max(0.01, unit_cost), 2)
-
-
-def _return_line_status(restocked_quantity: float, scrapped_quantity: float) -> str:
-    if restocked_quantity > 0 and scrapped_quantity == 0:
-        return "Restocked"
-    if scrapped_quantity > 0 and restocked_quantity == 0:
-        return "Scrapped"
-    return "Received"
 
 
 def _as_date(value: Any) -> date:
@@ -1386,30 +1366,6 @@ def _bounded_quantity(capacity: float, rng: random.Random) -> float:
         return round(capacity, 2)
     upper = min(12.0, capacity)
     return round(rng.uniform(1.0, upper), 2)
-
-
-def _line_status(ordered_quantity: float, reserved_quantity: float, shipped_quantity: float) -> str:
-    if _quantity_equal(shipped_quantity, ordered_quantity):
-        return "Closed"
-    if shipped_quantity > 0 and reserved_quantity + SALES_QUANTITY_TOLERANCE < ordered_quantity:
-        return "Backordered"
-    if shipped_quantity > 0:
-        return "PartiallyShipped"
-    return "Backordered"
-
-
-def _quantity_equal(left: float, right: float) -> bool:
-    return abs(float(left) - float(right)) <= SALES_QUANTITY_TOLERANCE
-
-
-def _order_status(line_statuses: tuple[str, ...]) -> str:
-    if all(status == "Closed" for status in line_statuses):
-        return "Closed"
-    if any(status == "Backordered" for status in line_statuses):
-        return "Backordered"
-    if any(status == "PartiallyShipped" for status in line_statuses):
-        return "PartiallyShipped"
-    return "Backordered"
 
 
 def _table_target_rows(table: TableContract, default: int) -> int:

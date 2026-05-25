@@ -463,10 +463,12 @@ class ProcurementGeneratedDataValidator:
         dataframes: dict[str, pd.DataFrame],
         table_name: str,
         column_name: str,
-        expected: str,
+        expected: str | None,
         check_type: str,
         report: DataQualityReport,
     ) -> None:
+        if expected is None:
+            return
         dataframe = dataframes.get(table_name)
         if dataframe is None or column_name not in dataframe.columns:
             return
@@ -483,7 +485,7 @@ class ProcurementGeneratedDataValidator:
                 sample_failed_rows=self._sample_rows(dataframe[~mask]),
             )
 
-    def _expected_column_value(self, schema: SchemaContract, table_name: str, column_name: str, fallback: str) -> str:
+    def _expected_column_value(self, schema: SchemaContract, table_name: str, column_name: str, fallback: str) -> str | None:
         table = schema.tables.get(table_name)
         if table is None:
             return fallback
@@ -491,6 +493,8 @@ class ProcurementGeneratedDataValidator:
         if column is None:
             return fallback
         values = [str(value).strip() for value in column.allowed_values if str(value).strip()]
+        if len(values) > 1:
+            return None
         return values[0] if values else fallback
 
     def _validate_v2_warehouse_master_location(self, dataframes: dict[str, pd.DataFrame], report: DataQualityReport) -> None:
